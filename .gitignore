@@ -25,5 +25,13 @@ go.work.sum
 # env file
 .env
 
-# Claude Code plans
+# Claude Code — local-only settings (contains machine-specific MCP paths)
+.claude/settings.local.json
+
+# Plan files are ephemeral; the PR is the permanent record
 plans/
+
+docs/
+
+# Serena MCP server data
+.serena/
