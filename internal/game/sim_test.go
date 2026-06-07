@@ -113,16 +113,30 @@ func TestAnalyticRateMatchesSim(t *testing.T) {
 	}
 }
 
-// TestMoreWorkersProduceMoreWood verifies that adding a second worker increases output.
+// TestMoreWorkersProduceMoreWood verifies that adding a second worker increases
+// output. Uses a fixed two-node setup so random seeding can't skew the worlds.
 func TestMoreWorkersProduceMoreWood(t *testing.T) {
-	const dist = 100.0
 	const seconds = 60.0
 
-	one := newTestWorld(dist)
+	buildWorld := func() *World {
+		w := NewWorld()
+		w.Nodes = nil
+		w.NextNodeID = 0
+		campAngle := 0.0
+		for _, offset := range []float64{0.5, -0.5} {
+			n := newNode(w, KindWood, normAngle(campAngle+offset))
+			n.Size = 1.0
+			w.Nodes = append(w.Nodes, n)
+		}
+		w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+		return w
+	}
+
+	one := buildWorld()
 	addWorker(one)
 	runSim(one, seconds)
 
-	two := newTestWorld(dist)
+	two := buildWorld()
 	addWorker(two)
 	addWorker(two)
 	runSim(two, seconds)
@@ -228,6 +242,69 @@ func TestNodeSpawning(t *testing.T) {
 	}
 	if field.Counter >= field.Cap {
 		t.Errorf("field counter should have reset after spawn, got %.2f / %.2f", field.Counter, field.Cap)
+	}
+}
+
+// TestNewWorkerClaimsBestRouteNode verifies that when a worker is assigned it
+// takes the free node with the shortest route to the nearest camp, not simply
+// the node closest to its own position.
+func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+
+	// Far node: 2 rad from camp.
+	farNode := newNode(w, KindWood, normAngle(campAngle+2.0))
+	farNode.Size = 1.0
+	// Close node: 0.2 rad from camp.
+	closeNode := newNode(w, KindWood, normAngle(campAngle+0.2))
+	closeNode.Size = 1.0
+	w.Nodes = []*ResourceNode{farNode, closeNode}
+
+	addWorker(w)
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != closeNode.ID {
+		t.Errorf("expected worker to claim close node (ID %d), got node ID %d",
+			closeNode.ID, w.Workers[0].NodeID)
+	}
+}
+
+// TestNewNodeTriggersReassignment verifies that when a newly spawned node has a
+// shorter route than the active worker with the longest route, that worker switches.
+func TestNewNodeTriggersReassignment(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+
+	farNode := newNode(w, KindWood, normAngle(campAngle+2.0))
+	farNode.Size = 1.0
+	w.Nodes = []*ResourceNode{farNode}
+
+	addWorker(w)
+	Step(w, dt) // assign worker to farNode
+
+	if w.Workers[0].NodeID != farNode.ID {
+		t.Fatalf("setup: expected worker on far node")
+	}
+
+	// Spawn a closer node and trigger reassignment.
+	closeNode := newNode(w, KindWood, normAngle(campAngle+0.2))
+	closeNode.Size = 1.0
+	w.Nodes = append(w.Nodes, closeNode)
+	maybeReassignToNewNode(w, closeNode)
+
+	if w.Workers[0].NodeID != closeNode.ID {
+		t.Errorf("expected worker to switch to close node")
+	}
+	if farNode.OwnerID != -1 {
+		t.Errorf("expected far node to be freed after reassignment")
 	}
 }
 

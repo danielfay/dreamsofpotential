@@ -11,8 +11,8 @@ func Step(w *World, dt float64) {
 	}
 }
 
-// assignNodes pairs idle workers with the nearest unclaimed node.
-// Workers are kept idle when no camps exist (nowhere to deliver).
+// assignNodes pairs each idle worker with the free node that has the shortest
+// route to its nearest camp. Workers stay idle when no camps exist.
 func assignNodes(w *World) {
 	if len(w.Buildings) == 0 {
 		return
@@ -21,7 +21,7 @@ func assignNodes(w *World) {
 		if wk.NodeID != -1 {
 			continue
 		}
-		node := nearestFreeNode(w, wk)
+		node := bestFreeNode(w)
 		if node == nil {
 			continue
 		}
@@ -72,17 +72,26 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 	}
 }
 
-// nearestFreeNode returns the unclaimed node closest by arc distance to wk's angle.
-func nearestFreeNode(w *World, wk *Worker) *ResourceNode {
+// routeLen returns the arc distance from node to its nearest camp.
+// Returns math.MaxFloat64 if no camps exist.
+func routeLen(w *World, node *ResourceNode) float64 {
+	camp := nearestCamp(w, node)
+	if camp == nil {
+		return math.MaxFloat64
+	}
+	return math.Abs(normAngle(node.Angle-camp.Angle)) * w.Planet.Radius
+}
+
+// bestFreeNode returns the unclaimed node with the shortest route to its nearest camp.
+func bestFreeNode(w *World) *ResourceNode {
 	var best *ResourceNode
-	bestDist := math.MaxFloat64
+	bestRoute := math.MaxFloat64
 	for _, n := range w.Nodes {
 		if n.OwnerID != -1 {
 			continue
 		}
-		dist := math.Abs(normAngle(n.Angle-wk.Angle)) * w.Planet.Radius
-		if dist < bestDist {
-			bestDist = dist
+		if r := routeLen(w, n); r < bestRoute {
+			bestRoute = r
 			best = n
 		}
 	}
@@ -115,7 +124,8 @@ func findNode(w *World, id int) *ResourceNode {
 }
 
 // depositToField increments the field counter for kind and spawns a new node
-// each time the counter meets or exceeds the cap.
+// each time the counter meets or exceeds the cap, then offers the new node
+// to the active worker with the longest route.
 func depositToField(w *World, kind ResourceKind, amount float64) {
 	for _, f := range w.Planet.Fields {
 		if f.Kind != kind {
@@ -126,9 +136,48 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 			f.Counter -= f.Cap
 			f.Cap *= nodeCapGrowth
 			spawnNode(w, f)
+			maybeReassignToNewNode(w, w.Nodes[len(w.Nodes)-1])
 		}
 		return
 	}
+}
+
+// maybeReassignToNewNode switches the active worker with the longest route to
+// newNode if newNode's route is shorter. The freed old node becomes available
+// for other idle workers to claim.
+func maybeReassignToNewNode(w *World, newNode *ResourceNode) {
+	newRoute := routeLen(w, newNode)
+	if newRoute == math.MaxFloat64 {
+		return // no camps yet; leave node free
+	}
+
+	var worst *Worker
+	worstRoute := -1.0
+	for _, wk := range w.Workers {
+		if wk.NodeID == -1 {
+			continue
+		}
+		node := findNode(w, wk.NodeID)
+		if node == nil {
+			continue
+		}
+		if r := routeLen(w, node); r > worstRoute {
+			worstRoute = r
+			worst = wk
+		}
+	}
+
+	if worst == nil || newRoute >= worstRoute {
+		return // new node isn't an improvement; leave it free
+	}
+
+	// Swap the worst worker onto the new node.
+	if old := findNode(w, worst.NodeID); old != nil {
+		old.OwnerID = -1
+	}
+	newNode.OwnerID = worst.ID
+	worst.NodeID = newNode.ID
+	worst.State = StateToForest
 }
 
 // EstimateRate returns the analytic resource/sec for all active workers.
@@ -142,11 +191,10 @@ func EstimateRate(w *World) float64 {
 		if node == nil {
 			continue
 		}
-		camp := nearestCamp(w, node)
-		if camp == nil {
+		dist := routeLen(w, node)
+		if dist == math.MaxFloat64 {
 			continue
 		}
-		dist := math.Abs(normAngle(node.Angle-camp.Angle)) * w.Planet.Radius
 		tripTime := loadTime + unloadTime + 2*dist/workerSpeed
 		rate += (loadAmount * node.Size) / tripTime
 	}
