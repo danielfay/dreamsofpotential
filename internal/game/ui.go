@@ -33,7 +33,13 @@ func (h *HUD) pointInHUD(sx, sy int) bool {
 
 // Refresh updates all HUD labels and button disabled-states to match the world.
 func (h *HUD) Refresh(w *World, placing bool) {
-	h.woodText.Label = fmt.Sprintf("%.0f (+%.2f/s)", w.Economy.Wood, EstimateRate(w))
+	freeNodes := 0
+	for _, n := range w.Nodes {
+		if n.OwnerID == -1 {
+			freeNodes++
+		}
+	}
+	h.woodText.Label = fmt.Sprintf("%.0f (%.2f/s  %d free)", w.Economy.Wood, EstimateRate(w), freeNodes)
 
 	idle := 0
 	for _, wk := range w.Workers {
