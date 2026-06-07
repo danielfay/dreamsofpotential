@@ -22,29 +22,31 @@ func (g *Game) handleInput() {
 	}
 
 	// Confirm placement on left-click outside the HUD.
+	// Any click direction is valid — it snaps to the rim.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
 		if g.hud.pointInHUD(mx, my) {
 			return // click was on the HUD panel; ignore
 		}
 		wp := screenToWorld(mx, my)
-		if !onDisc(wp, g.world.Planet) {
-			return // clicked off the planet; ignore (ghost turns red as feedback)
-		}
-		placeCamp(g.world, wp)
+		theta := g.world.Planet.AngleOf(wp)
+		placeCamp(g.world, theta)
 		g.placing = false
 	}
 }
 
-// placeCamp deducts the camp cost and appends a new Building at world position pos.
-func placeCamp(w *World, pos Vec) {
+// placeCamp deducts the camp cost and appends a new Building at the given rim angle.
+func placeCamp(w *World, angle float64) {
 	cost := CampCost(w)
 	w.Economy.Wood -= cost
 	w.Economy.CampsBought++
-	w.Buildings = append(w.Buildings, &Building{Pos: pos})
+	w.Buildings = append(w.Buildings, &Building{
+		Angle: angle,
+		Pos:   w.Planet.RimPoint(angle),
+	})
 }
 
-// ghostPos returns the current world-space cursor position when in placement mode,
+// ghostPos returns the snapped rim position of the cursor when in placement mode,
 // or nil when not placing. Used by render.go to draw the preview building.
 func (g *Game) ghostPos() *Vec {
 	if !g.placing {
@@ -52,5 +54,6 @@ func (g *Game) ghostPos() *Vec {
 	}
 	mx, my := ebiten.CursorPosition()
 	wp := screenToWorld(mx, my)
-	return &wp
+	snapped := g.world.Planet.RimPoint(g.world.Planet.AngleOf(wp))
+	return &snapped
 }

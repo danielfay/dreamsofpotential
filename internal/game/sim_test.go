@@ -6,14 +6,13 @@ import (
 )
 
 // newTestWorld builds a minimal world with one camp and no workers.
-// campDist is the Euclidean distance from the camp to the forest.
+// campDist is the arc distance along the rim from the camp to the forest.
 func newTestWorld(campDist float64) *World {
 	w := NewWorld()
-	campPos := Vec{
-		X: w.Forest.Pos.X,
-		Y: w.Forest.Pos.Y + campDist,
-	}
-	camp := &Building{Pos: campPos}
+	forestAngle := w.Planet.AngleOf(w.Forest.Pos)
+	dTheta := campDist / w.Planet.Radius
+	campAngle := normAngle(forestAngle + dTheta)
+	camp := &Building{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}
 	w.Buildings = append(w.Buildings, camp)
 	return w
 }
@@ -23,6 +22,7 @@ func addWorker(w *World) {
 	camp := w.Buildings[0]
 	camp.Workers = append(camp.Workers, &Worker{
 		Pos:   camp.Pos,
+		Angle: camp.Angle,
 		State: StateToForest,
 		Home:  camp,
 	})
@@ -59,9 +59,6 @@ func TestCloserCampProducesMore(t *testing.T) {
 	runSim(near, 30)
 	runSim(far, 30)
 
-	// Subtract starting wood to get net production.
-	nearProduced := near.Economy.Wood - near.Economy.Wood // recalculate below
-	_ = nearProduced
 	initialWood := NewWorld().Economy.Wood
 	nearNet := near.Economy.Wood - initialWood
 	farNet := far.Economy.Wood - initialWood
@@ -114,5 +111,56 @@ func TestMoreWorkersProduceMoreWood(t *testing.T) {
 
 	if twoNet <= oneNet {
 		t.Errorf("two workers (%.2f) should produce more than one (%.2f)", twoNet, oneNet)
+	}
+}
+
+// TestSnapToRim verifies Planet.RimPoint and Planet.AngleOf round-trip correctly.
+func TestSnapToRim(t *testing.T) {
+	w := NewWorld()
+	p := w.Planet
+
+	// Forest must be on the rim.
+	forestDist := w.Forest.Pos.Dist(p.Center)
+	if math.Abs(forestDist-p.Radius) > 1e-9 {
+		t.Errorf("forest is %.6f from center, want %.6f (on the rim)", forestDist, p.Radius)
+	}
+
+	// RimPoint(AngleOf(p)) should return a point on the rim in the same direction.
+	tests := []Vec{
+		{X: 200, Y: 80},  // interior point
+		{X: 300, Y: 200}, // exterior point
+		{X: 160, Y: 30},  // already on the rim (top)
+	}
+	for _, pt := range tests {
+		theta := p.AngleOf(pt)
+		rim := p.RimPoint(theta)
+		dist := rim.Dist(p.Center)
+		if math.Abs(dist-p.Radius) > 1e-9 {
+			t.Errorf("RimPoint(%v): distance from center %.9f, want %.9f", pt, dist, p.Radius)
+		}
+		// Same direction from center.
+		wantTheta := p.AngleOf(rim)
+		if math.Abs(normAngle(wantTheta-theta)) > 1e-9 {
+			t.Errorf("RimPoint(%v): angle %.9f round-trips to %.9f", pt, theta, wantTheta)
+		}
+	}
+}
+
+// TestWorkerStaysOnRim runs the sim and asserts workers never leave the surface.
+func TestWorkerStaysOnRim(t *testing.T) {
+	w := newTestWorld(45)
+	addWorker(w)
+
+	p := w.Planet
+	ticks := int(math.Round(10.0 / dt))
+	for i := 0; i < ticks; i++ {
+		Step(w, dt)
+		for _, wk := range w.Buildings[0].Workers {
+			dist := wk.Pos.Dist(p.Center)
+			if math.Abs(dist-p.Radius) > 1e-6 {
+				t.Errorf("tick %d: worker %.6f from center, want %.6f", i, dist, p.Radius)
+				return
+			}
+		}
 	}
 }

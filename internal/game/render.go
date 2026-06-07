@@ -26,25 +26,16 @@ func screenToWorld(sx, sy int) Vec {
 	return Vec{X: float64(sx) / scaleX, Y: float64(sy) / scaleY}
 }
 
-// onDisc reports whether world point p lies inside (or on the edge of) the
-// planet disc. Uses squared distance to avoid a sqrt.
-func onDisc(p Vec, planet Planet) bool {
-	dx, dy := p.X-planet.Center.X, p.Y-planet.Center.Y
-	r := planet.Radius
-	return dx*dx+dy*dy <= r*r
-}
-
 // palette
 var (
-	colBackground = color.RGBA{R: 10, G: 10, B: 20, A: 255}  // near-black space
-	colPlanet     = color.RGBA{R: 60, G: 100, B: 60, A: 255}  // muted green
-	colPlanetHi   = color.RGBA{R: 80, G: 130, B: 80, A: 255}  // lighter highlight arc
-	colForest     = color.RGBA{R: 30, G: 140, B: 50, A: 255}  // bright green cluster
-	colBuilding   = color.RGBA{R: 140, G: 90, B: 50, A: 255}  // brown camp
+	colBackground  = color.RGBA{R: 10, G: 10, B: 20, A: 255}   // near-black space
+	colPlanet      = color.RGBA{R: 60, G: 100, B: 60, A: 255}   // muted green
+	colPlanetHi    = color.RGBA{R: 80, G: 130, B: 80, A: 255}   // lighter highlight arc
+	colForest      = color.RGBA{R: 30, G: 140, B: 50, A: 255}   // bright green cluster
+	colBuilding    = color.RGBA{R: 140, G: 90, B: 50, A: 255}   // brown camp
 	colWorkerEmpty = color.RGBA{R: 220, G: 200, B: 150, A: 255} // pale tan
 	colWorkerLaden = color.RGBA{R: 255, G: 240, B: 80, A: 255}  // bright yellow
-	colGhostOk    = color.RGBA{R: 200, G: 200, B: 255, A: 160}  // translucent blue — valid placement
-	colGhostBad   = color.RGBA{R: 255, G: 80, B: 80, A: 160}    // translucent red — off disc
+	colGhostOk     = color.RGBA{R: 200, G: 200, B: 255, A: 160} // translucent blue — valid placement
 )
 
 // DrawWorld renders the complete world state onto the low-res scene image.
@@ -91,12 +82,8 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 
 	// --- ghost building during placement mode ---
 	if ghostPos != nil {
-		col := colGhostOk
-		if !onDisc(*ghostPos, w.Planet) {
-			col = colGhostBad
-		}
 		vector.DrawFilledRect(scene,
 			float32(ghostPos.X)-3, float32(ghostPos.Y)-3, 7, 7,
-			col, false)
+			colGhostOk, false)
 	}
 }

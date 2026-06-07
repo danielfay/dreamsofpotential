@@ -3,14 +3,15 @@ package game
 import "math"
 
 // Step advances the simulation by dt seconds (called at 60 TPS, dt = 1/60).
-// Each worker moves toward its current target, dwells to load/unload, and
-// deposits wood into the economy when it completes an unload cycle.
+// Each worker moves along the planet rim toward its current target, dwells to
+// load/unload, and deposits wood into the economy when it completes an unload cycle.
 func Step(w *World, dt float64) {
+	forestAngle := w.Planet.AngleOf(w.Forest.Pos)
 	for _, b := range w.Buildings {
 		for _, wk := range b.Workers {
 			switch wk.State {
 			case StateToForest:
-				if moveToward(&wk.Pos, w.Forest.Pos, workerSpeed*dt) {
+				if moveAlongArc(&wk.Angle, forestAngle, w.Planet.Radius, workerSpeed*dt) {
 					wk.State = StateLoading
 					wk.Timer = loadTime
 				}
@@ -21,7 +22,7 @@ func Step(w *World, dt float64) {
 					wk.State = StateToBuilding
 				}
 			case StateToBuilding:
-				if moveToward(&wk.Pos, b.Pos, workerSpeed*dt) {
+				if moveAlongArc(&wk.Angle, b.Angle, w.Planet.Radius, workerSpeed*dt) {
 					wk.State = StateUnloading
 					wk.Timer = unloadTime
 				}
@@ -33,20 +34,24 @@ func Step(w *World, dt float64) {
 					wk.State = StateToForest
 				}
 			}
+			wk.Pos = w.Planet.RimPoint(wk.Angle)
 		}
 	}
 }
 
-// moveToward advances pos toward target by at most step world-units.
-// Returns true and snaps pos to target when the remaining distance is ≤ step.
-func moveToward(pos *Vec, target Vec, step float64) bool {
-	dx, dy := target.X-pos.X, target.Y-pos.Y
-	dist := math.Sqrt(dx*dx + dy*dy)
-	if dist <= step {
-		*pos = target
+// moveAlongArc advances *angle toward targetAngle along the rim by at most
+// step world-units of arc length. Returns true and snaps when within reach.
+func moveAlongArc(angle *float64, targetAngle, radius, step float64) bool {
+	delta := normAngle(targetAngle - *angle)
+	arcRemaining := math.Abs(delta) * radius
+	if arcRemaining <= step {
+		*angle = targetAngle
 		return true
 	}
-	pos.X += dx / dist * step
-	pos.Y += dy / dist * step
+	stepAngle := step / radius
+	if delta < 0 {
+		stepAngle = -stepAngle
+	}
+	*angle = normAngle(*angle + stepAngle)
 	return false
 }
