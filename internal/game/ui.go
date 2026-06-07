@@ -13,16 +13,14 @@ import (
 )
 
 // HUD holds the live EbitenUI widgets for the resource display and action buttons.
-// Widget pointers are retained so Refresh can update them every frame.
 type HUD struct {
-	// face is stored in the struct so &hud.face is a stable heap pointer
-	// (required because EbitenUI buttons store *text.Face).
 	face text.Face
 
 	woodText     *widget.Text
+	workerText   *widget.Text
 	buyWorkerBtn *widget.Button
 	buildCampBtn *widget.Button
-	panel        *widget.Container // top-left panel; bounds used by pointInHUD
+	panel        *widget.Container
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside the
@@ -33,9 +31,16 @@ func (h *HUD) pointInHUD(sx, sy int) bool {
 }
 
 // Refresh updates all HUD labels and button disabled-states to match the world.
-// Call this every frame from Game.Update(), after ui.Update() and sim.Step().
 func (h *HUD) Refresh(w *World, placing bool) {
 	h.woodText.Label = fmt.Sprintf("%.0f (+%.2f/s)", w.Economy.Wood, EstimateRate(w))
+
+	idle := 0
+	for _, wk := range w.Workers {
+		if wk.NodeID == -1 {
+			idle++
+		}
+	}
+	h.workerText.Label = fmt.Sprintf("Workers: %d (%d idle)", len(w.Workers), idle)
 
 	wc := WorkerCost(w)
 	h.buyWorkerBtn.SetText(fmt.Sprintf("Buy worker (%.0f)", wc))
@@ -47,7 +52,6 @@ func (h *HUD) Refresh(w *World, placing bool) {
 }
 
 // buildHUD constructs the EbitenUI tree and wires up button handlers.
-// It returns the HUD (for per-frame Refresh) and the root ebitenui.UI.
 func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 	src, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
 	if err != nil {
@@ -56,9 +60,8 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 
 	hud := &HUD{}
 	hud.face = &text.GoTextFace{Source: src, Size: 16}
-	face := &hud.face // stable pointer into the heap-allocated HUD struct
+	face := &hud.face
 
-	// Shared button styling.
 	btnImg := func() *widget.ButtonImage {
 		return &widget.ButtonImage{
 			Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 80, G: 120, B: 200, A: 255}),
@@ -85,6 +88,17 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 
+	// --- worker count ---
+	hud.workerText = widget.NewText(
+		widget.TextOpts.Text("Workers: 0 (0 idle)", face, color.NRGBA{R: 200, G: 200, B: 200, A: 255}),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.ToolTip(widget.NewTextToolTip(
+				"active vs idle workers", face, color.White,
+				eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 40, B: 40, A: 220}),
+			)),
+		),
+	)
+
 	// --- buy worker button ---
 	hud.buyWorkerBtn = widget.NewButton(
 		widget.ButtonOpts.Image(btnImg()),
@@ -104,11 +118,14 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 			g.world.Economy.Wood -= cost
 			g.world.Economy.WorkersBought++
 			camp := g.world.Buildings[0]
-			camp.Workers = append(camp.Workers, &Worker{
-				Pos:   camp.Pos,
-				Angle: camp.Angle,
-				State: StateToForest,
-				Home:  camp,
+			id := g.world.NextWorkerID
+			g.world.NextWorkerID++
+			g.world.Workers = append(g.world.Workers, &Worker{
+				ID:     id,
+				Pos:    camp.Pos,
+				Angle:  camp.Angle,
+				State:  StateToForest,
+				NodeID: -1,
 			})
 		}),
 	)
@@ -144,6 +161,7 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 	hud.panel.AddChild(hud.woodText)
+	hud.panel.AddChild(hud.workerText)
 	hud.panel.AddChild(hud.buyWorkerBtn)
 	hud.panel.AddChild(hud.buildCampBtn)
 
