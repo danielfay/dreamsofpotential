@@ -52,14 +52,30 @@ func TestWoodAccumulates(t *testing.T) {
 	}
 }
 
-// TestCloserCampProducesMore asserts the core spatial mechanic: a camp closer
-// to the nodes yields more wood over equal time. Both camps are placed outside
-// the forest arc so their distances from nodes are clearly differentiated.
+// newWorldSingleNode returns a world with one node of Size 1.0 at nodeAngle and
+// one camp at campDist arc-units away. Used to test trip-distance effects
+// independently of random node sizes and positions.
+func newWorldSingleNode(nodeAngle, campDist float64) *World {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	node := newNode(w, KindWood, nodeAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
+	campAngle := normAngle(nodeAngle + campDist/w.Planet.Radius)
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	return w
+}
+
+// TestCloserCampProducesMore asserts the core spatial mechanic: shorter node-to-camp
+// arc distance yields more wood over equal time.
 func TestCloserCampProducesMore(t *testing.T) {
-	near := newTestWorld(100)
+	const nodeAngle = -math.Pi / 2 // fixed node position
+
+	near := newWorldSingleNode(nodeAngle, 30)
 	addWorker(near)
 
-	far := newTestWorld(200)
+	far := newWorldSingleNode(nodeAngle, 120)
 	addWorker(far)
 
 	runSim(near, 60)
@@ -215,24 +231,26 @@ func TestNodeSpawning(t *testing.T) {
 	}
 }
 
-// TestNearestCampDelivery verifies that nearestCamp picks the camp closest to
-// a given node's rim angle, not the one closest to the worker's current position.
+// TestNearestCampDelivery verifies that nearestCamp picks the camp with the
+// smallest arc distance to the node, not to the worker.
 func TestNearestCampDelivery(t *testing.T) {
 	w := NewWorld()
 
-	field := w.Planet.Fields[0]
-	// Place two camps: one just outside the right edge of the node arc, one on
-	// the opposite side of the planet.
-	nearAngle := normAngle(field.CenterAngle + field.HalfArc + 0.1)
-	farAngle := normAngle(field.CenterAngle + math.Pi)
+	// Create a single node at a known angle.
+	nodeAngle := 0.0 // 3 o'clock
+	node := newNode(w, KindWood, nodeAngle)
+	node.Size = 1.0
+
+	// Near camp: 10 arc-units from the node.
+	nearAngle := normAngle(nodeAngle + 10.0/w.Planet.Radius)
+	// Far camp: 150 arc-units from the node.
+	farAngle := normAngle(nodeAngle + 150.0/w.Planet.Radius)
 
 	nearCamp := &Building{Angle: nearAngle, Pos: w.Planet.RimPoint(nearAngle)}
 	farCamp := &Building{Angle: farAngle, Pos: w.Planet.RimPoint(farAngle)}
 	w.Buildings = append(w.Buildings, nearCamp, farCamp)
 
-	// The rightmost node (at CenterAngle+HalfArc) should be closest to nearCamp.
-	rightNode := w.Nodes[len(w.Nodes)-1] // seeded at CenterAngle+HalfArc
-	got := nearestCamp(w, rightNode)
+	got := nearestCamp(w, node)
 	if got != nearCamp {
 		t.Errorf("expected nearestCamp to return nearCamp; got farCamp")
 	}

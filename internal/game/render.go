@@ -27,10 +27,10 @@ func screenToWorld(sx, sy int) Vec {
 // palette
 var (
 	colBackground  = color.RGBA{R: 10, G: 10, B: 20, A: 255}
-	colPlanet      = color.RGBA{R: 60, G: 100, B: 60, A: 255}
-	colPlanetHi    = color.RGBA{R: 80, G: 130, B: 80, A: 255}
-	colNodeFree    = color.RGBA{R: 30, G: 140, B: 50, A: 255}
-	colNodeClaimed = color.RGBA{R: 20, G: 95, B: 35, A: 255}
+	colPlanetBody  = color.RGBA{R: 5, G: 5, B: 10, A: 255}   // near-black interior
+	colPlanetEdge  = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
+	colNodeFree    = color.RGBA{R: 40, G: 160, B: 60, A: 255}
+	colNodeClaimed = color.RGBA{R: 20, G: 100, B: 35, A: 255}
 	colBuilding    = color.RGBA{R: 140, G: 90, B: 50, A: 255}
 	colWorkerEmpty = color.RGBA{R: 220, G: 200, B: 150, A: 255}
 	colWorkerLaden = color.RGBA{R: 255, G: 240, B: 80, A: 255}
@@ -53,29 +53,34 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	r := float32(w.Planet.Radius)
 
-	// planet disc
-	vector.FillCircle(scene, cx, cy, r, colPlanet, false)
-	vector.FillCircle(scene, cx-r*0.15, cy-r*0.15, r*0.75, colPlanetHi, false)
+	// planet: green outer ring then black body on top
+	const rimWidth = float32(4)
+	vector.FillCircle(scene, cx, cy, r, colPlanetEdge, false)
+	vector.FillCircle(scene, cx, cy, r-rimWidth, colPlanetBody, false)
 
-	// resource field interior fill — core→edge wedge showing progress to next node
+	// resource field interior fill — core→edge showing progress to next node
 	for _, f := range w.Planet.Fields {
 		if f.Counter <= 0 {
 			continue
 		}
-		fillR := r * float32(f.Counter/f.Cap)
-		drawFilledSector(scene, cx, cy, fillR,
-			f.CenterAngle-f.HalfArc, f.CenterAngle+f.HalfArc,
-			kindFillColor(f.Kind))
+		fillR := (r - rimWidth) * float32(f.Counter/f.Cap)
+		col := kindFillColor(f.Kind)
+		if math.Abs(f.HalfArc-math.Pi) < 1e-9 {
+			// Full surface: a simple filled circle is correct and fast.
+			vector.FillCircle(scene, cx, cy, fillR, col, false)
+		} else {
+			drawFilledSector(scene, cx, cy, fillR,
+				f.CenterAngle-f.HalfArc, f.CenterAngle+f.HalfArc, col)
+		}
 	}
 
-	// resource nodes
+	// resource nodes — pine-tree shape oriented inward along the rim normal
 	for _, n := range w.Nodes {
 		col := colNodeFree
 		if n.OwnerID != -1 {
 			col = colNodeClaimed
 		}
-		vector.FillRect(scene,
-			float32(n.Pos.X)-2, float32(n.Pos.Y)-2, 5, 5, col, false)
+		drawPineTree(scene, n, col)
 	}
 
 	// buildings
@@ -101,13 +106,59 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 	}
 }
 
+// drawPineTree draws a 3-layer pine tree at n.Pos oriented inward along the
+// planet surface normal. Layer widths and spacing scale with n.Size.
+func drawPineTree(scene *ebiten.Image, n *ResourceNode, col color.RGBA) {
+	s := float32(n.Size)
+
+	// Inward normal (toward planet center) and tangent (along rim).
+	ix := float32(-math.Cos(n.Angle))
+	iy := float32(-math.Sin(n.Angle))
+	tx := float32(-math.Sin(n.Angle))
+	ty := float32(math.Cos(n.Angle))
+
+	cx, cy := float32(n.Pos.X), float32(n.Pos.Y)
+
+	// Layer definitions: (half-width, inward offset of layer center).
+	layers := [3][2]float32{
+		{4 * s, 1.5},  // bottom — widest, at the rim
+		{2.5 * s, 5},  // middle
+		{1.5 * s, 8.5}, // top — narrowest, farthest inward
+	}
+	const halfH = float32(1.5) // half-height of each layer (3px tall)
+
+	for _, l := range layers {
+		hw, offset := l[0], l[1]
+		// Center of this layer.
+		lx := cx + ix*offset
+		ly := cy + iy*offset
+		// Four corners of the oriented rectangle.
+		drawOrientedRect(scene, lx, ly, tx, ty, ix, iy, hw, halfH, col)
+	}
+}
+
+// drawOrientedRect fills an axis-oriented-in-world-space rectangle defined by
+// its center (lx,ly), tangent direction (tx,ty), inward direction (ix,iy),
+// half-width hw along the tangent, and half-height hh along inward.
+func drawOrientedRect(scene *ebiten.Image, lx, ly, tx, ty, ix, iy, hw, hh float32, col color.RGBA) {
+	var path vector.Path
+	path.MoveTo(lx+tx*hw+ix*hh, ly+ty*hw+iy*hh)
+	path.LineTo(lx-tx*hw+ix*hh, ly-ty*hw+iy*hh)
+	path.LineTo(lx-tx*hw-ix*hh, ly-ty*hw-iy*hh)
+	path.LineTo(lx+tx*hw-ix*hh, ly+ty*hw-iy*hh)
+	path.Close()
+	drawOp := &vector.DrawPathOptions{}
+	drawOp.ColorScale.ScaleWithColor(col)
+	vector.FillPath(scene, &path, nil, drawOp)
+}
+
 // drawFilledSector draws a filled wedge from (cx,cy) spanning startAngle..endAngle
 // out to radius fillR, in the given colour.
 func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, endAngle float64, col color.RGBA) {
 	if fillR <= 0 {
 		return
 	}
-	const steps = 16
+	const steps = 32
 	var path vector.Path
 	path.MoveTo(cx, cy)
 	for i := 0; i <= steps; i++ {

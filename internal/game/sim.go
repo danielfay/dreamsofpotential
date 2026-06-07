@@ -49,7 +49,7 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 	case StateLoading:
 		wk.Timer -= dt
 		if wk.Timer <= 0 {
-			wk.Carried = loadAmount
+			wk.Carried = loadAmount * node.Size
 			wk.State = StateToBuilding
 		}
 	case StateToBuilding:
@@ -148,7 +148,7 @@ func EstimateRate(w *World) float64 {
 		}
 		dist := math.Abs(normAngle(node.Angle-camp.Angle)) * w.Planet.Radius
 		tripTime := loadTime + unloadTime + 2*dist/workerSpeed
-		rate += loadAmount / tripTime
+		rate += (loadAmount * node.Size) / tripTime
 	}
 	return rate
 }

@@ -1,6 +1,9 @@
 package game
 
-import "math"
+import (
+	"math"
+	"math/rand"
+)
 
 // Vec is a 2D position in low-res world space (320×240 virtual pixels).
 type Vec struct{ X, Y float64 }
@@ -37,12 +40,14 @@ const (
 
 // ResourceNode is a single harvestable point on the planet rim.
 // OwnerID is the worker ID that has claimed it, or -1 if free.
+// Size scales both the visual and the load carried per trip (range ~0.6–1.4).
 type ResourceNode struct {
 	ID      int
 	Kind    ResourceKind
 	Pos     Vec
 	Angle   float64
 	OwnerID int
+	Size    float64
 }
 
 // Worker is a labourer that claims a node and delivers to the nearest camp.
@@ -147,13 +152,14 @@ const (
 	loadTime         = 0.5  // seconds to load at the node
 	unloadTime       = 0.3  // seconds to unload at the camp
 	loadAmount       = 1.0  // resource units carried per trip
-	nodeSpawnBaseCap = 20.0 // deliveries needed for the first new node
-	nodeCapGrowth    = 1.1  // cap multiplier each time a node spawns
-	forestHalfArc    = 0.6  // radians; half-width of the wood node arc
+	nodeSpawnBaseCap = 20.0      // deliveries needed for the first new node
+	nodeCapGrowth    = 1.5      // cap multiplier each time a node spawns
+	forestHalfArc    = math.Pi  // full surface coverage for wood (100% composition)
 	startingNodes    = 5
 )
 
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
+// Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
 func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 	id := w.NextNodeID
 	w.NextNodeID++
@@ -163,6 +169,7 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 		Angle:   angle,
 		Pos:     w.Planet.RimPoint(angle),
 		OwnerID: -1,
+		Size:    0.6 + rand.Float64()*0.8,
 	}
 }
 
@@ -206,8 +213,10 @@ func NewWorld() *World {
 	}
 
 	// Seed starting nodes spread evenly across the field arc.
+	// Use i/n (open interval) so the first and last nodes don't overlap
+	// when the arc spans a full circle.
 	for i := 0; i < startingNodes; i++ {
-		frac := float64(i) / float64(startingNodes-1)
+		frac := float64(i) / float64(startingNodes)
 		angle := normAngle(field.CenterAngle - field.HalfArc + 2*field.HalfArc*frac)
 		w.Nodes = append(w.Nodes, newNode(w, KindWood, angle))
 	}
