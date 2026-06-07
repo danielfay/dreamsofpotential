@@ -20,6 +20,7 @@ type HUD struct {
 	workerText   *widget.Text
 	buyWorkerBtn *widget.Button
 	buildCampBtn *widget.Button
+	resetBtn     *widget.Button // TODO: remove before ship
 	panel        *widget.Container
 }
 
@@ -130,6 +131,25 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 		}),
 	)
 
+	// --- reset button (temporary — for testing only) ---
+	hud.resetBtn = widget.NewButton(
+		widget.ButtonOpts.Image(&widget.ButtonImage{
+			Idle:    eimage.NewNineSliceColor(color.NRGBA{R: 160, G: 40, B: 40, A: 255}),
+			Hover:   eimage.NewNineSliceColor(color.NRGBA{R: 190, G: 60, B: 60, A: 255}),
+			Pressed: eimage.NewNineSliceColor(color.NRGBA{R: 130, G: 30, B: 30, A: 255}),
+		}),
+		widget.ButtonOpts.Text("New Game", face, &widget.ButtonTextColor{
+			Idle:  color.White,
+			Hover: color.White,
+		}),
+		widget.ButtonOpts.TextPadding(padding),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			ClearSave()
+			g.world = NewWorld()
+			g.placing = false
+		}),
+	)
+
 	// --- build camp button ---
 	hud.buildCampBtn = widget.NewButton(
 		widget.ButtonOpts.Image(btnImg()),
@@ -164,6 +184,7 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 	hud.panel.AddChild(hud.workerText)
 	hud.panel.AddChild(hud.buyWorkerBtn)
 	hud.panel.AddChild(hud.buildCampBtn)
+	hud.panel.AddChild(hud.resetBtn)
 
 	root := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),

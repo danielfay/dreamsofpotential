@@ -37,6 +37,15 @@ func Save(w *World) error {
 	return os.Rename(tmp, path)
 }
 
+// ClearSave deletes the save file. Errors (e.g. file already missing) are ignored.
+func ClearSave() {
+	path, err := savePath()
+	if err != nil {
+		return
+	}
+	_ = os.Remove(path)
+}
+
 // Load deserialises the save file and returns the world.
 // Returns os.ErrNotExist (wrapped) if no save file exists or if the save is
 // from a different version (treated as missing so the caller starts fresh).
