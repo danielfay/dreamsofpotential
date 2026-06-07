@@ -29,7 +29,7 @@ type Worker struct {
 	State   WorkerState
 	Carried float64  // wood units currently held
 	Timer   float64  // seconds remaining in Loading/Unloading dwell
-	Home    *Building
+	Home    *Building `json:"-"` // back-pointer; excluded from JSON to avoid cycle, rebuilt on Load
 }
 
 // Building is a player-placed logging camp on the planet rim.

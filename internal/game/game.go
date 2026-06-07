@@ -1,6 +1,8 @@
 package game
 
 import (
+	"os"
+
 	"github.com/ebitenui/ebitenui"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -17,9 +19,14 @@ type Game struct {
 }
 
 // New constructs and returns a ready-to-run Game.
+// It loads a saved world from disk if one exists, otherwise starts fresh.
 func New() (*Game, error) {
+	w, err := Load()
+	if err != nil {
+		w = NewWorld()
+	}
 	g := &Game{
-		world: NewWorld(),
+		world: w,
 		scene: ebiten.NewImage(virtW, virtH),
 	}
 	hud, ui, err := buildHUD(g)
@@ -32,6 +39,10 @@ func New() (*Game, error) {
 }
 
 func (g *Game) Update() error {
+	if ebiten.IsWindowBeingClosed() {
+		_ = Save(g.world)
+		os.Exit(0)
+	}
 	g.ui.Update()
 	Step(g.world, dt)
 	g.hud.Refresh(g.world, g.placing)
