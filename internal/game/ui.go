@@ -47,7 +47,7 @@ func (h *HUD) Refresh(w *World, placing bool) {
 			idle++
 		}
 	}
-	h.workerText.Label = fmt.Sprintf("Workers: %d (%d idle)", len(w.Workers), idle)
+	h.workerText.Label = fmt.Sprintf("%d (%d idle)", len(w.Workers), idle)
 
 	wc := WorkerCost(w)
 	h.buyWorkerBtn.SetText(fmt.Sprintf("Buy worker (%.0f)", wc))
@@ -97,7 +97,7 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 
 	// --- worker count ---
 	hud.workerText = widget.NewText(
-		widget.TextOpts.Text("Workers: 0 (0 idle)", face, color.NRGBA{R: 200, G: 200, B: 200, A: 255}),
+		widget.TextOpts.Text("0 (0 idle)", face, color.NRGBA{R: 200, G: 200, B: 200, A: 255}),
 		widget.TextOpts.WidgetOpts(
 			widget.WidgetOpts.ToolTip(widget.NewTextToolTip(
 				"active vs idle workers", face, color.White,
