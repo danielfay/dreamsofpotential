@@ -33,3 +33,6 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+      - name: Build WASM
+        run: GOOS=js GOARCH=wasm go build -o /dev/null .
