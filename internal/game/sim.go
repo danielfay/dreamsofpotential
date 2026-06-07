@@ -11,23 +11,63 @@ func Step(w *World, dt float64) {
 	}
 }
 
-// assignNodes pairs each idle worker with the free node that has the shortest
-// route to its nearest camp. Workers stay idle when no camps exist.
+// assignNodes runs every tick. It first rebalances active workers (swapping
+// any active worker whose route is longer than the best free node's route),
+// then assigns remaining idle workers to the best available free node.
 func assignNodes(w *World) {
 	if len(w.Buildings) == 0 {
 		return
 	}
+	rebalance(w)
 	for _, wk := range w.Workers {
 		if wk.NodeID != -1 {
 			continue
 		}
-		node := bestFreeNode(w)
-		if node == nil {
-			continue
+		if node := bestFreeNode(w); node != nil {
+			wk.NodeID = node.ID
+			wk.State = StateToForest
+			node.OwnerID = wk.ID
 		}
-		wk.NodeID = node.ID
-		wk.State = StateToForest
-		node.OwnerID = wk.ID
+	}
+}
+
+// rebalance iteratively swaps the active worker with the longest route onto the
+// free node with the shortest route, until no further improvement is possible.
+// This converges in O(swaps) iterations and stays stable once balanced.
+func rebalance(w *World) {
+	for {
+		free := bestFreeNode(w)
+		if free == nil {
+			return
+		}
+		freeRoute := routeLen(w, free)
+
+		var worst *Worker
+		worstRoute := -1.0
+		for _, wk := range w.Workers {
+			if wk.NodeID == -1 {
+				continue
+			}
+			node := findNode(w, wk.NodeID)
+			if node == nil {
+				continue
+			}
+			if r := routeLen(w, node); r > worstRoute {
+				worstRoute = r
+				worst = wk
+			}
+		}
+
+		if worst == nil || freeRoute >= worstRoute {
+			return
+		}
+
+		if old := findNode(w, worst.NodeID); old != nil {
+			old.OwnerID = -1
+		}
+		free.OwnerID = worst.ID
+		worst.NodeID = free.ID
+		worst.State = StateToForest
 	}
 }
 
@@ -124,8 +164,8 @@ func findNode(w *World, id int) *ResourceNode {
 }
 
 // depositToField increments the field counter for kind and spawns a new node
-// each time the counter meets or exceeds the cap, then offers the new node
-// to the active worker with the longest route.
+// each time the counter meets or exceeds the cap. Rebalancing happens
+// automatically on the next tick via assignNodes.
 func depositToField(w *World, kind ResourceKind, amount float64) {
 	for _, f := range w.Planet.Fields {
 		if f.Kind != kind {
@@ -136,48 +176,9 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 			f.Counter -= f.Cap
 			f.Cap *= nodeCapGrowth
 			spawnNode(w, f)
-			maybeReassignToNewNode(w, w.Nodes[len(w.Nodes)-1])
 		}
 		return
 	}
-}
-
-// maybeReassignToNewNode switches the active worker with the longest route to
-// newNode if newNode's route is shorter. The freed old node becomes available
-// for other idle workers to claim.
-func maybeReassignToNewNode(w *World, newNode *ResourceNode) {
-	newRoute := routeLen(w, newNode)
-	if newRoute == math.MaxFloat64 {
-		return // no camps yet; leave node free
-	}
-
-	var worst *Worker
-	worstRoute := -1.0
-	for _, wk := range w.Workers {
-		if wk.NodeID == -1 {
-			continue
-		}
-		node := findNode(w, wk.NodeID)
-		if node == nil {
-			continue
-		}
-		if r := routeLen(w, node); r > worstRoute {
-			worstRoute = r
-			worst = wk
-		}
-	}
-
-	if worst == nil || newRoute >= worstRoute {
-		return // new node isn't an improvement; leave it free
-	}
-
-	// Swap the worst worker onto the new node.
-	if old := findNode(w, worst.NodeID); old != nil {
-		old.OwnerID = -1
-	}
-	newNode.OwnerID = worst.ID
-	worst.NodeID = newNode.ID
-	worst.State = StateToForest
 }
 
 // EstimateRate returns the analytic resource/sec for all active workers.

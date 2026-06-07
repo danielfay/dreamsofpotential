@@ -273,8 +273,8 @@ func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
 	}
 }
 
-// TestNewNodeTriggersReassignment verifies that when a newly spawned node has a
-// shorter route than the active worker with the longest route, that worker switches.
+// TestNewNodeTriggersReassignment verifies that when a new node with a shorter route
+// appears, the active worker with the longest route switches to it on the next tick.
 func TestNewNodeTriggersReassignment(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
@@ -294,17 +294,59 @@ func TestNewNodeTriggersReassignment(t *testing.T) {
 		t.Fatalf("setup: expected worker on far node")
 	}
 
-	// Spawn a closer node and trigger reassignment.
+	// Spawn a closer node; rebalance runs automatically on the next tick.
 	closeNode := newNode(w, KindWood, normAngle(campAngle+0.2))
 	closeNode.Size = 1.0
 	w.Nodes = append(w.Nodes, closeNode)
-	maybeReassignToNewNode(w, closeNode)
+	Step(w, dt)
 
 	if w.Workers[0].NodeID != closeNode.ID {
 		t.Errorf("expected worker to switch to close node")
 	}
 	if farNode.OwnerID != -1 {
 		t.Errorf("expected far node to be freed after reassignment")
+	}
+}
+
+// TestCampPlacementTriggersRebalance verifies that placing a new camp near a
+// free node causes a worker on a farther node to switch to it on the next tick.
+func TestCampPlacementTriggersRebalance(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	// Initial camp is far from both nodes.
+	initialCampAngle := 0.0
+	w.Buildings = []*Building{{Angle: initialCampAngle, Pos: w.Planet.RimPoint(initialCampAngle)}}
+
+	// Two nodes: both at similar arc distance from the initial camp.
+	nodeA := newNode(w, KindWood, normAngle(initialCampAngle+0.5))
+	nodeA.Size = 1.0
+	nodeB := newNode(w, KindWood, normAngle(initialCampAngle+3.0))
+	nodeB.Size = 1.0
+	w.Nodes = []*ResourceNode{nodeA, nodeB}
+
+	// One worker: should claim nodeA (shorter route from initial camp).
+	addWorker(w)
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != nodeA.ID {
+		t.Fatalf("setup: expected worker on nodeA (closer to initial camp)")
+	}
+	// nodeB is free.
+
+	// Place a new camp right next to nodeB — its route is now much shorter.
+	newCampAngle := normAngle(nodeB.Angle + 0.05)
+	w.Buildings = append(w.Buildings, &Building{
+		Angle: newCampAngle, Pos: w.Planet.RimPoint(newCampAngle),
+	})
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != nodeB.ID {
+		t.Errorf("expected worker to switch to nodeB after new camp placed nearby")
+	}
+	if nodeA.OwnerID != -1 {
+		t.Errorf("expected nodeA to be freed after worker switched")
 	}
 }
 
