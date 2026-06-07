@@ -28,6 +28,30 @@
 
   <script src="wasm_exec.js"></script>
   <script>
+    // Ebiten requests WebGL2 with { alpha, premultipliedAlpha, stencil }.
+    // Software renderers (SwiftShader, llvmpipe) and some VM drivers accept
+    // WebGL2 but reject that specific attribute combination. Intercept the
+    // call and retry with progressively simpler attributes before giving up.
+    (function () {
+      const orig = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+        if (type === 'webgl2') {
+          const ctx = orig.call(this, type, attrs);
+          if (ctx) return ctx;
+          for (const fallback of [
+            { alpha: true, stencil: false, antialias: false },
+            { antialias: false },
+            {}
+          ]) {
+            const fb = orig.call(this, type, fallback);
+            if (fb) return fb;
+          }
+          return null;
+        }
+        return orig.call(this, type, attrs);
+      };
+    })();
+
     const go = new Go();
     WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
       .then(result => {
