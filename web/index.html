@@ -5,39 +5,40 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dreams of Potential</title>
   <style>
-    body {
+    html, body {
       margin: 0;
-      background: #111;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-    }
-    canvas {
-      display: block;
-      width: 640px;
-      height: 480px;
+      padding: 0;
+      background: #000;
+      width: 100%;
+      height: 100%;
     }
     #loading {
       color: #aaa;
       font-family: monospace;
       font-size: 14px;
-      margin-top: 12px;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
   </style>
 </head>
 <body>
-  <canvas id="canvas" width="640" height="480"></canvas>
   <div id="loading">Loading…</div>
 
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject).then(result => {
-      document.getElementById("loading").style.display = "none";
-      go.run(result.instance);
-    });
+    WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
+      .then(result => {
+        document.getElementById("loading").style.display = "none";
+        // Defer to the next animation frame so the browser's GPU pipeline is
+        // ready before Ebiten attempts to create a WebGL2 context.
+        requestAnimationFrame(() => go.run(result.instance));
+      })
+      .catch(err => {
+        document.getElementById("loading").textContent = "Failed to load: " + err;
+      });
   </script>
 </body>
 </html>
