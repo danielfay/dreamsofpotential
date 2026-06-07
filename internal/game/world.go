@@ -212,12 +212,9 @@ func NewWorld() *World {
 		Economy: Economy{Wood: 50},
 	}
 
-	// Seed starting nodes spread evenly across the field arc.
-	// Use i/n (open interval) so the first and last nodes don't overlap
-	// when the arc spans a full circle.
+	// Seed starting nodes at random positions within the field arc.
 	for i := 0; i < startingNodes; i++ {
-		frac := float64(i) / float64(startingNodes)
-		angle := normAngle(field.CenterAngle - field.HalfArc + 2*field.HalfArc*frac)
+		angle := normAngle(field.CenterAngle - field.HalfArc + 2*field.HalfArc*rand.Float64())
 		w.Nodes = append(w.Nodes, newNode(w, KindWood, angle))
 	}
 

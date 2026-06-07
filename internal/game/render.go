@@ -111,9 +111,9 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 func drawPineTree(scene *ebiten.Image, n *ResourceNode, col color.RGBA) {
 	s := float32(n.Size)
 
-	// Inward normal (toward planet center) and tangent (along rim).
-	ix := float32(-math.Cos(n.Angle))
-	iy := float32(-math.Sin(n.Angle))
+	// Outward normal (away from planet center) and tangent (along rim).
+	ix := float32(math.Cos(n.Angle))
+	iy := float32(math.Sin(n.Angle))
 	tx := float32(-math.Sin(n.Angle))
 	ty := float32(math.Cos(n.Angle))
 
