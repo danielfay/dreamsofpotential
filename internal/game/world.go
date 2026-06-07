@@ -22,17 +22,21 @@ const (
 )
 
 // Worker is a single labourer attached to a Building.
+// Angle is the authoritative position on the rim; Pos is derived from it each tick.
 type Worker struct {
 	Pos     Vec
+	Angle   float64 // radians around planet center, position on the rim
 	State   WorkerState
 	Carried float64  // wood units currently held
 	Timer   float64  // seconds remaining in Loading/Unloading dwell
 	Home    *Building
 }
 
-// Building is a player-placed logging camp.
+// Building is a player-placed logging camp on the planet rim.
+// Angle is the authoritative position; Pos must always equal planet.RimPoint(Angle).
 type Building struct {
 	Pos     Vec
+	Angle   float64 // radians around planet center, position on the rim
 	Workers []*Worker
 }
 
@@ -46,6 +50,24 @@ type Forest struct {
 type Planet struct {
 	Center Vec
 	Radius float64
+}
+
+// RimPoint returns the world point on the planet's rim at the given angle.
+func (p Planet) RimPoint(theta float64) Vec {
+	return Vec{
+		X: p.Center.X + p.Radius*math.Cos(theta),
+		Y: p.Center.Y + p.Radius*math.Sin(theta),
+	}
+}
+
+// AngleOf returns the angle (about the planet center) of an arbitrary world point.
+func (p Planet) AngleOf(v Vec) float64 {
+	return math.Atan2(v.Y-p.Center.Y, v.X-p.Center.X)
+}
+
+// normAngle normalizes an angle to the range (-π, π].
+func normAngle(a float64) float64 {
+	return math.Atan2(math.Sin(a), math.Cos(a))
 }
 
 // Economy tracks global resource counts and purchase history (for escalating costs).
@@ -67,10 +89,10 @@ type World struct {
 // --- cost helpers ---
 
 const (
-	workerBaseCost  = 10.0
+	workerBaseCost   = 10.0
 	workerCostGrowth = 1.15
-	campBaseCost    = 30.0
-	campCostGrowth  = 1.50
+	campBaseCost     = 30.0
+	campCostGrowth   = 1.50
 )
 
 // WorkerCost returns the wood cost to buy the next worker.
@@ -86,18 +108,20 @@ func CampCost(w *World) float64 {
 // --- rate helper ---
 
 const (
-	workerSpeed  = 40.0 // world px / second
-	loadTime     = 0.5  // seconds to load at the forest
-	unloadTime   = 0.3  // seconds to unload at the camp
-	loadAmount   = 1.0  // wood units carried per trip
+	workerSpeed = 40.0 // world px / second
+	loadTime    = 0.5  // seconds to load at the forest
+	unloadTime  = 0.3  // seconds to unload at the camp
+	loadAmount  = 1.0  // wood units carried per trip
 )
 
 // EstimateRate returns the analytic wood/sec based on current workers and
-// their camps' distances from the forest. This is stable (no EMA jitter).
+// their camps' arc distances from the forest along the rim.
 func EstimateRate(w *World) float64 {
+	forestAngle := w.Planet.AngleOf(w.Forest.Pos)
 	var rate float64
 	for _, b := range w.Buildings {
-		dist := b.Pos.Dist(w.Forest.Pos)
+		delta := normAngle(b.Angle - forestAngle)
+		dist := math.Abs(delta) * w.Planet.Radius
 		tripTime := loadTime + unloadTime + 2*dist/workerSpeed
 		rate += float64(len(b.Workers)) * (loadAmount / tripTime)
 	}
@@ -108,18 +132,18 @@ func EstimateRate(w *World) float64 {
 
 // NewWorld returns a freshly initialised world ready to start the game.
 // The planet is centered in the 320×240 virtual canvas. The forest sits
-// near the top of the disc. The player starts with 50 wood and no camps —
-// so their first action is to build a logging camp.
+// on the top of the rim. The player starts with 50 wood and no camps.
 func NewWorld() *World {
 	center := Vec{X: 160, Y: 120}
+	radius := 90.0
 	return &World{
 		Planet: Planet{
 			Center: center,
-			Radius: 90,
+			Radius: radius,
 		},
 		Forest: Forest{
-			// Forest sits at the top of the disc, roughly 60px above center.
-			Pos: Vec{X: 160, Y: 60},
+			// Forest sits on the rim directly above the center (angle = -π/2).
+			Pos: Vec{X: center.X, Y: center.Y - radius},
 		},
 		Economy: Economy{
 			Wood: 50,

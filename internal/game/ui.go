@@ -106,6 +106,7 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 			camp := g.world.Buildings[0]
 			camp.Workers = append(camp.Workers, &Worker{
 				Pos:   camp.Pos,
+				Angle: camp.Angle,
 				State: StateToForest,
 				Home:  camp,
 			})
