@@ -5,26 +5,31 @@ import (
 	"testing"
 )
 
-// newTestWorld builds a minimal world with one camp and no workers.
-// campDist is the arc distance along the rim from the camp to the forest.
+// newTestWorld builds a minimal world with one camp placed campDist arc-units
+// away from the resource field's center angle. campDist values above the field's
+// half-arc width (54 world units for the default wood field) put the camp clearly
+// outside the node cluster, which keeps the near/far comparison tests reliable.
 func newTestWorld(campDist float64) *World {
 	w := NewWorld()
-	forestAngle := w.Planet.AngleOf(w.Forest.Pos)
+	fieldAngle := w.Planet.Fields[0].CenterAngle
 	dTheta := campDist / w.Planet.Radius
-	campAngle := normAngle(forestAngle + dTheta)
+	campAngle := normAngle(fieldAngle + dTheta)
 	camp := &Building{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}
 	w.Buildings = append(w.Buildings, camp)
 	return w
 }
 
-// addWorker attaches a worker to the first building in w.
+// addWorker appends a new idle worker to the global pool, spawned at the first camp.
 func addWorker(w *World) {
 	camp := w.Buildings[0]
-	camp.Workers = append(camp.Workers, &Worker{
-		Pos:   camp.Pos,
-		Angle: camp.Angle,
-		State: StateToForest,
-		Home:  camp,
+	id := w.NextWorkerID
+	w.NextWorkerID++
+	w.Workers = append(w.Workers, &Worker{
+		ID:     id,
+		Pos:    camp.Pos,
+		Angle:  camp.Angle,
+		State:  StateToForest,
+		NodeID: -1,
 	})
 }
 
@@ -36,9 +41,9 @@ func runSim(w *World, seconds float64) {
 	}
 }
 
-// TestWoodAccumulates verifies that wood actually rises when a worker is running.
+// TestWoodAccumulates verifies that wood rises when a worker is running.
 func TestWoodAccumulates(t *testing.T) {
-	w := newTestWorld(30)
+	w := newTestWorld(100)
 	startWood := w.Economy.Wood
 	addWorker(w)
 	runSim(w, 10)
@@ -47,21 +52,38 @@ func TestWoodAccumulates(t *testing.T) {
 	}
 }
 
-// TestCloserCampProducesMore asserts the core spatial mechanic:
-// a camp placed closer to the forest yields more wood over equal time.
+// newWorldSingleNode returns a world with one node of Size 1.0 at nodeAngle and
+// one camp at campDist arc-units away. Used to test trip-distance effects
+// independently of random node sizes and positions.
+func newWorldSingleNode(nodeAngle, campDist float64) *World {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	node := newNode(w, KindWood, nodeAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
+	campAngle := normAngle(nodeAngle + campDist/w.Planet.Radius)
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	return w
+}
+
+// TestCloserCampProducesMore asserts the core spatial mechanic: shorter node-to-camp
+// arc distance yields more wood over equal time.
 func TestCloserCampProducesMore(t *testing.T) {
-	near := newTestWorld(10)
+	const nodeAngle = -math.Pi / 2 // fixed node position
+
+	near := newWorldSingleNode(nodeAngle, 30)
 	addWorker(near)
 
-	far := newTestWorld(60)
+	far := newWorldSingleNode(nodeAngle, 120)
 	addWorker(far)
 
-	runSim(near, 30)
-	runSim(far, 30)
+	runSim(near, 60)
+	runSim(far, 60)
 
-	initialWood := NewWorld().Economy.Wood
-	nearNet := near.Economy.Wood - initialWood
-	farNet := far.Economy.Wood - initialWood
+	initial := NewWorld().Economy.Wood
+	nearNet := near.Economy.Wood - initial
+	farNet := far.Economy.Wood - initial
 
 	if nearNet <= farNet {
 		t.Errorf("expected near camp (%.2f wood) to out-produce far camp (%.2f wood)", nearNet, farNet)
@@ -69,9 +91,9 @@ func TestCloserCampProducesMore(t *testing.T) {
 }
 
 // TestAnalyticRateMatchesSim checks that EstimateRate is a reasonable predictor
-// of actual throughput (within 20%, to allow for partial-trip rounding).
+// of actual throughput (within 20%).
 func TestAnalyticRateMatchesSim(t *testing.T) {
-	const dist = 40.0
+	const dist = 100.0
 	const simSeconds = 60.0
 
 	w := newTestWorld(dist)
@@ -91,16 +113,30 @@ func TestAnalyticRateMatchesSim(t *testing.T) {
 	}
 }
 
-// TestMoreWorkersProduceMoreWood verifies linear worker scaling.
+// TestMoreWorkersProduceMoreWood verifies that adding a second worker increases
+// output. Uses a fixed two-node setup so random seeding can't skew the worlds.
 func TestMoreWorkersProduceMoreWood(t *testing.T) {
-	const dist = 20.0
-	const seconds = 20.0
+	const seconds = 60.0
 
-	one := newTestWorld(dist)
+	buildWorld := func() *World {
+		w := NewWorld()
+		w.Nodes = nil
+		w.NextNodeID = 0
+		campAngle := 0.0
+		for _, offset := range []float64{0.5, -0.5} {
+			n := newNode(w, KindWood, normAngle(campAngle+offset))
+			n.Size = 1.0
+			w.Nodes = append(w.Nodes, n)
+		}
+		w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+		return w
+	}
+
+	one := buildWorld()
 	addWorker(one)
 	runSim(one, seconds)
 
-	two := newTestWorld(dist)
+	two := buildWorld()
 	addWorker(two)
 	addWorker(two)
 	runSim(two, seconds)
@@ -114,22 +150,25 @@ func TestMoreWorkersProduceMoreWood(t *testing.T) {
 	}
 }
 
-// TestSnapToRim verifies Planet.RimPoint and Planet.AngleOf round-trip correctly.
+// TestSnapToRim verifies Planet.RimPoint and Planet.AngleOf round-trip correctly,
+// and that all starting nodes land on the rim.
 func TestSnapToRim(t *testing.T) {
 	w := NewWorld()
 	p := w.Planet
 
-	// Forest must be on the rim.
-	forestDist := w.Forest.Pos.Dist(p.Center)
-	if math.Abs(forestDist-p.Radius) > 1e-9 {
-		t.Errorf("forest is %.6f from center, want %.6f (on the rim)", forestDist, p.Radius)
+	// All starting nodes must be on the rim.
+	for i, n := range w.Nodes {
+		dist := n.Pos.Dist(p.Center)
+		if math.Abs(dist-p.Radius) > 1e-9 {
+			t.Errorf("node[%d] is %.6f from center, want %.6f (on the rim)", i, dist, p.Radius)
+		}
 	}
 
 	// RimPoint(AngleOf(p)) should return a point on the rim in the same direction.
 	tests := []Vec{
-		{X: 200, Y: 80},  // interior point
-		{X: 300, Y: 200}, // exterior point
-		{X: 160, Y: 30},  // already on the rim (top)
+		{X: 200, Y: 80},
+		{X: 300, Y: 200},
+		{X: 160, Y: 30},
 	}
 	for _, pt := range tests {
 		theta := p.AngleOf(pt)
@@ -138,7 +177,6 @@ func TestSnapToRim(t *testing.T) {
 		if math.Abs(dist-p.Radius) > 1e-9 {
 			t.Errorf("RimPoint(%v): distance from center %.9f, want %.9f", pt, dist, p.Radius)
 		}
-		// Same direction from center.
 		wantTheta := p.AngleOf(rim)
 		if math.Abs(normAngle(wantTheta-theta)) > 1e-9 {
 			t.Errorf("RimPoint(%v): angle %.9f round-trips to %.9f", pt, theta, wantTheta)
@@ -148,19 +186,191 @@ func TestSnapToRim(t *testing.T) {
 
 // TestWorkerStaysOnRim runs the sim and asserts workers never leave the surface.
 func TestWorkerStaysOnRim(t *testing.T) {
-	w := newTestWorld(45)
+	w := newTestWorld(100)
 	addWorker(w)
 
 	p := w.Planet
 	ticks := int(math.Round(10.0 / dt))
 	for i := 0; i < ticks; i++ {
 		Step(w, dt)
-		for _, wk := range w.Buildings[0].Workers {
+		for _, wk := range w.Workers {
 			dist := wk.Pos.Dist(p.Center)
 			if math.Abs(dist-p.Radius) > 1e-6 {
 				t.Errorf("tick %d: worker %.6f from center, want %.6f", i, dist, p.Radius)
 				return
 			}
 		}
+	}
+}
+
+// TestOneWorkerPerNode verifies that surplus workers remain idle when all nodes
+// are claimed: with 5 nodes and 7 workers, exactly 2 should be idle.
+func TestOneWorkerPerNode(t *testing.T) {
+	w := newTestWorld(100)
+	nodeCount := len(w.Nodes)
+	extra := 2
+	for i := 0; i < nodeCount+extra; i++ {
+		addWorker(w)
+	}
+	// One tick triggers the assignment pass.
+	Step(w, dt)
+
+	idle := 0
+	for _, wk := range w.Workers {
+		if wk.NodeID == -1 {
+			idle++
+		}
+	}
+	if idle != extra {
+		t.Errorf("expected %d idle workers, got %d", extra, idle)
+	}
+}
+
+// TestNodeSpawning verifies that delivering enough resources causes a new node
+// to appear and the field counter to reset.
+func TestNodeSpawning(t *testing.T) {
+	w := newTestWorld(100)
+	addWorker(w)
+	initialNodes := len(w.Nodes)
+	field := w.Planet.Fields[0]
+
+	// Cap is nodeSpawnBaseCap (20). Run long enough for at least one spawn.
+	runSim(w, 120)
+
+	if len(w.Nodes) <= initialNodes {
+		t.Errorf("expected new node after deliveries; still have %d nodes", len(w.Nodes))
+	}
+	if field.Counter >= field.Cap {
+		t.Errorf("field counter should have reset after spawn, got %.2f / %.2f", field.Counter, field.Cap)
+	}
+}
+
+// TestNewWorkerClaimsBestRouteNode verifies that when a worker is assigned it
+// takes the free node with the shortest route to the nearest camp, not simply
+// the node closest to its own position.
+func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+
+	// Far node: 2 rad from camp.
+	farNode := newNode(w, KindWood, normAngle(campAngle+2.0))
+	farNode.Size = 1.0
+	// Close node: 0.2 rad from camp.
+	closeNode := newNode(w, KindWood, normAngle(campAngle+0.2))
+	closeNode.Size = 1.0
+	w.Nodes = []*ResourceNode{farNode, closeNode}
+
+	addWorker(w)
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != closeNode.ID {
+		t.Errorf("expected worker to claim close node (ID %d), got node ID %d",
+			closeNode.ID, w.Workers[0].NodeID)
+	}
+}
+
+// TestNewNodeTriggersReassignment verifies that when a new node with a shorter route
+// appears, the active worker with the longest route switches to it on the next tick.
+func TestNewNodeTriggersReassignment(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+
+	farNode := newNode(w, KindWood, normAngle(campAngle+2.0))
+	farNode.Size = 1.0
+	w.Nodes = []*ResourceNode{farNode}
+
+	addWorker(w)
+	Step(w, dt) // assign worker to farNode
+
+	if w.Workers[0].NodeID != farNode.ID {
+		t.Fatalf("setup: expected worker on far node")
+	}
+
+	// Spawn a closer node; rebalance runs automatically on the next tick.
+	closeNode := newNode(w, KindWood, normAngle(campAngle+0.2))
+	closeNode.Size = 1.0
+	w.Nodes = append(w.Nodes, closeNode)
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != closeNode.ID {
+		t.Errorf("expected worker to switch to close node")
+	}
+	if farNode.OwnerID != -1 {
+		t.Errorf("expected far node to be freed after reassignment")
+	}
+}
+
+// TestCampPlacementTriggersRebalance verifies that placing a new camp near a
+// free node causes a worker on a farther node to switch to it on the next tick.
+func TestCampPlacementTriggersRebalance(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	// Initial camp is far from both nodes.
+	initialCampAngle := 0.0
+	w.Buildings = []*Building{{Angle: initialCampAngle, Pos: w.Planet.RimPoint(initialCampAngle)}}
+
+	// Two nodes: both at similar arc distance from the initial camp.
+	nodeA := newNode(w, KindWood, normAngle(initialCampAngle+0.5))
+	nodeA.Size = 1.0
+	nodeB := newNode(w, KindWood, normAngle(initialCampAngle+3.0))
+	nodeB.Size = 1.0
+	w.Nodes = []*ResourceNode{nodeA, nodeB}
+
+	// One worker: should claim nodeA (shorter route from initial camp).
+	addWorker(w)
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != nodeA.ID {
+		t.Fatalf("setup: expected worker on nodeA (closer to initial camp)")
+	}
+	// nodeB is free.
+
+	// Place a new camp right next to nodeB — its route is now much shorter.
+	newCampAngle := normAngle(nodeB.Angle + 0.05)
+	w.Buildings = append(w.Buildings, &Building{
+		Angle: newCampAngle, Pos: w.Planet.RimPoint(newCampAngle),
+	})
+	Step(w, dt)
+
+	if w.Workers[0].NodeID != nodeB.ID {
+		t.Errorf("expected worker to switch to nodeB after new camp placed nearby")
+	}
+	if nodeA.OwnerID != -1 {
+		t.Errorf("expected nodeA to be freed after worker switched")
+	}
+}
+
+// TestNearestCampDelivery verifies that nearestCamp picks the camp with the
+// smallest arc distance to the node, not to the worker.
+func TestNearestCampDelivery(t *testing.T) {
+	w := NewWorld()
+
+	// Create a single node at a known angle.
+	nodeAngle := 0.0 // 3 o'clock
+	node := newNode(w, KindWood, nodeAngle)
+	node.Size = 1.0
+
+	// Near camp: 10 arc-units from the node.
+	nearAngle := normAngle(nodeAngle + 10.0/w.Planet.Radius)
+	// Far camp: 150 arc-units from the node.
+	farAngle := normAngle(nodeAngle + 150.0/w.Planet.Radius)
+
+	nearCamp := &Building{Angle: nearAngle, Pos: w.Planet.RimPoint(nearAngle)}
+	farCamp := &Building{Angle: farAngle, Pos: w.Planet.RimPoint(farAngle)}
+	w.Buildings = append(w.Buildings, nearCamp, farCamp)
+
+	got := nearestCamp(w, node)
+	if got != nearCamp {
+		t.Errorf("expected nearestCamp to return nearCamp; got farCamp")
 	}
 }

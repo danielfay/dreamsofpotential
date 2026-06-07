@@ -17,7 +17,7 @@ func savePath() (string, error) {
 	return filepath.Join(dir, saveDirName, saveFileName), nil
 }
 
-// Save serialises w to disk atomically. Safe to call from a periodic timer.
+// Save serialises w to disk atomically.
 func Save(w *World) error {
 	path, err := savePath()
 	if err != nil {
@@ -37,8 +37,18 @@ func Save(w *World) error {
 	return os.Rename(tmp, path)
 }
 
-// Load deserialises the save file and rebuilds internal pointers.
-// Returns os.ErrNotExist (wrapped) if no save file exists yet.
+// ClearSave deletes the save file. Errors (e.g. file already missing) are ignored.
+func ClearSave() {
+	path, err := savePath()
+	if err != nil {
+		return
+	}
+	_ = os.Remove(path)
+}
+
+// Load deserialises the save file and returns the world.
+// Returns os.ErrNotExist (wrapped) if no save file exists or if the save is
+// from a different version (treated as missing so the caller starts fresh).
 func Load() (*World, error) {
 	path, err := savePath()
 	if err != nil {
@@ -52,11 +62,8 @@ func Load() (*World, error) {
 	if err := json.Unmarshal(data, &w); err != nil {
 		return nil, err
 	}
-	// Rebuild Worker.Home back-pointers excluded from JSON.
-	for _, b := range w.Buildings {
-		for _, wk := range b.Workers {
-			wk.Home = b
-		}
+	if w.Version != SaveVersion {
+		return nil, os.ErrNotExist
 	}
 	return &w, nil
 }

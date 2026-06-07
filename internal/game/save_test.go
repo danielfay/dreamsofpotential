@@ -2,6 +2,7 @@ package game
 
 import (
 	"errors"
+	"math"
 	"os"
 	"testing"
 )
@@ -9,7 +10,7 @@ import (
 func TestSaveLoadRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	w := newTestWorld(30)
+	w := newTestWorld(100)
 	addWorker(w)
 	runSim(w, 5)
 
@@ -31,9 +32,19 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Planet.Radius != w.Planet.Radius {
 		t.Errorf("Planet.Radius: got %v, want %v", got.Planet.Radius, w.Planet.Radius)
 	}
-	if got.Forest.Pos != w.Forest.Pos {
-		t.Errorf("Forest.Pos: got %v, want %v", got.Forest.Pos, w.Forest.Pos)
+
+	// All nodes must still be on the rim after a round-trip.
+	if len(got.Nodes) != len(w.Nodes) {
+		t.Fatalf("Nodes count: got %d, want %d", len(got.Nodes), len(w.Nodes))
 	}
+	p := got.Planet
+	for i, n := range got.Nodes {
+		dist := n.Pos.Dist(p.Center)
+		if math.Abs(dist-p.Radius) > 1e-6 {
+			t.Errorf("Nodes[%d].Pos is %.6f from center, want %.6f (on rim)", i, dist, p.Radius)
+		}
+	}
+
 	if len(got.Buildings) != len(w.Buildings) {
 		t.Fatalf("Buildings count: got %d, want %d", len(got.Buildings), len(w.Buildings))
 	}
@@ -42,32 +53,36 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		if gb.Angle != b.Angle {
 			t.Errorf("Buildings[%d].Angle: got %v, want %v", i, gb.Angle, b.Angle)
 		}
-		if len(gb.Workers) != len(b.Workers) {
-			t.Fatalf("Buildings[%d] worker count: got %d, want %d", i, len(gb.Workers), len(b.Workers))
+	}
+
+	if len(got.Workers) != len(w.Workers) {
+		t.Fatalf("Workers count: got %d, want %d", len(got.Workers), len(w.Workers))
+	}
+	for i, wk := range w.Workers {
+		gwk := got.Workers[i]
+		if gwk.State != wk.State {
+			t.Errorf("Workers[%d].State: got %v, want %v", i, gwk.State, wk.State)
 		}
-		for j, wk := range b.Workers {
-			gwk := gb.Workers[j]
-			if gwk.State != wk.State {
-				t.Errorf("Workers[%d][%d].State: got %v, want %v", i, j, gwk.State, wk.State)
-			}
-			if gwk.Angle != wk.Angle {
-				t.Errorf("Workers[%d][%d].Angle: got %v, want %v", i, j, gwk.Angle, wk.Angle)
-			}
-			if gwk.Carried != wk.Carried {
-				t.Errorf("Workers[%d][%d].Carried: got %v, want %v", i, j, gwk.Carried, wk.Carried)
-			}
-			if gwk.Timer != wk.Timer {
-				t.Errorf("Workers[%d][%d].Timer: got %v, want %v", i, j, gwk.Timer, wk.Timer)
-			}
+		if gwk.Angle != wk.Angle {
+			t.Errorf("Workers[%d].Angle: got %v, want %v", i, gwk.Angle, wk.Angle)
+		}
+		if gwk.Carried != wk.Carried {
+			t.Errorf("Workers[%d].Carried: got %v, want %v", i, gwk.Carried, wk.Carried)
+		}
+		if gwk.NodeID != wk.NodeID {
+			t.Errorf("Workers[%d].NodeID: got %v, want %v", i, gwk.NodeID, wk.NodeID)
 		}
 	}
 }
 
-func TestLoadRebuildsHomePointers(t *testing.T) {
+// TestLoadIDConsistency verifies that after a save round-trip, every active
+// worker's NodeID matches a node whose OwnerID equals that worker's ID.
+func TestLoadIDConsistency(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	w := newTestWorld(30)
+	w := newTestWorld(100)
 	addWorker(w)
+	runSim(w, 5) // let the assignment pass run
 
 	if err := Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -77,11 +92,22 @@ func TestLoadRebuildsHomePointers(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	for i, b := range got.Buildings {
-		for j, wk := range b.Workers {
-			if wk.Home != b {
-				t.Errorf("Buildings[%d].Workers[%d].Home not rebuilt (got %p, want %p)", i, j, wk.Home, b)
-			}
+	nodesByID := make(map[int]*ResourceNode, len(got.Nodes))
+	for _, n := range got.Nodes {
+		nodesByID[n.ID] = n
+	}
+
+	for _, wk := range got.Workers {
+		if wk.NodeID == -1 {
+			continue // idle worker; no ownership to check
+		}
+		n, ok := nodesByID[wk.NodeID]
+		if !ok {
+			t.Errorf("worker %d has NodeID %d which doesn't exist in Nodes", wk.ID, wk.NodeID)
+			continue
+		}
+		if n.OwnerID != wk.ID {
+			t.Errorf("worker %d → node %d: node.OwnerID is %d, want %d", wk.ID, n.ID, n.OwnerID, wk.ID)
 		}
 	}
 }
@@ -101,10 +127,27 @@ func TestLoadMissingFileReturnsError(t *testing.T) {
 func TestSaveNoMarshalCycle(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	w := newTestWorld(30)
+	w := newTestWorld(100)
 	addWorker(w)
 
 	if err := Save(w); err != nil {
-		t.Errorf("Save with workers (cycle-prone): %v", err)
+		t.Errorf("Save with workers: %v", err)
+	}
+}
+
+// TestLoadVersionMismatch verifies that a save with a different version is
+// treated as missing (returns os.ErrNotExist) so the caller starts fresh.
+func TestLoadVersionMismatch(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	w.Version = SaveVersion - 1 // deliberately stale
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, err := Load()
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected os.ErrNotExist for version mismatch, got %v", err)
 	}
 }
