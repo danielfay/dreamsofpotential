@@ -20,7 +20,6 @@ type HUD struct {
 	face text.Face
 
 	woodText     *widget.Text
-	rateText     *widget.Text
 	buyWorkerBtn *widget.Button
 	buildCampBtn *widget.Button
 	panel        *widget.Container // top-left panel; bounds used by pointInHUD
@@ -36,8 +35,7 @@ func (h *HUD) pointInHUD(sx, sy int) bool {
 // Refresh updates all HUD labels and button disabled-states to match the world.
 // Call this every frame from Game.Update(), after ui.Update() and sim.Step().
 func (h *HUD) Refresh(w *World, placing bool) {
-	h.woodText.Label = fmt.Sprintf("Wood: %.0f", w.Economy.Wood)
-	h.rateText.Label = fmt.Sprintf("+%.2f/s", EstimateRate(w))
+	h.woodText.Label = fmt.Sprintf("%.0f (+%.2f/s)", w.Economy.Wood, EstimateRate(w))
 
 	wc := WorkerCost(w)
 	h.buyWorkerBtn.SetText(fmt.Sprintf("Buy worker (%.0f)", wc))
@@ -78,10 +76,13 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 
 	// --- resource readout ---
 	hud.woodText = widget.NewText(
-		widget.TextOpts.Text("Wood: 50", face, color.White),
-	)
-	hud.rateText = widget.NewText(
-		widget.TextOpts.Text("+0.00/s", face, color.RGBA{R: 160, G: 240, B: 160, A: 255}),
+		widget.TextOpts.Text("50 (+0.00/s)", face, color.NRGBA{R: 100, G: 220, B: 100, A: 255}),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.ToolTip(widget.NewTextToolTip(
+				"wood", face, color.White,
+				eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 40, B: 40, A: 220}),
+			)),
+		),
 	)
 
 	// --- buy worker button ---
@@ -142,7 +143,6 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 	hud.panel.AddChild(hud.woodText)
-	hud.panel.AddChild(hud.rateText)
 	hud.panel.AddChild(hud.buyWorkerBtn)
 	hud.panel.AddChild(hud.buildCampBtn)
 
