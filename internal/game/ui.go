@@ -76,7 +76,7 @@ func buildHUD(g *Game) (*HUD, *ebitenui.UI, error) {
 
 	// --- resource readout ---
 	hud.woodText = widget.NewText(
-		widget.TextOpts.Text("50 (+0.00/s)", face, color.White),
+		widget.TextOpts.Text("50 (+0.00/s)", face, color.NRGBA{R: 100, G: 220, B: 100, A: 255}),
 		widget.TextOpts.WidgetOpts(
 			widget.WidgetOpts.ToolTip(widget.NewTextToolTip(
 				"wood", face, color.White,
