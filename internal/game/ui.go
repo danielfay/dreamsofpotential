@@ -120,8 +120,11 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	h.buyWorkerDbg.SetText(fmt.Sprintf("Buy worker (%.0f)", wc))
 	h.buyWorkerDbg.GetWidget().Disabled = w.Economy.Wood < wc || len(w.Buildings) == 0
 
-	cc := CampCost(w)
-	h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", cc))
+	if len(w.Buildings) == 0 {
+		h.buildCampDbg.SetText("Place Town Hall (free)")
+	} else {
+		h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", CampCost(w)))
+	}
 	h.buildCampDbg.GetWidget().Disabled = placing
 
 	if pv != nil {
@@ -145,17 +148,20 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 }
 
 func (h *HUD) refreshNormal(w *World) {
-	hasCamp := len(w.Buildings) > 0
+	hasTownHall := len(w.Buildings) > 0
 	discovered := w.ResourceDiscovered
 
 	// --- sidebar: action buttons ---
 
-	// Build button: disabled if locked (pre-discovery repeat) or unaffordable.
-	campLocked := w.Economy.CampsBought > 0 && !discovered
-	h.buildCampBtn.GetWidget().Disabled = campLocked || w.Economy.Wood < CampCost(w)
+	// Build button:
+	//   - before Town Hall: always enabled (Town Hall is free)
+	//   - after Town Hall, pre-discovery: locked (Camp tool dimmed)
+	//   - after discovery: enabled when affordable
+	campLocked := hasTownHall && !discovered
+	h.buildCampBtn.GetWidget().Disabled = campLocked || (hasTownHall && w.Economy.Wood < CampCost(w))
 
-	// Worker button: hidden until first camp exists; disabled if locked or unaffordable.
-	if hasCamp {
+	// Worker button: hidden until Town Hall exists; disabled if locked or unaffordable.
+	if hasTownHall {
 		h.buyWorkerBtn.GetWidget().SetVisibility(widget.Visibility_Show)
 		workerLocked := w.Economy.WorkersBought > 0 && !discovered
 		h.buyWorkerBtn.GetWidget().Disabled = workerLocked || w.Economy.Wood < WorkerCost(w)
@@ -406,7 +412,8 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 				g.placing = false
 				return
 			}
-			if g.world.Economy.Wood < CampCost(g.world) {
+			// Town Hall is free; only check affordability once a Town Hall exists.
+			if len(g.world.Buildings) > 0 && g.world.Economy.Wood < CampCost(g.world) {
 				g.pulseTime = pulseDuration
 				g.pulseTarget = 1
 				return

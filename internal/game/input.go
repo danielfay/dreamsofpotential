@@ -43,9 +43,10 @@ func (g *Game) handleInput() {
 	}
 
 	// Confirm placement on left-click outside the HUD.
-	// Any direction snaps to the rim. For the first camp, buyCamp enforces a
-	// local-node check; if it fails we stay in placement mode so the player can
-	// retry at a better angle.
+	// Any direction snaps to the rim. Town Hall requires a local free node; if
+	// invalid we stay in placement mode so the player can retry at a better angle.
+	// After a Town Hall is placed, the Camp tool is sticky — placement mode stays
+	// on so the player can keep placing camps until they cancel.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
 		if g.hud.pointInHUD(mx, my, g.debug) {
@@ -53,20 +54,31 @@ func (g *Game) handleInput() {
 		}
 		wp := g.screenToWorld(mx, my)
 		theta := g.world.Planet.AngleOf(wp)
-		if buyCamp(g.world, theta) {
+		isTownHall := len(g.world.Buildings) == 0
+		if placeBuilding(g.world, theta) && isTownHall {
 			g.placing = false
 		}
 	}
 }
 
-// buyCamp attempts to place a camp at the given rim angle. Returns true if the
-// camp was placed. The first camp (CampsBought==0) is free but requires at
-// least one free resource node within previewArc radians; later camps cost
-// CampCost and skip the local-node check.
-func buyCamp(w *World, angle float64) bool {
+// placeBuilding attempts to place a building at the given rim angle. Returns
+// true if the building was placed. The first placement is always a free Town
+// Hall (requires a local free node within previewArc). Subsequent placements
+// are paid logging camps that skip the local-node check.
+func placeBuilding(w *World, angle float64) bool {
 	if !buildPreview(w, angle).Valid {
 		return false
 	}
+	if len(w.Buildings) == 0 {
+		// Free Town Hall — does not consume CampsBought progression.
+		w.Buildings = append(w.Buildings, &Building{
+			Kind:  KindTownHall,
+			Angle: angle,
+			Pos:   w.Planet.RimPoint(angle),
+		})
+		return true
+	}
+	// Paid logging camp.
 	cost := CampCost(w)
 	if w.Economy.Wood < cost {
 		return false
@@ -74,6 +86,7 @@ func buyCamp(w *World, angle float64) bool {
 	w.Economy.Wood -= cost
 	w.Economy.CampsBought++
 	w.Buildings = append(w.Buildings, &Building{
+		Kind:  KindLoggingCamp,
 		Angle: angle,
 		Pos:   w.Planet.RimPoint(angle),
 	})

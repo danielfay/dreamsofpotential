@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/ebitenui/ebitenui"
+	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -15,7 +16,7 @@ const autoSavePeriod = 10.0 // seconds between autosaves
 // Game is the root ebiten game object.
 type Game struct {
 	world       *World
-	scene       *ebiten.Image     // low-res 320×240 canvas; scaled up to the window
+	scene       *ebiten.Image // low-res 320×240 canvas; scaled up to the window
 	ui          *ebitenui.UI
 	hud         *HUD
 	placing     bool              // true while waiting for player to click a camp location
@@ -26,9 +27,9 @@ type Game struct {
 	pulseTarget int               // which button pulses: 0=none, 1=build, 2=worker
 	screenW     int               // current screen dimensions, updated each Draw()
 	screenH     int
-	hudScale    int               // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits   int               // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer   float64           // counts down to next autosave
+	hudScale    int     // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits   int     // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer   float64 // counts down to next autosave
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -156,6 +157,8 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		return
 	}
 
+	g.drawAffordabilityProgress(screen)
+
 	// Selected-outline around the build button while placement mode is active.
 	if g.placing {
 		r := g.hud.buildCampBtn.GetWidget().Rect
@@ -207,6 +210,49 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				2, colPulse, false)
 		}
 	}
+}
+
+// drawAffordabilityProgress fills disabled economy buttons from bottom to top
+// as the player approaches the cost. Non-economy locks remain fully dim.
+func (g *Game) drawAffordabilityProgress(screen *ebiten.Image) {
+	hasTownHall := len(g.world.Buildings) > 0
+	discovered := g.world.ResourceDiscovered
+	if hasTownHall && discovered {
+		drawButtonProgress(screen, g.hud.buildCampBtn, affordabilityFrac(g.world.Economy.Wood, CampCost(g.world)),
+			color.RGBA{R: 140, G: 90, B: 50, A: 230})
+	}
+	if hasTownHall {
+		workerLocked := g.world.Economy.WorkersBought > 0 && !discovered
+		if !workerLocked {
+			drawButtonProgress(screen, g.hud.buyWorkerBtn, affordabilityFrac(g.world.Economy.Wood, WorkerCost(g.world)),
+				color.RGBA{R: 220, G: 200, B: 60, A: 230})
+		}
+	}
+}
+
+func affordabilityFrac(wood, cost float64) float32 {
+	if cost <= 0 || wood >= cost {
+		return 1
+	}
+	if wood <= 0 {
+		return 0
+	}
+	return float32(wood / cost)
+}
+
+func drawButtonProgress(screen *ebiten.Image, btn *widget.Button, frac float32, col color.RGBA) {
+	if frac <= 0 || frac >= 1 || !btn.GetWidget().Disabled {
+		return
+	}
+	r := btn.GetWidget().Rect
+	w := float32(r.Max.X - r.Min.X)
+	h := float32(r.Max.Y-r.Min.Y) * frac
+	if w <= 0 || h <= 0 {
+		return
+	}
+	x := float32(r.Min.X)
+	y := float32(r.Max.Y) - h
+	vector.FillRect(screen, x, y, w, h, col, false)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

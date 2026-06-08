@@ -14,7 +14,7 @@ func newTestWorld(campDist float64) *World {
 	fieldAngle := w.Planet.Fields[0].CenterAngle
 	dTheta := campDist / w.Planet.Radius
 	campAngle := normAngle(fieldAngle + dTheta)
-	camp := &Building{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}
+	camp := &Building{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}
 	w.Buildings = append(w.Buildings, camp)
 	return w
 }
@@ -63,7 +63,7 @@ func newWorldSingleNode(nodeAngle, campDist float64) *World {
 	node.Size = 1.0
 	w.Nodes = []*ResourceNode{node}
 	campAngle := normAngle(nodeAngle + campDist/w.Planet.Radius)
-	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
 	return w
 }
 
@@ -128,7 +128,7 @@ func TestMoreWorkersProduceMoreWood(t *testing.T) {
 			n.Size = 1.0
 			w.Nodes = append(w.Nodes, n)
 		}
-		w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+		w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
 		return w
 	}
 
@@ -237,7 +237,7 @@ func TestNodeSpawning(t *testing.T) {
 	w.NextNodeID = 0
 
 	campAngle := 0.0
-	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
 
 	n := newNode(w, KindWood, campAngle)
 	n.Size = 1.0
@@ -266,7 +266,7 @@ func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
 	w.NextNodeID = 0
 
 	campAngle := 0.0
-	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
 
 	// Far node: 2 rad from camp.
 	farNode := newNode(w, KindWood, normAngle(campAngle+2.0))
@@ -293,7 +293,7 @@ func TestNewNodeTriggersReassignment(t *testing.T) {
 	w.NextNodeID = 0
 
 	campAngle := 0.0
-	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
 
 	farNode := newNode(w, KindWood, normAngle(campAngle+2.0))
 	farNode.Size = 1.0
@@ -329,7 +329,7 @@ func TestCampPlacementTriggersRebalance(t *testing.T) {
 
 	// Initial camp is far from both nodes.
 	initialCampAngle := 0.0
-	w.Buildings = []*Building{{Angle: initialCampAngle, Pos: w.Planet.RimPoint(initialCampAngle)}}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: initialCampAngle, Pos: w.Planet.RimPoint(initialCampAngle)}}
 
 	// Two nodes: both at similar arc distance from the initial camp.
 	nodeA := newNode(w, KindWood, normAngle(initialCampAngle+0.5))
@@ -350,7 +350,7 @@ func TestCampPlacementTriggersRebalance(t *testing.T) {
 	// Place a new camp right next to nodeB — its route is now much shorter.
 	newCampAngle := normAngle(nodeB.Angle + 0.05)
 	w.Buildings = append(w.Buildings, &Building{
-		Angle: newCampAngle, Pos: w.Planet.RimPoint(newCampAngle),
+		Kind: KindLoggingCamp, Angle: newCampAngle, Pos: w.Planet.RimPoint(newCampAngle),
 	})
 	Step(w, dt)
 
@@ -377,12 +377,39 @@ func TestNearestCampDelivery(t *testing.T) {
 	// Far camp: 150 arc-units from the node.
 	farAngle := normAngle(nodeAngle + 150.0/w.Planet.Radius)
 
-	nearCamp := &Building{Angle: nearAngle, Pos: w.Planet.RimPoint(nearAngle)}
-	farCamp := &Building{Angle: farAngle, Pos: w.Planet.RimPoint(farAngle)}
+	nearCamp := &Building{Kind: KindTownHall, Angle: nearAngle, Pos: w.Planet.RimPoint(nearAngle)}
+	farCamp := &Building{Kind: KindLoggingCamp, Angle: farAngle, Pos: w.Planet.RimPoint(farAngle)}
 	w.Buildings = append(w.Buildings, nearCamp, farCamp)
 
 	got := nearestCamp(w, node)
 	if got != nearCamp {
 		t.Errorf("expected nearestCamp to return nearCamp; got farCamp")
+	}
+}
+
+// TestTownHallIsValidDeliveryPoint verifies that the Town Hall participates in
+// delivery routing: nearestCamp returns it when it is closer to a node than
+// any logging camp.
+func TestTownHallIsValidDeliveryPoint(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	nodeAngle := 0.0
+	node := newNode(w, KindWood, nodeAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
+
+	// Town Hall close to node; logging camp far away.
+	thAngle := normAngle(nodeAngle + 0.1)
+	campAngle := normAngle(nodeAngle + math.Pi/2)
+	w.Buildings = []*Building{
+		{Kind: KindTownHall, Angle: thAngle, Pos: w.Planet.RimPoint(thAngle)},
+		{Kind: KindLoggingCamp, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)},
+	}
+
+	got := nearestCamp(w, node)
+	if got.Kind != KindTownHall {
+		t.Errorf("expected Town Hall to be nearest delivery point; got Kind %v", got.Kind)
 	}
 }
