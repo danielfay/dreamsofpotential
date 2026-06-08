@@ -34,6 +34,7 @@ type screenshotScenario struct {
 	name    string
 	world   *World
 	preview *placementPreview
+	fullHUD bool
 }
 
 func screenshotScenarios() []screenshotScenario {
@@ -43,6 +44,7 @@ func screenshotScenarios() []screenshotScenario {
 		townHallIdleScenario(),
 		workingLoopScenario(),
 		campPreviewScenario(),
+		affordabilityButtonsScenario(),
 	}
 }
 
@@ -108,6 +110,20 @@ func campPreviewScenario() screenshotScenario {
 	}
 }
 
+func affordabilityButtonsScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlace(w, w.Nodes[0].Angle)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 12
+	w.Economy.WorkersBought = 3
+
+	return screenshotScenario{
+		name:    "06-affordability-buttons",
+		world:   w,
+		fullHUD: true,
+	}
+}
+
 func screenshotWorld(seed int64) *World {
 	rand.Seed(seed)
 	return NewWorld()
@@ -146,13 +162,20 @@ func (g *screenshotGame) Draw(screen *ebiten.Image) {
 	scene := ebiten.NewImage(virtW, virtH)
 	for _, shot := range g.shots {
 		screen.Clear()
-		scene.Clear()
-		DrawWorld(scene, shot.world, shot.preview, false)
+		if shot.fullHUD {
+			if err := drawHUDScreenshot(screen, shot.world); err != nil {
+				g.err = fmt.Errorf("%s: %w", shot.name, err)
+				break
+			}
+		} else {
+			scene.Clear()
+			DrawWorld(scene, shot.world, shot.preview, false)
 
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(2, 2)
-		op.Filter = ebiten.FilterNearest
-		screen.DrawImage(scene, op)
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Scale(2, 2)
+			op.Filter = ebiten.FilterNearest
+			screen.DrawImage(scene, op)
+		}
 
 		path := filepath.Join(g.dir, shot.name+".png")
 		if err := writeScreenPNG(path, screen); err != nil {
@@ -165,6 +188,25 @@ func (g *screenshotGame) Draw(screen *ebiten.Image) {
 
 func (g *screenshotGame) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return virtW * 2, virtH * 2
+}
+
+func drawHUDScreenshot(screen *ebiten.Image, w *World) error {
+	const scale = 2
+	game := &Game{
+		world:     w,
+		scene:     ebiten.NewImage(virtW, virtH),
+		hudScale:  scale,
+		hudDigits: woodDigits(w.Economy.Wood),
+	}
+	hud, ui, err := buildHUD(game, scale)
+	if err != nil {
+		return err
+	}
+	game.hud = hud
+	game.ui = ui
+	game.hud.Refresh(game.world, false, false, nil, false)
+	game.Draw(screen)
+	return nil
 }
 
 func writeScreenPNG(path string, screen *ebiten.Image) error {
