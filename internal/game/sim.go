@@ -104,6 +104,9 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 	case StateUnloading:
 		wk.Timer -= dt
 		if wk.Timer <= 0 {
+			if wk.Carried > 0 {
+				w.ResourceDiscovered = true
+			}
 			w.Economy.Wood += wk.Carried
 			depositToField(w, node.Kind, wk.Carried)
 			wk.Carried = 0

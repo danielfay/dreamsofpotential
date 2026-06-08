@@ -112,18 +112,19 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 2
+const SaveVersion = 3
 
 // World holds all game state for a single planet.
 type World struct {
-	Version      int
-	Planet       Planet
-	Buildings    []*Building
-	Nodes        []*ResourceNode
-	Workers      []*Worker
-	Economy      Economy
-	NextNodeID   int
-	NextWorkerID int
+	Version            int
+	Planet             Planet
+	Buildings          []*Building
+	Nodes              []*ResourceNode
+	Workers            []*Worker
+	Economy            Economy
+	NextNodeID         int
+	NextWorkerID       int
+	ResourceDiscovered bool // true after the first wood delivery
 }
 
 // --- cost helpers ---
@@ -133,16 +134,68 @@ const (
 	workerCostGrowth = 1.15
 	campBaseCost     = 30.0
 	campCostGrowth   = 1.50
+
+	// firstCampLocalArc is the angular radius (radians) within which at least
+	// one resource node must exist for the free first camp to be placeable.
+	// Tuning constant: increase to make the first placement easier to land.
+	firstCampLocalArc = 0.6
+
+	// pulseDuration is how long (seconds) the unaffordable-cost flash lasts.
+	pulseDuration = 0.4
 )
 
 // WorkerCost returns the wood cost to buy the next worker.
+// The first worker (WorkersBought==0) is free.
 func WorkerCost(w *World) float64 {
+	if w.Economy.WorkersBought == 0 {
+		return 0
+	}
 	return workerBaseCost * math.Pow(workerCostGrowth, float64(w.Economy.WorkersBought))
 }
 
 // CampCost returns the wood cost to place the next logging camp.
+// The first camp (CampsBought==0) is free.
 func CampCost(w *World) float64 {
+	if w.Economy.CampsBought == 0 {
+		return 0
+	}
 	return campBaseCost * math.Pow(campCostGrowth, float64(w.Economy.CampsBought))
+}
+
+// hasLocalNode reports whether any resource node lies within arc radians of
+// the given rim angle. Used to validate free first-camp placement.
+func hasLocalNode(w *World, angle, arc float64) bool {
+	for _, n := range w.Nodes {
+		if math.Abs(normAngle(n.Angle-angle)) <= arc {
+			return true
+		}
+	}
+	return false
+}
+
+// buyWorker attempts to purchase a worker. The first worker (WorkersBought==0)
+// is free. Returns true if the purchase succeeded.
+func buyWorker(w *World) bool {
+	if len(w.Buildings) == 0 {
+		return false
+	}
+	cost := WorkerCost(w)
+	if w.Economy.Wood < cost {
+		return false
+	}
+	w.Economy.Wood -= cost
+	w.Economy.WorkersBought++
+	camp := w.Buildings[0]
+	id := w.NextWorkerID
+	w.NextWorkerID++
+	w.Workers = append(w.Workers, &Worker{
+		ID:     id,
+		Pos:    camp.Pos,
+		Angle:  camp.Angle,
+		State:  StateToForest,
+		NodeID: -1,
+	})
+	return true
 }
 
 // --- simulation constants ---
@@ -209,7 +262,7 @@ func NewWorld() *World {
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
 		},
-		Economy: Economy{Wood: 50},
+		Economy: Economy{Wood: 0},
 	}
 
 	// Seed starting nodes at random positions within the field arc.

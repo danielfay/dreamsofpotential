@@ -15,13 +15,19 @@ const (
 	virtH = 240
 )
 
-// scaleX / scaleY are the factors from world space to screen space.
-const scaleX = 2
-const scaleY = 2
-
-// screenToWorld converts a native screen position to low-res world coordinates.
-func screenToWorld(sx, sy int) Vec {
-	return Vec{X: float64(sx) / scaleX, Y: float64(sy) / scaleY}
+// viewGeom returns the uniform scale and top-left offset that centres the
+// virtual 320×240 canvas inside a screen of (screenW, screenH), preserving
+// aspect ratio with letterbox/pillarbox bars as needed.
+func viewGeom(screenW, screenH int) (scale, offX, offY float64) {
+	sx := float64(screenW) / float64(virtW)
+	sy := float64(screenH) / float64(virtH)
+	scale = sx
+	if sy < scale {
+		scale = sy
+	}
+	offX = (float64(screenW) - float64(virtW)*scale) / 2
+	offY = (float64(screenH) - float64(virtH)*scale) / 2
+	return
 }
 
 // palette

@@ -14,6 +14,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	addWorker(w)
 	runSim(w, 5)
 
+	w.ResourceDiscovered = true // ensure the bool is tested in the round-trip
 	if err := Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -53,6 +54,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		if gb.Angle != b.Angle {
 			t.Errorf("Buildings[%d].Angle: got %v, want %v", i, gb.Angle, b.Angle)
 		}
+	}
+
+	if got.ResourceDiscovered != w.ResourceDiscovered {
+		t.Errorf("ResourceDiscovered: got %v, want %v", got.ResourceDiscovered, w.ResourceDiscovered)
 	}
 
 	if len(got.Workers) != len(w.Workers) {

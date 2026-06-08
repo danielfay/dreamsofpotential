@@ -14,6 +14,7 @@ func main() {
 	}
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("Dreams of Potential")
+	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowClosingHandled(true)
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
