@@ -229,13 +229,25 @@ func TestOneWorkerPerNode(t *testing.T) {
 // TestNodeSpawning verifies that delivering enough resources causes a new node
 // to appear and the field counter to reset.
 func TestNodeSpawning(t *testing.T) {
-	w := newTestWorld(100)
+	// Use a fully deterministic setup: one camp and one node at the same angle
+	// so trip time is ~0.8 s and Size=1.0 gives exactly 1 wood per delivery.
+	// The spawn cap is nodeSpawnBaseCap (20), so 30 s is well above the minimum.
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+
+	n := newNode(w, KindWood, campAngle)
+	n.Size = 1.0
+	w.Nodes = []*ResourceNode{n}
+
 	addWorker(w)
 	initialNodes := len(w.Nodes)
 	field := w.Planet.Fields[0]
 
-	// Cap is nodeSpawnBaseCap (20). Run long enough for at least one spawn.
-	runSim(w, 120)
+	runSim(w, 30)
 
 	if len(w.Nodes) <= initialNodes {
 		t.Errorf("expected new node after deliveries; still have %d nodes", len(w.Nodes))
