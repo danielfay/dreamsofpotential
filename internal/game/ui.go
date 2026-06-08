@@ -31,6 +31,7 @@ type HUD struct {
 	fieldText    *widget.Text
 	previewText  *widget.Text
 	buyWorkerDbg *widget.Button
+	addWorkerDbg *widget.Button
 	buildCampDbg *widget.Button
 	resetBtn     *widget.Button
 
@@ -89,27 +90,41 @@ func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview, showM
 }
 
 func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
-	freeNodes, claimedNodes := 0, 0
+	freeNodes, reservedNodes, claimedNodes := 0, 0, 0
 	for _, n := range w.Nodes {
-		if n.OwnerID == -1 {
-			freeNodes++
-		} else {
+		if n.OwnerID != -1 {
 			claimedNodes++
-		}
-	}
-
-	h.woodText.Label = fmt.Sprintf("wood: %.0f (%.2f/s)", w.Economy.Wood, EstimateRate(w))
-
-	active, idle := 0, 0
-	for _, wk := range w.Workers {
-		if wk.NodeID == -1 {
-			idle++
+		} else if n.ReservedByWorkerID != -1 {
+			reservedNodes++
 		} else {
-			active++
+			freeNodes++
 		}
 	}
-	h.workerText.Label = fmt.Sprintf("workers: %d active  %d idle  %d total", active, idle, len(w.Workers))
-	h.nodeText.Label = fmt.Sprintf("nodes: %d free  %d claimed", freeNodes, claimedNodes)
+
+	thWood, campWood := deliveryTotals(w)
+	h.woodText.Label = fmt.Sprintf("wood: %.0f (%.2f/s)  TH %.1f  camps %.1f", w.Economy.Wood, EstimateRate(w), thWood, campWood)
+
+	active, returning, settling, reaction, waiting := 0, 0, 0, 0, 0
+	for _, wk := range w.Workers {
+		if workerInLoop(wk) || wk.State == StateDeparturePulse || wk.State == StateToRim {
+			active++
+			continue
+		}
+		switch wk.State {
+		case StateReturningHome, StateToIdleSpot:
+			returning++
+		case StateSettling:
+			settling++
+		case StateReactionDelay:
+			reaction++
+		case StateIdleWaiting:
+			waiting++
+		}
+	}
+	h.workerText.Label = fmt.Sprintf("workers: %d active  %d return  %d settle  %d react  %d wait  %d total",
+		active, returning, settling, reaction, waiting, len(w.Workers))
+	h.nodeText.Label = fmt.Sprintf("nodes: %d free  %d reserved  %d claimed  pending %s",
+		freeNodes, reservedNodes, claimedNodes, pendingRebalanceText(w))
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
@@ -119,6 +134,7 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	wc := WorkerCost(w)
 	h.buyWorkerDbg.SetText(fmt.Sprintf("Buy worker (%.0f)", wc))
 	h.buyWorkerDbg.GetWidget().Disabled = w.Economy.Wood < wc || len(w.Buildings) == 0
+	h.addWorkerDbg.GetWidget().Disabled = townHall(w) == nil
 
 	if len(w.Buildings) == 0 {
 		h.buildCampDbg.SetText("Place Town Hall (free)")
@@ -140,8 +156,8 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 		if len(dists) > 0 {
 			distStr = "[" + strings.Join(dists, ",") + "]"
 		}
-		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d claimed)  d=%s",
-			validity, len(pv.Free)+len(pv.Claimed), len(pv.Free), len(pv.Claimed), distStr)
+		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d reserved / %d claimed)  d=%s",
+			validity, len(pv.Free)+len(pv.Reserved)+len(pv.Claimed), len(pv.Free), len(pv.Reserved), len(pv.Claimed), distStr)
 	} else {
 		h.previewText.Label = "preview: —"
 	}
@@ -184,7 +200,7 @@ func (h *HUD) refreshNormal(w *World) {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		active := 0
 		for _, wk := range w.Workers {
-			if wk.NodeID != -1 {
+			if workerInLoop(wk) {
 				active++
 			}
 		}
@@ -194,6 +210,30 @@ func (h *HUD) refreshNormal(w *World) {
 	}
 }
 
+func deliveryTotals(w *World) (townHallWood, campWood float64) {
+	for _, b := range w.Buildings {
+		if b.Kind == KindTownHall {
+			townHallWood += b.DeliveredWood
+		} else {
+			campWood += b.DeliveredWood
+		}
+	}
+	return townHallWood, campWood
+}
+
+func pendingRebalanceText(w *World) string {
+	parts := make([]string, 0, 2)
+	for _, wk := range w.Workers {
+		if wk.PendingNodeID != -1 {
+			parts = append(parts, fmt.Sprintf("w%d->n%d", wk.ID, wk.PendingNodeID))
+		}
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ",")
+}
+
 // buildHUD constructs the EbitenUI tree and wires up button handlers.
 // scale is the integer view scale factor (1 at ≤320×240, 2 at 640×480, etc.);
 // all pixel sizes are multiplied by it so the HUD matches the world scale.
@@ -201,7 +241,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	s := scale
 	// sz returns n*s scaled to 75% of the world scale, rounded to nearest pixel.
 	sz := func(n int) int {
-		v := (n * s * 3 + 2) / 4
+		v := (n*s*3 + 2) / 4
 		if v < 1 {
 			v = 1
 		}
@@ -250,6 +290,15 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.ButtonOpts.TextPadding(dbgPad),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			buyWorker(g.world)
+		}),
+	)
+
+	hud.addWorkerDbg = widget.NewButton(
+		widget.ButtonOpts.Image(dbgBtnImg()),
+		widget.ButtonOpts.Text("Add free worker", face, dbgTxtCol),
+		widget.ButtonOpts.TextPadding(dbgPad),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			addFreeWorkerAtTownHall(g.world)
 		}),
 	)
 
@@ -303,6 +352,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.fieldText)
 	hud.debugPanel.AddChild(hud.previewText)
 	hud.debugPanel.AddChild(hud.buyWorkerDbg)
+	hud.debugPanel.AddChild(hud.addWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.resetBtn)
 

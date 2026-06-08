@@ -80,6 +80,54 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		if gwk.NodeID != wk.NodeID {
 			t.Errorf("Workers[%d].NodeID: got %v, want %v", i, gwk.NodeID, wk.NodeID)
 		}
+		if gwk.TargetNodeID != wk.TargetNodeID {
+			t.Errorf("Workers[%d].TargetNodeID: got %v, want %v", i, gwk.TargetNodeID, wk.TargetNodeID)
+		}
+		if gwk.PendingNodeID != wk.PendingNodeID {
+			t.Errorf("Workers[%d].PendingNodeID: got %v, want %v", i, gwk.PendingNodeID, wk.PendingNodeID)
+		}
+	}
+}
+
+func TestSaveLoadRoundTripWorkerReservationAndPulseState(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newWorldSingleNode(0, 0)
+	addWorker(w)
+	runUntilAssigned(w)
+
+	wk := w.Workers[0]
+	node := w.Nodes[0]
+	node.ReservedByWorkerID = wk.ID
+	wk.PendingNodeID = node.ID
+	wk.Pulse = PulseState{Remaining: 0.2, LastActivated: 1.1, SteadyUntil: 1.6}
+	node.Pulse = PulseState{Remaining: 0.1, LastActivated: 1.2, SteadyUntil: 1.7}
+	w.Buildings[0].DeliveredWood = 3
+	w.Buildings[0].DeliveryCount = 2
+	w.Buildings[0].Pulse = PulseState{Remaining: 0.15, LastActivated: 1.3, SteadyUntil: 1.8}
+	w.SimTime = 2.5
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got.SimTime != w.SimTime {
+		t.Fatalf("SimTime got %v, want %v", got.SimTime, w.SimTime)
+	}
+	gwk := got.Workers[0]
+	if gwk.PendingNodeID != wk.PendingNodeID || gwk.Pulse != wk.Pulse {
+		t.Fatalf("worker intent/pulse did not round-trip")
+	}
+	if got.Nodes[0].ReservedByWorkerID != node.ReservedByWorkerID || got.Nodes[0].Pulse != node.Pulse {
+		t.Fatalf("node reservation/pulse did not round-trip")
+	}
+	gb := got.Buildings[0]
+	if gb.DeliveredWood != 3 || gb.DeliveryCount != 2 || gb.Pulse != w.Buildings[0].Pulse {
+		t.Fatalf("building delivery/pulse state did not round-trip")
 	}
 }
 

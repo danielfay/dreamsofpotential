@@ -32,14 +32,14 @@ func viewGeom(screenW, screenH int) (scale, offX, offY float64) {
 
 // Building / worker render sizes.
 const (
-	campBldHalf       = float32(3.5) // half of 7×7 camp square
-	campBldSize       = float32(7)
-	townHallBldHalfW  = float32(8)   // half-width along rim tangent (16px wide — fort shape)
-	townHallBldHalfH  = float32(4.5) // half-height along inward normal (9px tall)
-	townHallBldInset  = float32(5)   // px inward from rim for town hall art center
-	workerBldHalf     = float32(1)   // half of 3×3 worker square
-	workerBldSize     = float32(3)
-	idleMaxSlots      = 5 // max visible idle-worker spots near the town hall
+	campBldHalf      = float32(3.5) // half of 7×7 camp square
+	campBldSize      = float32(7)
+	townHallBldHalfW = float32(8)   // half-width along rim tangent (16px wide — fort shape)
+	townHallBldHalfH = float32(4.5) // half-height along inward normal (9px tall)
+	townHallBldInset = float32(5)   // px inward from rim for town hall art center
+	workerBldHalf    = float32(1)   // half of 3×3 worker square
+	workerBldSize    = float32(3)
+	idleMaxSlots     = 5 // max visible idle-worker spots near the town hall
 )
 
 // palette
@@ -48,10 +48,12 @@ var (
 	colPlanetBody   = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
 	colPlanetEdge   = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
 	colNodeFree     = color.RGBA{R: 40, G: 160, B: 60, A: 255}
+	colNodeReserved = color.RGBA{R: 32, G: 130, B: 48, A: 255}
 	colNodeClaimed  = color.RGBA{R: 20, G: 100, B: 35, A: 255}
 	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
 	colBuilding     = color.RGBA{R: 140, G: 90, B: 50, A: 255}
 	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255}
+	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}
 	colWorkerLaden  = color.RGBA{R: 255, G: 240, B: 80, A: 255}
 	colGhostOk      = color.RGBA{R: 200, G: 200, B: 255, A: 160}
 	colGhostBad     = color.RGBA{R: 200, G: 80, B: 80, A: 80}
@@ -79,14 +81,19 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
 	}
 
-	// resource nodes — pine-tree shape; muted when in preview and claimed
+	// resource nodes — pine-tree shape; muted when in preview and unavailable
 	for _, n := range w.Nodes {
 		col := colNodeFree
 		if n.OwnerID != -1 {
 			col = colNodeClaimed
+		} else if n.ReservedByWorkerID != -1 {
+			col = colNodeReserved
 		}
 		if pv != nil {
 			col = previewNodeColor(n, pv)
+		}
+		if pulseActive(w, n.Pulse) {
+			col = brighten(col, 45)
 		}
 		drawPineTree(scene, n, col)
 	}
@@ -98,12 +105,20 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 
 	// buildings
 	for _, b := range w.Buildings {
+		col := colBuilding
 		if b.Kind == KindTownHall {
-			drawTownHallArt(scene, w.Planet, b.Angle, colTownHall)
+			col = colTownHall
+			if pulseActive(w, b.Pulse) {
+				col = brighten(col, 40)
+			}
+			drawTownHallArt(scene, w.Planet, b.Angle, col)
 		} else {
+			if pulseActive(w, b.Pulse) {
+				col = brighten(col, 40)
+			}
 			vector.FillRect(scene,
 				float32(b.Pos.X)-campBldHalf, float32(b.Pos.Y)-campBldHalf,
-				campBldSize, campBldSize, colBuilding, false)
+				campBldSize, campBldSize, col, false)
 		}
 	}
 
@@ -111,18 +126,15 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	th := townHall(w)
 	idleCount := 0
 	for _, wk := range w.Workers {
-		if wk.NodeID == -1 {
+		if workerUsesIdleHome(wk) {
 			idleCount++
 		}
 	}
 	slots := idleHomeSlots(w.Planet, th, idleCount)
 	slotIdx := 0
 	for _, wk := range w.Workers {
-		col := colWorkerEmpty
-		if wk.Carried > 0 {
-			col = colWorkerLaden
-		}
-		if wk.NodeID == -1 && th != nil {
+		col := workerColor(w, wk)
+		if workerUsesIdleHome(wk) && th != nil {
 			if slotIdx < len(slots) {
 				sp := slots[slotIdx]
 				slotIdx++
@@ -148,13 +160,19 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
 	inRange := math.Abs(normAngle(n.Angle-pv.Angle)) <= previewArc
 	if !inRange {
-		if n.OwnerID == -1 {
+		if n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
 			return colNodeFree
+		}
+		if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {
+			return colNodeReserved
 		}
 		return colNodeClaimed
 	}
-	if n.OwnerID == -1 {
+	if n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
 		return color.RGBA{R: 80, G: 220, B: 100, A: 255} // brighter free
+	}
+	if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {
+		return color.RGBA{R: 24, G: 88, B: 34, A: 190}
 	}
 	return color.RGBA{R: 15, G: 65, B: 25, A: 180} // deeper mute for claimed
 }
@@ -176,6 +194,9 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 
 	// Claimed-node route lines — uniform muted.
 	for _, n := range pv.Claimed {
+		drawRimArc(scene, planet, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
+	}
+	for _, n := range pv.Reserved {
 		drawRimArc(scene, planet, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
 	}
 
@@ -205,6 +226,39 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 			vector.StrokeLine(scene, x0, y0, x1, y1, 1.5, colPreviewDebug, false)
 		}
 	}
+}
+
+func workerUsesIdleHome(wk *Worker) bool {
+	switch wk.State {
+	case StateIdleWaiting, StateSettling, StateReactionDelay:
+		return true
+	default:
+		return false
+	}
+}
+
+func workerColor(w *World, wk *Worker) color.RGBA {
+	col := colWorkerEmpty
+	if wk.State == StateReturningHome || wk.State == StateToIdleSpot {
+		col = colWorkerReturn
+	}
+	if wk.Carried > 0 || wk.State == StateToBuilding || wk.State == StateUnloading {
+		col = colWorkerLaden
+	}
+	if pulseActive(w, wk.Pulse) {
+		col = brighten(col, 35)
+	}
+	return col
+}
+
+func brighten(col color.RGBA, amount uint8) color.RGBA {
+	add := func(v uint8) uint8 {
+		if int(v)+int(amount) > 255 {
+			return 255
+		}
+		return v + amount
+	}
+	return color.RGBA{R: add(col.R), G: add(col.G), B: add(col.B), A: col.A}
 }
 
 // drawRimArc strokes an arc from angle a to b along planet's rim with the
