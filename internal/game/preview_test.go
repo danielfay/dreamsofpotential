@@ -40,13 +40,16 @@ func TestLocalNodes(t *testing.T) {
 
 	w.Nodes = []*ResourceNode{near, atEdge, outside, claimed}
 
-	free, cl := localNodes(w, center)
+	free, cl, reserved := localNodes(w, center)
 
 	if len(free) != 2 {
 		t.Errorf("free count: got %d, want 2", len(free))
 	}
 	if len(cl) != 1 {
 		t.Errorf("claimed count: got %d, want 1", len(cl))
+	}
+	if len(reserved) != 0 {
+		t.Errorf("reserved count: got %d, want 0", len(reserved))
 	}
 	for _, r := range free {
 		if r.Dist < 0 {
@@ -69,7 +72,7 @@ func TestLocalNodesWraparound(t *testing.T) {
 	n.OwnerID = -1
 	w.Nodes = []*ResourceNode{n}
 
-	free, _ := localNodes(w, -math.Pi+0.1)
+	free, _, _ := localNodes(w, -math.Pi+0.1)
 	if len(free) != 1 {
 		t.Errorf("wraparound: expected 1 free node, got %d", len(free))
 	}
@@ -108,15 +111,28 @@ func TestBuildPreviewFirstCampNeedsFreNode(t *testing.T) {
 	}
 }
 
-func TestBuildPreviewLaterCampAlwaysValid(t *testing.T) {
+func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
-	// A Town Hall must exist before camps; once it does, camp placement is always valid.
+	// A Town Hall must exist before camps; once it does, camp placement is
+	// distance-valid but still needs enough wood for the next camp.
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
 
 	pv := buildPreview(w, 0)
+	if pv.Valid {
+		t.Error("unaffordable camp preview should be invalid/red")
+	}
+	if pv.Affordable {
+		t.Error("camp preview should report unaffordable")
+	}
+
+	w.Economy.Wood = CampCost(w)
+	pv = buildPreview(w, 0)
 	if !pv.Valid {
-		t.Error("camp with Town Hall and no nodes should still be valid")
+		t.Error("affordable camp with Town Hall and no nodes should still be valid")
+	}
+	if !pv.Affordable {
+		t.Error("camp preview should report affordable")
 	}
 	if pv.Kind != KindLoggingCamp {
 		t.Errorf("preview Kind: got %v, want KindLoggingCamp", pv.Kind)

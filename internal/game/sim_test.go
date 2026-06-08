@@ -25,11 +25,13 @@ func addWorker(w *World) {
 	id := w.NextWorkerID
 	w.NextWorkerID++
 	w.Workers = append(w.Workers, &Worker{
-		ID:     id,
-		Pos:    camp.Pos,
-		Angle:  camp.Angle,
-		State:  StateToForest,
-		NodeID: -1,
+		ID:            id,
+		Pos:           camp.Pos,
+		Angle:         camp.Angle,
+		State:         StateIdleWaiting,
+		NodeID:        -1,
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
 	})
 }
 
@@ -39,6 +41,14 @@ func runSim(w *World, seconds float64) {
 	for i := 0; i < ticks; i++ {
 		Step(w, dt)
 	}
+}
+
+func runUntilAssigned(w *World) {
+	runSim(w, reactionDelay+dt)
+}
+
+func runUntilInLoop(w *World) {
+	runSim(w, 1)
 }
 
 // TestWoodAccumulates verifies that wood rises when a worker is running.
@@ -194,6 +204,9 @@ func TestWorkerStaysOnRim(t *testing.T) {
 	for i := 0; i < ticks; i++ {
 		Step(w, dt)
 		for _, wk := range w.Workers {
+			if !workerInLoop(wk) && wk.State != StateDeparturePulse && wk.State != StateToRim {
+				continue
+			}
 			dist := wk.Pos.Dist(p.Center)
 			if math.Abs(dist-p.Radius) > 1e-6 {
 				t.Errorf("tick %d: worker %.6f from center, want %.6f", i, dist, p.Radius)
@@ -212,12 +225,11 @@ func TestOneWorkerPerNode(t *testing.T) {
 	for i := 0; i < nodeCount+extra; i++ {
 		addWorker(w)
 	}
-	// One tick triggers the assignment pass.
-	Step(w, dt)
+	runUntilInLoop(w)
 
 	idle := 0
 	for _, wk := range w.Workers {
-		if wk.NodeID == -1 {
+		if !workerInLoop(wk) && wk.State != StateDeparturePulse && wk.State != StateToRim {
 			idle++
 		}
 	}
@@ -277,7 +289,7 @@ func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
 	w.Nodes = []*ResourceNode{farNode, closeNode}
 
 	addWorker(w)
-	Step(w, dt)
+	runUntilInLoop(w)
 
 	if w.Workers[0].NodeID != closeNode.ID {
 		t.Errorf("expected worker to claim close node (ID %d), got node ID %d",
@@ -285,9 +297,154 @@ func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
 	}
 }
 
-// TestNewNodeTriggersReassignment verifies that when a new node with a shorter route
-// appears, the active worker with the longest route switches to it on the next tick.
-func TestNewNodeTriggersReassignment(t *testing.T) {
+func TestSettlingWorkerNotEligibleUntilDelayFinishes(t *testing.T) {
+	w := newWorldSingleNode(0, 0)
+	if !buyWorker(w) {
+		t.Fatal("expected first worker purchase to succeed")
+	}
+	wk := w.Workers[0]
+
+	runSim(w, settleDelay-dt)
+	if wk.State != StateSettling {
+		t.Fatalf("worker should still be settling, got state %v", wk.State)
+	}
+	if wk.NodeID != -1 || wk.TargetNodeID != -1 {
+		t.Fatalf("settling worker should not claim or target work")
+	}
+
+	runSim(w, 3*dt)
+	if wk.State != StateReactionDelay {
+		t.Fatalf("worker should enter reaction delay after settling, got state %v", wk.State)
+	}
+	if wk.TargetNodeID != w.Nodes[0].ID {
+		t.Fatalf("worker should target the free node after settling")
+	}
+}
+
+func TestReactionDelayReservesAtDepartureStart(t *testing.T) {
+	w := newWorldSingleNode(0, 0)
+	addWorker(w)
+	wk := w.Workers[0]
+
+	Step(w, dt)
+	if wk.State != StateReactionDelay {
+		t.Fatalf("worker should start reaction delay, got state %v", wk.State)
+	}
+	if w.Nodes[0].ReservedByWorkerID != -1 {
+		t.Fatalf("node should not be reserved until departure starts")
+	}
+
+	runSim(w, reactionDelay+dt)
+	if wk.State != StateDeparturePulse {
+		t.Fatalf("worker should enter departure pulse, got state %v", wk.State)
+	}
+	if w.Nodes[0].ReservedByWorkerID != wk.ID {
+		t.Fatalf("node should be reserved by departing worker")
+	}
+}
+
+func TestReservedNodeExcludedFromBestFreeAndPreview(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
+
+	closeNode := newNode(w, KindWood, 0.1)
+	farNode := newNode(w, KindWood, 0.3)
+	closeNode.ReservedByWorkerID = 7
+	w.Nodes = []*ResourceNode{closeNode, farNode}
+
+	if got := bestFreeNode(w); got != farNode {
+		t.Fatalf("bestFreeNode should skip reserved node")
+	}
+
+	free, claimed, reserved := localNodes(w, 0)
+	if len(free) != 1 || free[0].Node != farNode {
+		t.Fatalf("preview free routes should include only unreserved free node")
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("reserved-only setup should have no claimed nodes")
+	}
+	if len(reserved) != 1 || reserved[0] != closeNode {
+		t.Fatalf("preview should report the reserved node separately")
+	}
+}
+
+func TestUnloadCheckpointSwitchesToReservedNode(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	campAngle := 0.0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+
+	oldNode := newNode(w, KindWood, 1.0)
+	newNode := newNode(w, KindWood, 0.1)
+	oldNode.OwnerID = 0
+	newNode.ReservedByWorkerID = 0
+	w.Nodes = []*ResourceNode{oldNode, newNode}
+	w.Workers = []*Worker{{
+		ID:            0,
+		Angle:         campAngle,
+		State:         StateUnloading,
+		NodeID:        oldNode.ID,
+		PendingNodeID: newNode.ID,
+		TargetNodeID:  -1,
+		Carried:       1,
+		Timer:         dt,
+	}}
+
+	Step(w, 2*dt)
+
+	wk := w.Workers[0]
+	if wk.NodeID != newNode.ID || wk.State != StateDeparturePulse {
+		t.Fatalf("worker should depart for pending node, got state %v node %d", wk.State, wk.NodeID)
+	}
+	if oldNode.OwnerID != -1 {
+		t.Fatalf("old node should be freed at checkpoint")
+	}
+	if newNode.ReservedByWorkerID != wk.ID {
+		t.Fatalf("new node should remain reserved during departure")
+	}
+}
+
+func TestWorkerReturnsHomeWhenWorkDisappears(t *testing.T) {
+	w := newWorldSingleNode(0, 0)
+	w.Nodes = nil
+	addWorker(w)
+	wk := w.Workers[0]
+	wk.State = StateToForest
+	wk.NodeID = 999
+	wk.Angle = math.Pi / 2
+
+	Step(w, dt)
+	if wk.State != StateReturningHome {
+		t.Fatalf("missing node should send worker home, got state %v", wk.State)
+	}
+
+	runSim(w, 10)
+	if wk.State != StateIdleWaiting || wk.NodeID != -1 {
+		t.Fatalf("worker should settle back into idle home, got state %v node %d", wk.State, wk.NodeID)
+	}
+}
+
+func TestActiveWorkerCountExcludesIdleTransitions(t *testing.T) {
+	w := newTestWorld(0)
+	w.Workers = []*Worker{
+		{ID: 0, State: StateToForest, NodeID: 0},
+		{ID: 1, State: StateReturningHome, NodeID: -1},
+		{ID: 2, State: StateSettling, NodeID: -1},
+		{ID: 3, State: StateReactionDelay, NodeID: -1},
+		{ID: 4, State: StateIdleWaiting, NodeID: -1},
+	}
+	if got := activeWorkerCount(w); got != 1 {
+		t.Fatalf("activeWorkerCount got %d, want 1", got)
+	}
+}
+
+// TestNewNodeTriggersDelayedReassignment verifies that when a shorter free node
+// appears and no idle worker exists, the active worker reserves it but does not
+// abandon its current route mid-loop.
+func TestNewNodeTriggersDelayedReassignment(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -300,29 +457,32 @@ func TestNewNodeTriggersReassignment(t *testing.T) {
 	w.Nodes = []*ResourceNode{farNode}
 
 	addWorker(w)
-	Step(w, dt) // assign worker to farNode
+	runUntilInLoop(w)
 
 	if w.Workers[0].NodeID != farNode.ID {
 		t.Fatalf("setup: expected worker on far node")
 	}
 
-	// Spawn a closer node; rebalance runs automatically on the next tick.
+	// Spawn a closer node; delayed rebalance reserves it on the next tick.
 	closeNode := newNode(w, KindWood, normAngle(campAngle+0.2))
 	closeNode.Size = 1.0
 	w.Nodes = append(w.Nodes, closeNode)
 	Step(w, dt)
 
-	if w.Workers[0].NodeID != closeNode.ID {
-		t.Errorf("expected worker to switch to close node")
+	if w.Workers[0].NodeID != farNode.ID {
+		t.Errorf("expected worker to stay on far node until checkpoint")
 	}
-	if farNode.OwnerID != -1 {
-		t.Errorf("expected far node to be freed after reassignment")
+	if w.Workers[0].PendingNodeID != closeNode.ID {
+		t.Errorf("expected close node to be reserved as pending target")
+	}
+	if closeNode.ReservedByWorkerID != w.Workers[0].ID {
+		t.Errorf("expected close node reservation for worker")
 	}
 }
 
-// TestCampPlacementTriggersRebalance verifies that placing a new camp near a
-// free node causes a worker on a farther node to switch to it on the next tick.
-func TestCampPlacementTriggersRebalance(t *testing.T) {
+// TestCampPlacementTriggersDelayedRebalance verifies that placing a new camp near
+// a free node reserves it for checkpoint reassignment rather than swapping now.
+func TestCampPlacementTriggersDelayedRebalance(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -340,7 +500,7 @@ func TestCampPlacementTriggersRebalance(t *testing.T) {
 
 	// One worker: should claim nodeA (shorter route from initial camp).
 	addWorker(w)
-	Step(w, dt)
+	runUntilInLoop(w)
 
 	if w.Workers[0].NodeID != nodeA.ID {
 		t.Fatalf("setup: expected worker on nodeA (closer to initial camp)")
@@ -354,11 +514,14 @@ func TestCampPlacementTriggersRebalance(t *testing.T) {
 	})
 	Step(w, dt)
 
-	if w.Workers[0].NodeID != nodeB.ID {
-		t.Errorf("expected worker to switch to nodeB after new camp placed nearby")
+	if w.Workers[0].NodeID != nodeA.ID {
+		t.Errorf("expected worker to stay on nodeA until delivery checkpoint")
 	}
-	if nodeA.OwnerID != -1 {
-		t.Errorf("expected nodeA to be freed after worker switched")
+	if w.Workers[0].PendingNodeID != nodeB.ID {
+		t.Errorf("expected worker to reserve nodeB for delayed rebalance")
+	}
+	if nodeB.ReservedByWorkerID != w.Workers[0].ID {
+		t.Errorf("expected nodeB to be reserved for worker")
 	}
 }
 

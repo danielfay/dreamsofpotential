@@ -101,17 +101,17 @@ func TestLocalNodesPartitioning(t *testing.T) {
 	w.Nodes = []*ResourceNode{n}
 
 	// Exactly at the node: inside.
-	free, _ := localNodes(w, nodeAngle)
+	free, _, _ := localNodes(w, nodeAngle)
 	if len(free) != 1 {
 		t.Errorf("expected 1 free node when query == node angle, got %d", len(free))
 	}
 	// Just inside the arc.
-	free, _ = localNodes(w, nodeAngle+previewArc*0.99)
+	free, _, _ = localNodes(w, nodeAngle+previewArc*0.99)
 	if len(free) != 1 {
 		t.Errorf("expected 1 free node just inside arc, got %d", len(free))
 	}
 	// Just outside the arc.
-	free, _ = localNodes(w, nodeAngle+previewArc*1.01)
+	free, _, _ = localNodes(w, nodeAngle+previewArc*1.01)
 	if len(free) != 0 {
 		t.Errorf("expected 0 free nodes just outside arc, got %d", len(free))
 	}
@@ -121,7 +121,7 @@ func TestLocalNodesPartitioning(t *testing.T) {
 	n2 := newNode(w, KindWood, math.Pi-0.1)
 	n2.OwnerID = -1
 	w.Nodes = []*ResourceNode{n2}
-	free, _ = localNodes(w, -math.Pi+0.1)
+	free, _, _ = localNodes(w, -math.Pi+0.1)
 	if len(free) != 1 {
 		t.Errorf("expected 1 free node for wraparound query, got %d", len(free))
 	}

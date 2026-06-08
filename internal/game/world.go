@@ -28,38 +28,62 @@ func kindName(k ResourceKind) string {
 	return "unknown"
 }
 
-// WorkerState is the leg of the delivery round-trip a worker is currently on.
+// WorkerState is the leg of the delivery loop a worker is currently on.
 type WorkerState int
 
 const (
-	StateToForest  WorkerState = iota // walking to owned resource node
-	StateLoading                       // loading at the node
-	StateToBuilding                    // walking to nearest camp
-	StateUnloading                     // depositing at the camp
+	StateIdleWaiting    WorkerState = iota // waiting in a Town Hall idle spot
+	StateSettling                          // newly bought, briefly unavailable
+	StateReactionDelay                     // idle worker has noticed work, not yet leaving
+	StateDeparturePulse                    // committed to a target before movement starts
+	StateToRim                             // moving from idle home to Town Hall rim angle
+	StateToForest                          // walking to owned resource node
+	StateLoading                           // loading at the node
+	StateToBuilding                        // walking to nearest delivery building
+	StateUnloading                         // depositing at the delivery building
+	StateReturningHome                     // walking along rim to Town Hall
+	StateToIdleSpot                        // stepping inward into idle home
 )
+
+// PulseState stores a guarded micro-pulse. Rapid activations become steady-lit
+// instead of restarting a flickering pulse every frame.
+type PulseState struct {
+	Remaining     float64
+	LastActivated float64
+	SteadyUntil   float64
+}
 
 // ResourceNode is a single harvestable point on the planet rim.
 // OwnerID is the worker ID that has claimed it, or -1 if free.
+// ReservedByWorkerID is the worker ID that has spoken for it, or -1 if free.
 // Size scales both the visual and the load carried per trip (range ~0.6–1.4).
 type ResourceNode struct {
-	ID      int
-	Kind    ResourceKind
-	Pos     Vec
-	Angle   float64
-	OwnerID int
-	Size    float64
+	ID                 int
+	Kind               ResourceKind
+	Pos                Vec
+	Angle              float64
+	OwnerID            int
+	ReservedByWorkerID int
+	Size               float64
+	Pulse              PulseState
 }
 
 // Worker is a labourer that claims a node and delivers to the nearest camp.
-// NodeID == -1 means the worker is idle (no node claimed).
+// NodeID is the currently owned/worked node, or -1 if none.
+// TargetNodeID is a not-yet-owned node selected during reaction/departure.
+// PendingNodeID is a delayed rebalance target reserved until an unload checkpoint.
 type Worker struct {
-	ID      int
-	Pos     Vec
-	Angle   float64
-	State   WorkerState
-	NodeID  int
-	Carried float64
-	Timer   float64
+	ID            int
+	Pos           Vec
+	Angle         float64
+	State         WorkerState
+	NodeID        int
+	TargetNodeID  int
+	PendingNodeID int
+	DeliveryKind  BuildingKind
+	Carried       float64
+	Timer         float64
+	Pulse         PulseState
 }
 
 // BuildingKind identifies the type of a placed building.
@@ -73,9 +97,12 @@ const (
 // Building is a player-placed structure on the planet rim.
 // Pos is the rim point at Angle; Kind distinguishes the Town Hall from camps.
 type Building struct {
-	Kind  BuildingKind
-	Pos   Vec
-	Angle float64
+	Kind          BuildingKind
+	Pos           Vec
+	Angle         float64
+	DeliveredWood float64
+	DeliveryCount int
+	Pulse         PulseState
 }
 
 // ResourceField tracks per-kind progress toward spawning a new resource node.
@@ -122,7 +149,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 4
+const SaveVersion = 5
 
 // World holds all game state for a single planet.
 type World struct {
@@ -135,6 +162,7 @@ type World struct {
 	NextNodeID         int
 	NextWorkerID       int
 	ResourceDiscovered bool // true after the first wood delivery
+	SimTime            float64
 }
 
 // --- cost helpers ---
@@ -192,11 +220,14 @@ func buyWorker(w *World) bool {
 	id := w.NextWorkerID
 	w.NextWorkerID++
 	w.Workers = append(w.Workers, &Worker{
-		ID:     id,
-		Pos:    th.Pos,
-		Angle:  th.Angle,
-		State:  StateToForest,
-		NodeID: -1,
+		ID:            id,
+		Pos:           th.Pos,
+		Angle:         th.Angle,
+		State:         StateSettling,
+		NodeID:        -1,
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+		Timer:         settleDelay,
 	})
 	return true
 }
@@ -208,9 +239,13 @@ const (
 	loadTime         = 0.5  // seconds to load at the node
 	unloadTime       = 0.3  // seconds to unload at the camp
 	loadAmount       = 1.0  // resource units carried per trip
-	nodeSpawnBaseCap = 20.0      // deliveries needed for the first new node
-	nodeCapGrowth    = 1.5      // cap multiplier each time a node spawns
-	forestHalfArc    = math.Pi  // full surface coverage for wood (100% composition)
+	settleDelay      = 0.25 // seconds before a new worker can claim work
+	reactionDelay    = 0.25 // seconds before an idle worker departs for new work
+	microPulseTime   = 0.30 // seconds for worker/node/building activity pulse
+	pulseMinInterval = 0.50 // activations faster than this become steady-lit
+	nodeSpawnBaseCap = 20.0 // deliveries needed for the first new node
+	nodeCapGrowth    = 1.5  // cap multiplier each time a node spawns
+	forestHalfArc    = math.Pi
 	startingNodes    = 5
 )
 
@@ -220,12 +255,13 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 	id := w.NextNodeID
 	w.NextNodeID++
 	return &ResourceNode{
-		ID:      id,
-		Kind:    kind,
-		Angle:   angle,
-		Pos:     w.Planet.RimPoint(angle),
-		OwnerID: -1,
-		Size:    0.6 + rand.Float64()*0.8,
+		ID:                 id,
+		Kind:               kind,
+		Angle:              angle,
+		Pos:                w.Planet.RimPoint(angle),
+		OwnerID:            -1,
+		ReservedByWorkerID: -1,
+		Size:               0.6 + rand.Float64()*0.8,
 	}
 }
 

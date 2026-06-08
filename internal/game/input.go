@@ -5,11 +5,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
-// handleInput processes global keys and build-placement input. It must be
-// called after g.ui.Update() so that EbitenUI has already consumed any widget
-// clicks this frame, preventing a HUD button click from simultaneously placing
-// a camp on the world.
-func (g *Game) handleInput() {
+// handleGlobalInput processes keyboard-only commands that must take effect
+// before EbitenUI lays out widgets for the frame.
+func (g *Game) handleGlobalInput() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF3) {
 		g.debug = !g.debug
 	}
@@ -26,7 +24,13 @@ func (g *Game) handleInput() {
 		}
 		return
 	}
+}
 
+// handleInput processes build-placement input. It must be called after
+// g.ui.Update() so that EbitenUI has already consumed any widget clicks this
+// frame, preventing a HUD button click from simultaneously placing a camp on
+// the world.
+func (g *Game) handleInput() {
 	// Menu is open — swallow all further input so nothing behind it fires.
 	if g.showMenu {
 		return
@@ -55,6 +59,11 @@ func (g *Game) handleInput() {
 		wp := g.screenToWorld(mx, my)
 		theta := g.world.Planet.AngleOf(wp)
 		isTownHall := len(g.world.Buildings) == 0
+		pv := buildPreview(g.world, theta)
+		if !pv.Affordable && g.world.ResourceDiscovered {
+			g.pulseTime = pulseDuration
+			g.pulseTarget = 1
+		}
 		if placeBuilding(g.world, theta) && isTownHall {
 			g.placing = false
 		}
@@ -66,7 +75,8 @@ func (g *Game) handleInput() {
 // Hall (requires a local free node within previewArc). Subsequent placements
 // are paid logging camps that skip the local-node check.
 func placeBuilding(w *World, angle float64) bool {
-	if !buildPreview(w, angle).Valid {
+	pv := buildPreview(w, angle)
+	if !pv.Valid {
 		return false
 	}
 	if len(w.Buildings) == 0 {
