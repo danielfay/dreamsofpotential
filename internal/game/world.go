@@ -135,11 +135,6 @@ const (
 	campBaseCost     = 30.0
 	campCostGrowth   = 1.50
 
-	// firstCampLocalArc is the angular radius (radians) within which at least
-	// one resource node must exist for the free first camp to be placeable.
-	// Tuning constant: increase to make the first placement easier to land.
-	firstCampLocalArc = 0.6
-
 	// pulseDuration is how long (seconds) the unaffordable-cost flash lasts.
 	pulseDuration = 0.4
 )
@@ -160,17 +155,6 @@ func CampCost(w *World) float64 {
 		return 0
 	}
 	return campBaseCost * math.Pow(campCostGrowth, float64(w.Economy.CampsBought))
-}
-
-// hasLocalNode reports whether any resource node lies within arc radians of
-// the given rim angle. Used to validate free first-camp placement.
-func hasLocalNode(w *World, angle, arc float64) bool {
-	for _, n := range w.Nodes {
-		if math.Abs(normAngle(n.Angle-angle)) <= arc {
-			return true
-		}
-	}
-	return false
 }
 
 // buyWorker attempts to purchase a worker. The first worker (WorkersBought==0)

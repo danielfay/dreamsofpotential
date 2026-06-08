@@ -18,14 +18,15 @@ type Game struct {
 	scene       *ebiten.Image // low-res 320×240 canvas; scaled up to the window
 	ui          *ebitenui.UI
 	hud         *HUD
-	placing     bool    // true while waiting for player to click a camp location
-	debug       bool    // F3 — verbose debug panel; session-only, not persisted
-	pulseTime   float64 // seconds remaining on the unaffordable-cost flash
-	pulseTarget int     // which button pulses: 0=none, 1=build, 2=worker
-	screenW     int     // current screen dimensions, updated each Draw()
+	placing     bool               // true while waiting for player to click a camp location
+	preview     *placementPreview  // current frame's placement preview; nil when not placing
+	debug       bool               // F3 — verbose debug panel; session-only, not persisted
+	pulseTime   float64            // seconds remaining on the unaffordable-cost flash
+	pulseTarget int                // which button pulses: 0=none, 1=build, 2=worker
+	screenW     int                // current screen dimensions, updated each Draw()
 	screenH     int
-	hudScale    int     // integer view scale at last HUD build; triggers rebuild on change
-	saveTimer   float64 // counts down to next autosave
+	hudScale    int                // integer view scale at last HUD build; triggers rebuild on change
+	saveTimer   float64            // counts down to next autosave
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -66,7 +67,8 @@ func (g *Game) Update() error {
 		_ = Save(g.world)
 		g.saveTimer = autoSavePeriod
 	}
-	g.hud.Refresh(g.world, g.placing, g.debug)
+	g.preview = g.curPlacementPreview()
+	g.hud.Refresh(g.world, g.placing, g.debug, g.preview)
 	g.handleInput()
 	return nil
 }
@@ -82,7 +84,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	DrawWorld(g.scene, g.world, g.ghostPos())
+	DrawWorld(g.scene, g.world, g.preview, g.debug)
 
 	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	op := &ebiten.DrawImageOptions{}

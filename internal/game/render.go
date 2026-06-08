@@ -32,15 +32,19 @@ func viewGeom(screenW, screenH int) (scale, offX, offY float64) {
 
 // palette
 var (
-	colBackground  = color.RGBA{R: 10, G: 10, B: 20, A: 255}
-	colPlanetBody  = color.RGBA{R: 5, G: 5, B: 10, A: 255}   // near-black interior
-	colPlanetEdge  = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
-	colNodeFree    = color.RGBA{R: 40, G: 160, B: 60, A: 255}
-	colNodeClaimed = color.RGBA{R: 20, G: 100, B: 35, A: 255}
-	colBuilding    = color.RGBA{R: 140, G: 90, B: 50, A: 255}
-	colWorkerEmpty = color.RGBA{R: 220, G: 200, B: 150, A: 255}
-	colWorkerLaden = color.RGBA{R: 255, G: 240, B: 80, A: 255}
-	colGhostOk     = color.RGBA{R: 200, G: 200, B: 255, A: 160}
+	colBackground    = color.RGBA{R: 10, G: 10, B: 20, A: 255}
+	colPlanetBody    = color.RGBA{R: 5, G: 5, B: 10, A: 255}   // near-black interior
+	colPlanetEdge    = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
+	colNodeFree      = color.RGBA{R: 40, G: 160, B: 60, A: 255}
+	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
+	colBuilding      = color.RGBA{R: 140, G: 90, B: 50, A: 255}
+	colWorkerEmpty   = color.RGBA{R: 220, G: 200, B: 150, A: 255}
+	colWorkerLaden   = color.RGBA{R: 255, G: 240, B: 80, A: 255}
+	colGhostOk       = color.RGBA{R: 200, G: 200, B: 255, A: 160}
+	colGhostBad      = color.RGBA{R: 200, G: 80, B: 80, A: 80}
+	colRouteFree     = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
+	colRouteClaimed  = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
+	colPreviewDebug  = color.RGBA{R: 255, G: 220, B: 80, A: 180}  // debug range markers
 )
 
 // kindFillColor returns a translucent interior fill colour for a resource kind.
@@ -52,8 +56,9 @@ func kindFillColor(k ResourceKind) color.RGBA {
 }
 
 // DrawWorld renders the complete world state onto the low-res scene image.
-// ghostPos is non-nil during build-placement mode and draws a preview camp.
-func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
+// pv is non-nil during build-placement mode and drives the camp ghost and route
+// line preview. debug enables the range-boundary markers.
+func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) {
 	scene.Fill(colBackground)
 
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
@@ -72,7 +77,6 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 		fillR := (r - rimWidth) * float32(f.Counter/f.Cap)
 		col := kindFillColor(f.Kind)
 		if math.Abs(f.HalfArc-math.Pi) < 1e-9 {
-			// Full surface: a simple filled circle is correct and fast.
 			vector.FillCircle(scene, cx, cy, fillR, col, false)
 		} else {
 			drawFilledSector(scene, cx, cy, fillR,
@@ -80,13 +84,21 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 		}
 	}
 
-	// resource nodes — pine-tree shape oriented inward along the rim normal
+	// resource nodes — pine-tree shape; muted when in preview and claimed
 	for _, n := range w.Nodes {
 		col := colNodeFree
 		if n.OwnerID != -1 {
 			col = colNodeClaimed
 		}
+		if pv != nil {
+			col = previewNodeColor(n, pv)
+		}
 		drawPineTree(scene, n, col)
+	}
+
+	// placement preview — route lines and ghost, drawn above nodes/below buildings
+	if pv != nil {
+		drawPreview(scene, w.Planet, pv, debug)
 	}
 
 	// buildings
@@ -104,12 +116,103 @@ func DrawWorld(scene *ebiten.Image, w *World, ghostPos *Vec) {
 		vector.FillRect(scene,
 			float32(wk.Pos.X)-1, float32(wk.Pos.Y)-1, 3, 3, col, false)
 	}
+}
 
-	// ghost building during placement mode
-	if ghostPos != nil {
-		vector.FillRect(scene,
-			float32(ghostPos.X)-3, float32(ghostPos.Y)-3, 7, 7, colGhostOk, false)
+// previewNodeColor returns the colour to draw node n while a placement preview
+// is active. In-range free nodes are emphasised; in-range claimed nodes are
+// muted; out-of-range nodes use normal colours.
+func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
+	inRange := math.Abs(normAngle(n.Angle-pv.Angle)) <= previewArc
+	if !inRange {
+		if n.OwnerID == -1 {
+			return colNodeFree
+		}
+		return colNodeClaimed
 	}
+	if n.OwnerID == -1 {
+		return color.RGBA{R: 80, G: 220, B: 100, A: 255} // brighter free
+	}
+	return color.RGBA{R: 15, G: 65, B: 25, A: 180} // deeper mute for claimed
+}
+
+// drawPreview draws route lines, the camp ghost, and (in debug mode) the range
+// boundary for the given placement preview.
+func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug bool) {
+	radius := float32(planet.Radius)
+	maxDist := float32(previewArc) * radius
+
+	// Free-node route lines — quality-scaled brightness and width.
+	for _, pr := range pv.Free {
+		q := float32(1) - clamp32(float32(pr.Dist)/maxDist, 0, 1)
+		a := uint8(80 + 120*q)
+		col := color.RGBA{R: colRouteFree.R, G: colRouteFree.G, B: colRouteFree.B, A: a}
+		w := 1.0 + 1.5*q
+		drawRimArc(scene, planet, float32(pv.Angle), float32(pr.Node.Angle), w, col)
+	}
+
+	// Claimed-node route lines — uniform muted.
+	for _, n := range pv.Claimed {
+		drawRimArc(scene, planet, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
+	}
+
+	// Camp ghost — validity only.
+	col := colGhostOk
+	if !pv.Valid {
+		col = colGhostBad
+	}
+	vector.FillRect(scene,
+		float32(pv.Pos.X)-3, float32(pv.Pos.Y)-3, 7, 7, col, false)
+
+	// Debug: range boundary ticks at ±previewArc.
+	if debug {
+		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
+		for _, side := range []float64{-previewArc, previewArc} {
+			a := pv.Angle + side
+			inner := float32(0.88)
+			x0 := cx + radius*float32(math.Cos(a))
+			y0 := cy + radius*float32(math.Sin(a))
+			x1 := cx + radius*inner*float32(math.Cos(a))
+			y1 := cy + radius*inner*float32(math.Sin(a))
+			vector.StrokeLine(scene, x0, y0, x1, y1, 1.5, colPreviewDebug, false)
+		}
+	}
+}
+
+// drawRimArc strokes an arc from angle a to b along planet's rim with the
+// given line width and colour, following the short way round.
+func drawRimArc(scene *ebiten.Image, planet Planet, a, b, width float32, col color.RGBA) {
+	const steps = 16
+	delta := float32(normAngle(float64(b - a)))
+	cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
+	r := float32(planet.Radius)
+
+	var path vector.Path
+	for i := 0; i <= steps; i++ {
+		t := float32(i) / float32(steps)
+		angle := a + delta*t
+		x := cx + r*float32(math.Cos(float64(angle)))
+		y := cy + r*float32(math.Sin(float64(angle)))
+		if i == 0 {
+			path.MoveTo(x, y)
+		} else {
+			path.LineTo(x, y)
+		}
+	}
+	sop := &vector.StrokeOptions{Width: width}
+	drawOp := &vector.DrawPathOptions{}
+	drawOp.ColorScale.ScaleWithColor(col)
+	vector.StrokePath(scene, &path, sop, drawOp)
+}
+
+// clamp32 clamps a float32 to [lo, hi].
+func clamp32(v, lo, hi float32) float32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // drawPineTree draws a 3-layer pine tree at n.Pos oriented inward along the

@@ -47,13 +47,11 @@ func (g *Game) handleInput() {
 
 // buyCamp attempts to place a camp at the given rim angle. Returns true if the
 // camp was placed. The first camp (CampsBought==0) is free but requires at
-// least one resource node within firstCampLocalArc radians; later camps cost
+// least one free resource node within previewArc radians; later camps cost
 // CampCost and skip the local-node check.
 func buyCamp(w *World, angle float64) bool {
-	if w.Economy.CampsBought == 0 {
-		if !hasLocalNode(w, angle, firstCampLocalArc) {
-			return false
-		}
+	if !buildPreview(w, angle).Valid {
+		return false
 	}
 	cost := CampCost(w)
 	if w.Economy.Wood < cost {
@@ -68,14 +66,21 @@ func buyCamp(w *World, angle float64) bool {
 	return true
 }
 
-// ghostPos returns the snapped rim position of the cursor when in placement mode,
-// or nil when not placing. Used by render.go to draw the preview building.
-func (g *Game) ghostPos() *Vec {
+// curPlacementPreview returns the placement preview for the current cursor
+// position, or nil when not placing or the cursor is too far from the rim.
+func (g *Game) curPlacementPreview() *placementPreview {
 	if !g.placing {
 		return nil
 	}
 	mx, my := ebiten.CursorPosition()
 	wp := g.screenToWorld(mx, my)
-	snapped := g.world.Planet.RimPoint(g.world.Planet.AngleOf(wp))
-	return &snapped
+	center := g.world.Planet.Center
+	radius := g.world.Planet.Radius
+	dist := wp.Dist(center)
+	if dist < radius-rimSnapBand || dist > radius+rimSnapBand {
+		return nil
+	}
+	angle := g.world.Planet.AngleOf(wp)
+	pv := buildPreview(g.world, angle)
+	return &pv
 }

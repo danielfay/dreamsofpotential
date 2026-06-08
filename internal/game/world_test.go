@@ -88,36 +88,40 @@ func TestBuyWorkerSecondCostsWood(t *testing.T) {
 	}
 }
 
-func TestHasLocalNode(t *testing.T) {
+func TestLocalNodesPartitioning(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
 
 	nodeAngle := 1.0
 	n := newNode(w, KindWood, nodeAngle)
+	n.OwnerID = -1
 	w.Nodes = []*ResourceNode{n}
 
-	arc := 0.6
-
 	// Exactly at the node: inside.
-	if !hasLocalNode(w, nodeAngle, arc) {
-		t.Error("expected true when query angle == node angle")
+	free, _ := localNodes(w, nodeAngle)
+	if len(free) != 1 {
+		t.Errorf("expected 1 free node when query == node angle, got %d", len(free))
 	}
 	// Just inside the arc.
-	if !hasLocalNode(w, nodeAngle+arc*0.99, arc) {
-		t.Error("expected true just inside arc")
+	free, _ = localNodes(w, nodeAngle+previewArc*0.99)
+	if len(free) != 1 {
+		t.Errorf("expected 1 free node just inside arc, got %d", len(free))
 	}
 	// Just outside the arc.
-	if hasLocalNode(w, nodeAngle+arc*1.01, arc) {
-		t.Error("expected false just outside arc")
+	free, _ = localNodes(w, nodeAngle+previewArc*1.01)
+	if len(free) != 0 {
+		t.Errorf("expected 0 free nodes just outside arc, got %d", len(free))
 	}
 
 	// Wraparound: node near +π, query near -π.
 	w.Nodes = nil
 	n2 := newNode(w, KindWood, math.Pi-0.1)
+	n2.OwnerID = -1
 	w.Nodes = []*ResourceNode{n2}
-	if !hasLocalNode(w, -math.Pi+0.1, arc) {
-		t.Error("expected true for wraparound query near ±π boundary")
+	free, _ = localNodes(w, -math.Pi+0.1)
+	if len(free) != 1 {
+		t.Errorf("expected 1 free node for wraparound query, got %d", len(free))
 	}
 }
 

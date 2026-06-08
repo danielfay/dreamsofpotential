@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"strings"
 
 	"github.com/ebitenui/ebitenui"
 	eimage "github.com/ebitenui/ebitenui/image"
@@ -28,6 +29,7 @@ type HUD struct {
 	workerText   *widget.Text
 	nodeText     *widget.Text
 	fieldText    *widget.Text
+	previewText  *widget.Text
 	buyWorkerDbg *widget.Button
 	buildCampDbg *widget.Button
 	resetBtn     *widget.Button
@@ -59,12 +61,12 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 }
 
 // Refresh updates all HUD labels and visibility states to match the world.
-func (h *HUD) Refresh(w *World, placing, debug bool) {
+func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview) {
 	if debug {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
-		h.refreshDebug(w, placing)
+		h.refreshDebug(w, placing, pv)
 	} else {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Show)
@@ -73,7 +75,7 @@ func (h *HUD) Refresh(w *World, placing, debug bool) {
 	}
 }
 
-func (h *HUD) refreshDebug(w *World, placing bool) {
+func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	freeNodes, claimedNodes := 0, 0
 	for _, n := range w.Nodes {
 		if n.OwnerID == -1 {
@@ -108,6 +110,25 @@ func (h *HUD) refreshDebug(w *World, placing bool) {
 	cc := CampCost(w)
 	h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", cc))
 	h.buildCampDbg.GetWidget().Disabled = placing
+
+	if pv != nil {
+		validity := "valid"
+		if !pv.Valid {
+			validity = "INVALID"
+		}
+		dists := make([]string, 0, len(pv.Free))
+		for _, pr := range pv.Free {
+			dists = append(dists, fmt.Sprintf("%.0f", pr.Dist))
+		}
+		distStr := "-"
+		if len(dists) > 0 {
+			distStr = "[" + strings.Join(dists, ",") + "]"
+		}
+		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d claimed)  d=%s",
+			validity, len(pv.Free)+len(pv.Claimed), len(pv.Free), len(pv.Claimed), distStr)
+	} else {
+		h.previewText.Label = "preview: —"
+	}
 }
 
 func (h *HUD) refreshNormal(w *World) {
@@ -202,6 +223,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.workerText = mkText("workers: 0 active  0 idle  0 total")
 	hud.nodeText = mkText("nodes: 0 free  0 claimed")
 	hud.fieldText = mkText("field: 0.0 / 0.0")
+	hud.previewText = mkText("preview: —")
 
 	hud.buyWorkerDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
@@ -260,6 +282,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.workerText)
 	hud.debugPanel.AddChild(hud.nodeText)
 	hud.debugPanel.AddChild(hud.fieldText)
+	hud.debugPanel.AddChild(hud.previewText)
 	hud.debugPanel.AddChild(hud.buyWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.resetBtn)
