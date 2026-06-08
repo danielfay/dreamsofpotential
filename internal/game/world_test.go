@@ -22,15 +22,17 @@ func TestWorkerCostFirstFree(t *testing.T) {
 	}
 }
 
-func TestCampCostFirstFree(t *testing.T) {
+func TestCampCostProgression(t *testing.T) {
 	w := NewWorld()
-	if got := CampCost(w); got != 0 {
-		t.Errorf("CampCost with CampsBought=0: got %.2f, want 0", got)
+	// First logging camp (CampsBought==0) costs campBaseCost.
+	want0 := campBaseCost * math.Pow(campCostGrowth, 0) // 30
+	if got := CampCost(w); math.Abs(got-want0) > 1e-9 {
+		t.Errorf("CampCost with CampsBought=0: got %.4f, want %.4f", got, want0)
 	}
 	w.Economy.CampsBought = 1
-	want := campBaseCost * math.Pow(campCostGrowth, 1)
-	if got := CampCost(w); math.Abs(got-want) > 1e-9 {
-		t.Errorf("CampCost with CampsBought=1: got %.4f, want %.4f", got, want)
+	want1 := campBaseCost * math.Pow(campCostGrowth, 1)
+	if got := CampCost(w); math.Abs(got-want1) > 1e-9 {
+		t.Errorf("CampCost with CampsBought=1: got %.4f, want %.4f", got, want1)
 	}
 }
 
@@ -46,9 +48,9 @@ func TestBuyWorkerNoCamp(t *testing.T) {
 
 func TestBuyWorkerFirstFree(t *testing.T) {
 	w := NewWorld()
-	// Add a camp manually (bypassing buyCamp) so we test buyWorker in isolation.
+	// Add a Town Hall manually so we test buyWorker in isolation.
 	w.Buildings = append(w.Buildings, &Building{
-		Angle: 0, Pos: w.Planet.RimPoint(0),
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	w.Economy.Wood = 0
 
@@ -69,7 +71,7 @@ func TestBuyWorkerFirstFree(t *testing.T) {
 func TestBuyWorkerSecondCostsWood(t *testing.T) {
 	w := NewWorld()
 	w.Buildings = append(w.Buildings, &Building{
-		Angle: 0, Pos: w.Planet.RimPoint(0),
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	w.Economy.WorkersBought = 1 // first already bought
 	w.Economy.Wood = 0          // no wood for the second
@@ -125,7 +127,7 @@ func TestLocalNodesPartitioning(t *testing.T) {
 	}
 }
 
-func TestBuyCampFirstFreeRequiresLocalNode(t *testing.T) {
+func TestPlaceBuildingFirstIsTownHall(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -134,44 +136,74 @@ func TestBuyCampFirstFreeRequiresLocalNode(t *testing.T) {
 	nodeAngle := 0.0
 	w.Nodes = []*ResourceNode{newNode(w, KindWood, nodeAngle)}
 
-	// Angle far from the node — should fail for the first camp.
+	// Far from the node — should fail (Town Hall needs a local free node).
 	farAngle := normAngle(nodeAngle + math.Pi)
-	if buyCamp(w, farAngle) {
-		t.Error("first buyCamp far from all nodes should return false")
+	if placeBuilding(w, farAngle) {
+		t.Error("first placeBuilding far from all nodes should return false")
 	}
 	if len(w.Buildings) != 0 {
-		t.Error("no building should be added when first buyCamp fails local check")
+		t.Error("no building should be added when first placeBuilding fails local check")
 	}
 
-	// Angle near the node — should succeed.
-	if !buyCamp(w, nodeAngle) {
-		t.Error("first buyCamp near a node should succeed")
+	// Near the node — should succeed and place a free Town Hall.
+	if !placeBuilding(w, nodeAngle) {
+		t.Error("first placeBuilding near a node should succeed")
 	}
 	if len(w.Buildings) != 1 {
-		t.Errorf("expected 1 building, got %d", len(w.Buildings))
+		t.Fatalf("expected 1 building, got %d", len(w.Buildings))
+	}
+	if w.Buildings[0].Kind != KindTownHall {
+		t.Errorf("first building Kind: got %v, want KindTownHall", w.Buildings[0].Kind)
+	}
+	if w.Economy.CampsBought != 0 {
+		t.Errorf("CampsBought should stay 0 after Town Hall, got %d", w.Economy.CampsBought)
+	}
+	if w.Economy.Wood != 0 {
+		t.Errorf("Wood after free Town Hall: got %.2f, want 0", w.Economy.Wood)
+	}
+}
+
+func TestPlaceBuildingSecondIsLoggingCamp(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	// Pre-place a Town Hall.
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
+	w.Economy.Wood = CampCost(w) // 30
+
+	// Second placement with a Town Hall present skips the local-node check.
+	farAngle := math.Pi
+	if !placeBuilding(w, farAngle) {
+		t.Error("second placeBuilding should succeed even with no local nodes")
+	}
+	if len(w.Buildings) != 2 {
+		t.Fatalf("expected 2 buildings, got %d", len(w.Buildings))
+	}
+	if w.Buildings[1].Kind != KindLoggingCamp {
+		t.Errorf("second building Kind: got %v, want KindLoggingCamp", w.Buildings[1].Kind)
 	}
 	if w.Economy.CampsBought != 1 {
 		t.Errorf("CampsBought: got %d, want 1", w.Economy.CampsBought)
 	}
-	if w.Economy.Wood != 0 {
-		t.Errorf("Wood after free first camp: got %.2f, want 0", w.Economy.Wood)
-	}
 }
 
-func TestBuyCampLaterSkipsLocalCheck(t *testing.T) {
+func TestTownHallHelper(t *testing.T) {
 	w := NewWorld()
-	w.Nodes = nil
-	w.NextNodeID = 0
-	w.Economy.CampsBought = 1 // simulate first already placed
-	w.Economy.Wood = CampCost(w)
 
-	// No nodes anywhere — but later camps skip the check, so it should succeed.
-	farAngle := math.Pi
-	if !buyCamp(w, farAngle) {
-		t.Error("second+ buyCamp should succeed even with no local nodes")
+	if got := townHall(w); got != nil {
+		t.Error("townHall with no buildings should return nil")
 	}
-	if len(w.Buildings) != 1 {
-		t.Errorf("expected 1 building, got %d", len(w.Buildings))
+
+	th := &Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}
+	w.Buildings = append(w.Buildings, th)
+	if got := townHall(w); got != th {
+		t.Error("townHall should return the KindTownHall building")
+	}
+
+	// Adding a logging camp should not affect townHall result.
+	w.Buildings = append(w.Buildings, &Building{Kind: KindLoggingCamp, Angle: 1})
+	if got := townHall(w); got != th {
+		t.Error("townHall should still return the Town Hall with mixed buildings")
 	}
 }
 

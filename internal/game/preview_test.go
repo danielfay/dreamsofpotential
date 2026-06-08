@@ -103,16 +103,44 @@ func TestBuildPreviewFirstCampNeedsFreNode(t *testing.T) {
 	if !pv.Valid {
 		t.Error("first camp with a free local node should be valid")
 	}
+	if pv.Kind != KindTownHall {
+		t.Errorf("first valid preview Kind: got %v, want KindTownHall", pv.Kind)
+	}
 }
 
 func TestBuildPreviewLaterCampAlwaysValid(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
-	w.Economy.CampsBought = 1 // past first camp
+	// A Town Hall must exist before camps; once it does, camp placement is always valid.
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
 
 	pv := buildPreview(w, 0)
 	if !pv.Valid {
-		t.Error("later camp with no nodes should still be valid")
+		t.Error("camp with Town Hall and no nodes should still be valid")
+	}
+	if pv.Kind != KindLoggingCamp {
+		t.Errorf("preview Kind: got %v, want KindLoggingCamp", pv.Kind)
+	}
+}
+
+func TestBuildPreviewKind(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+
+	// Before Town Hall: Kind is KindTownHall.
+	free := newNode(w, KindWood, 0)
+	free.OwnerID = -1
+	w.Nodes = []*ResourceNode{free}
+	pv := buildPreview(w, 0)
+	if pv.Kind != KindTownHall {
+		t.Errorf("first preview Kind: got %v, want KindTownHall", pv.Kind)
+	}
+
+	// After Town Hall: Kind is KindLoggingCamp.
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
+	pv = buildPreview(w, 0)
+	if pv.Kind != KindLoggingCamp {
+		t.Errorf("later preview Kind: got %v, want KindLoggingCamp", pv.Kind)
 	}
 }
 

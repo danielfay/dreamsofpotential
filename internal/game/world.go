@@ -62,8 +62,18 @@ type Worker struct {
 	Timer   float64
 }
 
-// Building is a player-placed logging camp on the planet rim.
+// BuildingKind identifies the type of a placed building.
+type BuildingKind int
+
+const (
+	KindTownHall    BuildingKind = iota // 0 — settlement anchor and delivery point
+	KindLoggingCamp                     // 1 — resource harvesting camp
+)
+
+// Building is a player-placed structure on the planet rim.
+// Pos is the rim point at Angle; Kind distinguishes the Town Hall from camps.
 type Building struct {
+	Kind  BuildingKind
 	Pos   Vec
 	Angle float64
 }
@@ -112,7 +122,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 3
+const SaveVersion = 4
 
 // World holds all game state for a single planet.
 type World struct {
@@ -149,18 +159,28 @@ func WorkerCost(w *World) float64 {
 }
 
 // CampCost returns the wood cost to place the next logging camp.
-// The first camp (CampsBought==0) is free.
+// The Town Hall is free and separate from camp cost progression; the first
+// logging camp (CampsBought==0) costs campBaseCost.
 func CampCost(w *World) float64 {
-	if w.Economy.CampsBought == 0 {
-		return 0
-	}
 	return campBaseCost * math.Pow(campCostGrowth, float64(w.Economy.CampsBought))
 }
 
+// townHall returns the Town Hall building, or nil if none has been placed.
+func townHall(w *World) *Building {
+	for _, b := range w.Buildings {
+		if b.Kind == KindTownHall {
+			return b
+		}
+	}
+	return nil
+}
+
 // buyWorker attempts to purchase a worker. The first worker (WorkersBought==0)
-// is free. Returns true if the purchase succeeded.
+// is free. Returns true if the purchase succeeded. New workers spawn at the
+// Town Hall idle area.
 func buyWorker(w *World) bool {
-	if len(w.Buildings) == 0 {
+	th := townHall(w)
+	if th == nil {
 		return false
 	}
 	cost := WorkerCost(w)
@@ -169,13 +189,12 @@ func buyWorker(w *World) bool {
 	}
 	w.Economy.Wood -= cost
 	w.Economy.WorkersBought++
-	camp := w.Buildings[0]
 	id := w.NextWorkerID
 	w.NextWorkerID++
 	w.Workers = append(w.Workers, &Worker{
 		ID:     id,
-		Pos:    camp.Pos,
-		Angle:  camp.Angle,
+		Pos:    th.Pos,
+		Angle:  th.Angle,
 		State:  StateToForest,
 		NodeID: -1,
 	})

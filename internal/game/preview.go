@@ -20,9 +20,11 @@ type previewRoute struct {
 	Dist float64 // arc length in world px
 }
 
-// placementPreview holds all data needed to render the camp placement preview
-// and enforce first-camp validity.
+// placementPreview holds all data needed to render the building placement preview
+// and enforce validity. Kind indicates whether the ghost is a Town Hall or a
+// logging camp, which controls ghost art and validity rules.
 type placementPreview struct {
+	Kind    BuildingKind
 	Angle   float64
 	Pos     Vec
 	Valid   bool
@@ -56,12 +58,19 @@ func localNodes(w *World, angle float64) (free []previewRoute, claimed []*Resour
 }
 
 // buildPreview assembles a placementPreview for a ghost at the given rim angle.
-// Valid is true when: later camps (CampsBought > 0) always; first camp only
-// when at least one free local node is within previewArc.
+// The first placement (no buildings yet) is a Town Hall and requires at least
+// one free local node. Subsequent placements are logging camps and are always
+// valid regardless of node proximity.
 func buildPreview(w *World, angle float64) placementPreview {
 	free, claimed := localNodes(w, angle)
-	valid := w.Economy.CampsBought > 0 || len(free) > 0
+	hasTownHall := len(w.Buildings) > 0
+	valid := hasTownHall || len(free) > 0
+	kind := KindTownHall
+	if hasTownHall {
+		kind = KindLoggingCamp
+	}
 	return placementPreview{
+		Kind:    kind,
 		Angle:   angle,
 		Pos:     w.Planet.RimPoint(angle),
 		Valid:   valid,

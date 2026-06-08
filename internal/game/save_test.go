@@ -54,6 +54,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		if gb.Angle != b.Angle {
 			t.Errorf("Buildings[%d].Angle: got %v, want %v", i, gb.Angle, b.Angle)
 		}
+		if gb.Kind != b.Kind {
+			t.Errorf("Buildings[%d].Kind: got %v, want %v", i, gb.Kind, b.Kind)
+		}
 	}
 
 	if got.ResourceDiscovered != w.ResourceDiscovered {

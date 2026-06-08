@@ -30,6 +30,18 @@ func viewGeom(screenW, screenH int) (scale, offX, offY float64) {
 	return
 }
 
+// Building / worker render sizes.
+const (
+	campBldHalf      = float32(3.5) // half of 7×7 camp square
+	campBldSize      = float32(7)
+	townHallBldHalf  = float32(5.5) // half of 11×11 town hall square
+	townHallBldSize  = float32(11)
+	townHallBldInset = float32(5.5) // px inward from rim for town hall art center
+	workerBldHalf    = float32(1)   // half of 3×3 worker square
+	workerBldSize    = float32(3)
+	idleMaxSlots     = 5 // max visible idle-worker spots near the town hall
+)
+
 // palette
 var (
 	colBackground    = color.RGBA{R: 10, G: 10, B: 20, A: 255}
@@ -37,6 +49,7 @@ var (
 	colPlanetEdge    = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
 	colNodeFree      = color.RGBA{R: 40, G: 160, B: 60, A: 255}
 	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
+	colTownHall      = color.RGBA{R: 190, G: 160, B: 110, A: 255} // warm stone
 	colBuilding      = color.RGBA{R: 140, G: 90, B: 50, A: 255}
 	colWorkerEmpty   = color.RGBA{R: 220, G: 200, B: 150, A: 255}
 	colWorkerLaden   = color.RGBA{R: 255, G: 240, B: 80, A: 255}
@@ -103,18 +116,50 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 
 	// buildings
 	for _, b := range w.Buildings {
-		vector.FillRect(scene,
-			float32(b.Pos.X)-3, float32(b.Pos.Y)-3, 7, 7, colBuilding, false)
+		if b.Kind == KindTownHall {
+			ip := insetPoint(w.Planet, b.Angle, float64(townHallBldInset))
+			vector.FillRect(scene,
+				float32(ip.X)-townHallBldHalf, float32(ip.Y)-townHallBldHalf,
+				townHallBldSize, townHallBldSize, colTownHall, false)
+		} else {
+			vector.FillRect(scene,
+				float32(b.Pos.X)-campBldHalf, float32(b.Pos.Y)-campBldHalf,
+				campBldSize, campBldSize, colBuilding, false)
+		}
 	}
 
-	// workers (global pool)
+	// workers — active ones at their sim position; idle ones at Town Hall cluster.
+	th := townHall(w)
+	idleCount := 0
+	for _, wk := range w.Workers {
+		if wk.NodeID == -1 {
+			idleCount++
+		}
+	}
+	slots := idleHomeSlots(w.Planet, th, idleCount)
+	slotIdx := 0
 	for _, wk := range w.Workers {
 		col := colWorkerEmpty
 		if wk.Carried > 0 {
 			col = colWorkerLaden
 		}
-		vector.FillRect(scene,
-			float32(wk.Pos.X)-1, float32(wk.Pos.Y)-1, 3, 3, col, false)
+		if wk.NodeID == -1 && th != nil {
+			if slotIdx < len(slots) {
+				sp := slots[slotIdx]
+				slotIdx++
+				vector.FillRect(scene,
+					float32(sp.X)-workerBldHalf, float32(sp.Y)-workerBldHalf,
+					workerBldSize, workerBldSize, col, false)
+			}
+			// overflow workers omitted here; handled by drawIdleOverflow below
+		} else {
+			vector.FillRect(scene,
+				float32(wk.Pos.X)-workerBldHalf, float32(wk.Pos.Y)-workerBldHalf,
+				workerBldSize, workerBldSize, col, false)
+		}
+	}
+	if th != nil && idleCount > idleMaxSlots {
+		drawIdleOverflow(scene, w.Planet, th, idleCount-idleMaxSlots)
 	}
 }
 
@@ -155,13 +200,21 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 		drawRimArc(scene, planet, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
 	}
 
-	// Camp ghost — validity only.
+	// Building ghost — validity-coloured; shape depends on kind.
 	col := colGhostOk
 	if !pv.Valid {
 		col = colGhostBad
 	}
-	vector.FillRect(scene,
-		float32(pv.Pos.X)-3, float32(pv.Pos.Y)-3, 7, 7, col, false)
+	if pv.Kind == KindTownHall {
+		ip := insetPoint(planet, pv.Angle, float64(townHallBldInset))
+		vector.FillRect(scene,
+			float32(ip.X)-townHallBldHalf, float32(ip.Y)-townHallBldHalf,
+			townHallBldSize, townHallBldSize, col, false)
+	} else {
+		vector.FillRect(scene,
+			float32(pv.Pos.X)-campBldHalf, float32(pv.Pos.Y)-campBldHalf,
+			campBldSize, campBldSize, col, false)
+	}
 
 	// Debug: range boundary ticks at ±previewArc.
 	if debug {
@@ -259,6 +312,68 @@ func drawOrientedRect(scene *ebiten.Image, lx, ly, tx, ty, ix, iy, hw, hh float3
 	drawOp := &vector.DrawPathOptions{}
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.FillPath(scene, &path, nil, drawOp)
+}
+
+// insetPoint returns a world position stepped inward from the rim at angle by
+// offset pixels toward the planet center.
+func insetPoint(p Planet, angle, offset float64) Vec {
+	rim := p.RimPoint(angle)
+	return Vec{
+		X: rim.X - math.Cos(angle)*offset,
+		Y: rim.Y - math.Sin(angle)*offset,
+	}
+}
+
+// idleHomeSlots returns up to idleMaxSlots distinct world positions for idle
+// workers, arranged in a small 2-column grid inset inside the rim near th.
+// Returns nil if th is nil or count ≤ 0. Count is capped at idleMaxSlots.
+func idleHomeSlots(p Planet, th *Building, count int) []Vec {
+	if th == nil || count <= 0 {
+		return nil
+	}
+	if count > idleMaxSlots {
+		count = idleMaxSlots
+	}
+	// Inward and tangent unit vectors at the Town Hall angle.
+	cos := math.Cos(th.Angle)
+	sin := math.Sin(th.Angle)
+	inx, iny := -cos, -sin    // inward (toward planet center)
+	tx, ty := -sin, cos       // tangent (counterclockwise along rim)
+	// Anchor: 9 px inside the rim.
+	rim := p.RimPoint(th.Angle)
+	ax := rim.X + inx*9
+	ay := rim.Y + iny*9
+	// Grid: 2 columns × up to 3 rows, with a centred 5th slot.
+	type off struct{ t, i float64 }
+	slotOffsets := [idleMaxSlots]off{
+		{-2.5, 0}, {+2.5, 0},   // row 0
+		{-2.5, 4}, {+2.5, 4},   // row 1
+		{0, 8},                  // row 2 (centred)
+	}
+	slots := make([]Vec, count)
+	for i := 0; i < count; i++ {
+		o := slotOffsets[i]
+		slots[i] = Vec{
+			X: ax + tx*o.t + inx*o.i,
+			Y: ay + ty*o.t + iny*o.i,
+		}
+	}
+	return slots
+}
+
+// drawIdleOverflow draws a compact dot on/inside the Town Hall for idle workers
+// beyond the idleMaxSlots visible spots. Dot size and brightness scale subtly
+// with overflowCount (bounded).
+func drawIdleOverflow(scene *ebiten.Image, p Planet, th *Building, overflowCount int) {
+	t := float32(overflowCount-1) / 19.0 // 0 at 1, 1 at 20+
+	if t > 1 {
+		t = 1
+	}
+	radius := float32(1.5) + 2.0*t
+	bright := uint8(120 + uint8(100*t))
+	col := color.RGBA{R: bright, G: bright, B: bright + 20, A: 200}
+	ip := insetPoint(p, th.Angle, float64(townHallBldInset))
+	vector.FillCircle(scene, float32(ip.X), float32(ip.Y), radius, col, false)
 }
 
 // drawFilledSector draws a filled wedge from (cx,cy) spanning startAngle..endAngle
