@@ -32,14 +32,14 @@ func viewGeom(screenW, screenH int) (scale, offX, offY float64) {
 
 // Building / worker render sizes.
 const (
-	campBldHalf      = float32(3.5) // half of 7×7 camp square
-	campBldSize      = float32(7)
-	townHallBldHalf  = float32(5.5) // half of 11×11 town hall square
-	townHallBldSize  = float32(11)
-	townHallBldInset = float32(5.5) // px inward from rim for town hall art center
-	workerBldHalf    = float32(1)   // half of 3×3 worker square
-	workerBldSize    = float32(3)
-	idleMaxSlots     = 5 // max visible idle-worker spots near the town hall
+	campBldHalf       = float32(3.5) // half of 7×7 camp square
+	campBldSize       = float32(7)
+	townHallBldHalfW  = float32(8)   // half-width along rim tangent (16px wide — fort shape)
+	townHallBldHalfH  = float32(4.5) // half-height along inward normal (9px tall)
+	townHallBldInset  = float32(5)   // px inward from rim for town hall art center
+	workerBldHalf     = float32(1)   // half of 3×3 worker square
+	workerBldSize     = float32(3)
+	idleMaxSlots      = 5 // max visible idle-worker spots near the town hall
 )
 
 // palette
@@ -49,7 +49,7 @@ var (
 	colPlanetEdge   = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
 	colNodeFree     = color.RGBA{R: 40, G: 160, B: 60, A: 255}
 	colNodeClaimed  = color.RGBA{R: 20, G: 100, B: 35, A: 255}
-	colTownHall     = color.RGBA{R: 190, G: 160, B: 110, A: 255} // warm stone
+	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
 	colBuilding     = color.RGBA{R: 140, G: 90, B: 50, A: 255}
 	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255}
 	colWorkerLaden  = color.RGBA{R: 255, G: 240, B: 80, A: 255}
@@ -99,10 +99,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// buildings
 	for _, b := range w.Buildings {
 		if b.Kind == KindTownHall {
-			ip := insetPoint(w.Planet, b.Angle, float64(townHallBldInset))
-			vector.FillRect(scene,
-				float32(ip.X)-townHallBldHalf, float32(ip.Y)-townHallBldHalf,
-				townHallBldSize, townHallBldSize, colTownHall, false)
+			drawTownHallArt(scene, w.Planet, b.Angle, colTownHall)
 		} else {
 			vector.FillRect(scene,
 				float32(b.Pos.X)-campBldHalf, float32(b.Pos.Y)-campBldHalf,
@@ -188,10 +185,7 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 		col = colGhostBad
 	}
 	if pv.Kind == KindTownHall {
-		ip := insetPoint(planet, pv.Angle, float64(townHallBldInset))
-		vector.FillRect(scene,
-			float32(ip.X)-townHallBldHalf, float32(ip.Y)-townHallBldHalf,
-			townHallBldSize, townHallBldSize, col, false)
+		drawTownHallArt(scene, planet, pv.Angle, col)
 	} else {
 		vector.FillRect(scene,
 			float32(pv.Pos.X)-campBldHalf, float32(pv.Pos.Y)-campBldHalf,
@@ -294,6 +288,19 @@ func drawOrientedRect(scene *ebiten.Image, lx, ly, tx, ty, ix, iy, hw, hh float3
 	drawOp := &vector.DrawPathOptions{}
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.FillPath(scene, &path, nil, drawOp)
+}
+
+// drawTownHallArt draws the Town Hall as a wide fort-shaped rectangle oriented
+// along the rim (wide in the tangential direction, short inward).
+func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA) {
+	ip := insetPoint(p, angle, float64(townHallBldInset))
+	// Inward normal (toward planet center) and tangent (along rim, ccw).
+	ix := float32(-math.Cos(angle))
+	iy := float32(-math.Sin(angle))
+	tx := float32(-math.Sin(angle))
+	ty := float32(math.Cos(angle))
+	drawOrientedRect(scene, float32(ip.X), float32(ip.Y), tx, ty, ix, iy,
+		townHallBldHalfW, townHallBldHalfH, col)
 }
 
 // insetPoint returns a world position stepped inward from the rim at angle by
