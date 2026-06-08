@@ -74,7 +74,17 @@ func (g *Game) Update() error {
 		_ = Save(g.world)
 		os.Exit(0)
 	}
+	g.handleGlobalInput()
+	if g.showMenu {
+		g.preview = nil
+		g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
+		g.ui.Update()
+		return nil
+	}
+
 	g.ui.Update()
+	g.handleInput()
+
 	Step(g.world, dt)
 	if g.pulseTime > 0 {
 		g.pulseTime -= dt
@@ -86,7 +96,6 @@ func (g *Game) Update() error {
 	}
 	g.preview = g.curPlacementPreview()
 	g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
-	g.handleInput()
 	return nil
 }
 
@@ -106,7 +115,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if hud, ui, err := buildHUD(g, g.hudScale); err == nil {
 			g.hud = hud
 			g.ui = ui
+			g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
 		}
+	}
+
+	if g.showMenu {
+		screen.Fill(colBackground)
+		g.ui.Draw(screen)
+		return
 	}
 
 	DrawWorld(g.scene, g.world, g.preview, g.debug)
@@ -117,14 +133,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.GeoM.Translate(offX, offY)
 	op.Filter = ebiten.FilterNearest
 	screen.DrawImage(g.scene, op)
-
-	// Dim the world behind the settings menu before EbitenUI draws, so the
-	// menu panel appears above the dim rather than beneath it.
-	if g.showMenu {
-		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
-		vector.FillRect(screen, 0, 0, float32(sw), float32(sh),
-			color.RGBA{A: 160}, false)
-	}
 
 	g.ui.Draw(screen)
 	g.drawOverlay(screen)

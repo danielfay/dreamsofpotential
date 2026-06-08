@@ -72,6 +72,10 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview, showMenu bool) {
 	if showMenu {
 		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
+		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
+		return
 	} else {
 		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}

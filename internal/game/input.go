@@ -5,11 +5,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
-// handleInput processes global keys and build-placement input. It must be
-// called after g.ui.Update() so that EbitenUI has already consumed any widget
-// clicks this frame, preventing a HUD button click from simultaneously placing
-// a camp on the world.
-func (g *Game) handleInput() {
+// handleGlobalInput processes keyboard-only commands that must take effect
+// before EbitenUI lays out widgets for the frame.
+func (g *Game) handleGlobalInput() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF3) {
 		g.debug = !g.debug
 	}
@@ -26,7 +24,13 @@ func (g *Game) handleInput() {
 		}
 		return
 	}
+}
 
+// handleInput processes build-placement input. It must be called after
+// g.ui.Update() so that EbitenUI has already consumed any widget clicks this
+// frame, preventing a HUD button click from simultaneously placing a camp on
+// the world.
+func (g *Game) handleInput() {
 	// Menu is open — swallow all further input so nothing behind it fires.
 	if g.showMenu {
 		return
