@@ -111,15 +111,28 @@ func TestBuildPreviewFirstCampNeedsFreNode(t *testing.T) {
 	}
 }
 
-func TestBuildPreviewLaterCampAlwaysValid(t *testing.T) {
+func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
-	// A Town Hall must exist before camps; once it does, camp placement is always valid.
+	// A Town Hall must exist before camps; once it does, camp placement is
+	// distance-valid but still needs enough wood for the next camp.
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
 
 	pv := buildPreview(w, 0)
+	if pv.Valid {
+		t.Error("unaffordable camp preview should be invalid/red")
+	}
+	if pv.Affordable {
+		t.Error("camp preview should report unaffordable")
+	}
+
+	w.Economy.Wood = CampCost(w)
+	pv = buildPreview(w, 0)
 	if !pv.Valid {
-		t.Error("camp with Town Hall and no nodes should still be valid")
+		t.Error("affordable camp with Town Hall and no nodes should still be valid")
+	}
+	if !pv.Affordable {
+		t.Error("camp preview should report affordable")
 	}
 	if pv.Kind != KindLoggingCamp {
 		t.Errorf("preview Kind: got %v, want KindLoggingCamp", pv.Kind)

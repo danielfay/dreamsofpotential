@@ -24,13 +24,14 @@ type previewRoute struct {
 // and enforce validity. Kind indicates whether the ghost is a Town Hall or a
 // logging camp, which controls ghost art and validity rules.
 type placementPreview struct {
-	Kind     BuildingKind
-	Angle    float64
-	Pos      Vec
-	Valid    bool
-	Free     []previewRoute  // free nodes within previewArc, with distance
-	Claimed  []*ResourceNode // claimed nodes within previewArc, muted context
-	Reserved []*ResourceNode // reserved nodes within previewArc, debug context
+	Kind       BuildingKind
+	Angle      float64
+	Pos        Vec
+	Valid      bool
+	Affordable bool
+	Free       []previewRoute  // free nodes within previewArc, with distance
+	Claimed    []*ResourceNode // claimed nodes within previewArc, muted context
+	Reserved   []*ResourceNode // reserved nodes within previewArc, debug context
 }
 
 // routeDist returns the short-way rim arc distance between two angles on a
@@ -62,23 +63,28 @@ func localNodes(w *World, angle float64) (free []previewRoute, claimed, reserved
 
 // buildPreview assembles a placementPreview for a ghost at the given rim angle.
 // The first placement (no buildings yet) is a Town Hall and requires at least
-// one free local node. Subsequent placements are logging camps and are always
-// valid regardless of node proximity.
+// one free local node. Subsequent placements are logging camps and are valid
+// regardless of node proximity, but only while affordable.
 func buildPreview(w *World, angle float64) placementPreview {
 	free, claimed, reserved := localNodes(w, angle)
 	hasTownHall := len(w.Buildings) > 0
-	valid := hasTownHall || len(free) > 0
+	affordable := true
+	if hasTownHall {
+		affordable = w.Economy.Wood >= CampCost(w)
+	}
+	valid := (hasTownHall || len(free) > 0) && affordable
 	kind := KindTownHall
 	if hasTownHall {
 		kind = KindLoggingCamp
 	}
 	return placementPreview{
-		Kind:     kind,
-		Angle:    angle,
-		Pos:      w.Planet.RimPoint(angle),
-		Valid:    valid,
-		Free:     free,
-		Claimed:  claimed,
-		Reserved: reserved,
+		Kind:       kind,
+		Angle:      angle,
+		Pos:        w.Planet.RimPoint(angle),
+		Valid:      valid,
+		Affordable: affordable,
+		Free:       free,
+		Claimed:    claimed,
+		Reserved:   reserved,
 	}
 }

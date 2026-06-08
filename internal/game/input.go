@@ -59,6 +59,11 @@ func (g *Game) handleInput() {
 		wp := g.screenToWorld(mx, my)
 		theta := g.world.Planet.AngleOf(wp)
 		isTownHall := len(g.world.Buildings) == 0
+		pv := buildPreview(g.world, theta)
+		if !pv.Affordable && g.world.ResourceDiscovered {
+			g.pulseTime = pulseDuration
+			g.pulseTarget = 1
+		}
 		if placeBuilding(g.world, theta) && isTownHall {
 			g.placing = false
 		}
@@ -70,7 +75,8 @@ func (g *Game) handleInput() {
 // Hall (requires a local free node within previewArc). Subsequent placements
 // are paid logging camps that skip the local-node check.
 func placeBuilding(w *World, angle float64) bool {
-	if !buildPreview(w, angle).Valid {
+	pv := buildPreview(w, angle)
+	if !pv.Valid {
 		return false
 	}
 	if len(w.Buildings) == 0 {
