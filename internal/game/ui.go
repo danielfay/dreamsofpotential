@@ -38,7 +38,6 @@ type HUD struct {
 	normalTopBar *widget.Container
 	resourceHUD  *widget.Container // green icon + amount; hidden until discovered
 	resourceText *widget.Text
-	resourceMinW int              // grow-only min width to prevent reflow on spend
 	workerHUD    *widget.Container // yellow icon + ratio; hidden until first worker
 	workerRatio  *widget.Text
 
@@ -170,12 +169,6 @@ func (h *HUD) refreshNormal(w *World) {
 	if discovered {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.resourceText.Label = fmt.Sprintf("%.0f", w.Economy.Wood)
-		// Ratchet: grow min width but never shrink, so the HUD doesn't reflow
-		// when the player spends resources.
-		if newW := int(text.Advance(h.resourceText.Label, h.face)); newW > h.resourceMinW {
-			h.resourceMinW = newW
-			h.resourceText.GetWidget().MinWidth = h.resourceMinW
-		}
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
@@ -335,14 +328,12 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	iconSz := sz(20)
 
-	// Seed the resource text min width from the current world value so a HUD
-	// rebuild (e.g. window resize) never regresses to a too-narrow widget.
+	// Use the current wood value as the initial label so the widget's preferred
+	// size is correct when the HUD is (re)built.
 	initialResourceLabel := fmt.Sprintf("%.0f", g.world.Economy.Wood)
-	hud.resourceMinW = int(text.Advance(initialResourceLabel, hud.face))
 
 	hud.resourceText = widget.NewText(
 		widget.TextOpts.Text(initialResourceLabel, face, color.NRGBA{R: 180, G: 255, B: 180, A: 255}),
-		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(hud.resourceMinW, 0)),
 	)
 	hud.resourceHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(

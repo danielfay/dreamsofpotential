@@ -27,6 +27,7 @@ type Game struct {
 	screenW     int               // current screen dimensions, updated each Draw()
 	screenH     int
 	hudScale    int               // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits   int               // digit count of wood at last HUD build; triggers rebuild on grow
 	saveTimer   float64           // counts down to next autosave
 }
 
@@ -42,6 +43,7 @@ func New() (*Game, error) {
 		world:     w,
 		scene:     ebiten.NewImage(virtW, virtH),
 		hudScale:  initialScale,
+		hudDigits: woodDigits(w.Economy.Wood),
 		saveTimer: autoSavePeriod,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
@@ -51,6 +53,19 @@ func New() (*Game, error) {
 	g.hud = hud
 	g.ui = ui
 	return g, nil
+}
+
+// woodDigits returns the number of decimal digits in the integer part of x,
+// used to detect when the resource display needs more horizontal space.
+func woodDigits(x float64) int {
+	if x < 1 {
+		return 1
+	}
+	n := 1
+	for v := int(x); v >= 10; v /= 10 {
+		n++
+	}
+	return n
 }
 
 func (g *Game) Update() error {
@@ -77,9 +92,17 @@ func (g *Game) Update() error {
 func (g *Game) Draw(screen *ebiten.Image) {
 	g.screenW, g.screenH = screen.Bounds().Dx(), screen.Bounds().Dy()
 
+	rebuildHUD := false
 	if newScale := g.intScale(); newScale != g.hudScale {
 		g.hudScale = newScale
-		if hud, ui, err := buildHUD(g, newScale); err == nil {
+		rebuildHUD = true
+	}
+	if d := woodDigits(g.world.Economy.Wood); d > g.hudDigits {
+		g.hudDigits = d
+		rebuildHUD = true
+	}
+	if rebuildHUD {
+		if hud, ui, err := buildHUD(g, g.hudScale); err == nil {
 			g.hud = hud
 			g.ui = ui
 		}
