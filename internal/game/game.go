@@ -10,17 +10,22 @@ import (
 )
 
 const dt = 1.0 / 60.0
+const autoSavePeriod = 10.0 // seconds between autosaves
 
 // Game is the root ebiten game object.
 type Game struct {
 	world       *World
-	scene       *ebiten.Image // low-res 320×240 canvas; scaled 2× to the window
+	scene       *ebiten.Image // low-res 320×240 canvas; scaled up to the window
 	ui          *ebitenui.UI
 	hud         *HUD
 	placing     bool    // true while waiting for player to click a camp location
 	debug       bool    // F3 — verbose debug panel; session-only, not persisted
 	pulseTime   float64 // seconds remaining on the unaffordable-cost flash
 	pulseTarget int     // which button pulses: 0=none, 1=build, 2=worker
+	screenW     int     // current screen dimensions, updated each Draw()
+	screenH     int
+	hudScale    int     // integer view scale at last HUD build; triggers rebuild on change
+	saveTimer   float64 // counts down to next autosave
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -30,11 +35,14 @@ func New() (*Game, error) {
 	if err != nil {
 		w = NewWorld()
 	}
+	const initialScale = 2
 	g := &Game{
-		world: w,
-		scene: ebiten.NewImage(virtW, virtH),
+		world:     w,
+		scene:     ebiten.NewImage(virtW, virtH),
+		hudScale:  initialScale,
+		saveTimer: autoSavePeriod,
 	}
-	hud, ui, err := buildHUD(g)
+	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
 		return nil, err
 	}
@@ -53,21 +61,58 @@ func (g *Game) Update() error {
 	if g.pulseTime > 0 {
 		g.pulseTime -= dt
 	}
+	g.saveTimer -= dt
+	if g.saveTimer <= 0 {
+		_ = Save(g.world)
+		g.saveTimer = autoSavePeriod
+	}
 	g.hud.Refresh(g.world, g.placing, g.debug)
 	g.handleInput()
 	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
+	g.screenW, g.screenH = screen.Bounds().Dx(), screen.Bounds().Dy()
+
+	if newScale := g.intScale(); newScale != g.hudScale {
+		g.hudScale = newScale
+		if hud, ui, err := buildHUD(g, newScale); err == nil {
+			g.hud = hud
+			g.ui = ui
+		}
+	}
+
 	DrawWorld(g.scene, g.world, g.ghostPos())
 
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(scaleX, scaleY)
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Translate(offX, offY)
 	op.Filter = ebiten.FilterNearest
 	screen.DrawImage(g.scene, op)
 
 	g.ui.Draw(screen)
 	g.drawOverlay(screen)
+}
+
+// intScale returns the floor'd integer view scale, clamped to at least 1.
+func (g *Game) intScale() int {
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	s := int(scale)
+	if s < 1 {
+		s = 1
+	}
+	return s
+}
+
+// screenToWorld converts a native screen position to low-res world coordinates,
+// accounting for the current letterbox/pillarbox offset and scale.
+func (g *Game) screenToWorld(sx, sy int) Vec {
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	return Vec{
+		X: (float64(sx) - offX) / scale,
+		Y: (float64(sy) - offY) / scale,
+	}
 }
 
 // drawOverlay draws normal-mode-only HUD affordances on top of EbitenUI in

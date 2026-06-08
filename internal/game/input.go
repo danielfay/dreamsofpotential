@@ -13,6 +13,9 @@ func (g *Game) handleInput() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF3) {
 		g.debug = !g.debug
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF11) {
+		ebiten.SetFullscreen(!ebiten.IsFullscreen())
+	}
 
 	if !g.placing {
 		return
@@ -34,7 +37,7 @@ func (g *Game) handleInput() {
 		if g.hud.pointInHUD(mx, my, g.debug) {
 			return // click was on the HUD panel; ignore
 		}
-		wp := screenToWorld(mx, my)
+		wp := g.screenToWorld(mx, my)
 		theta := g.world.Planet.AngleOf(wp)
 		if buyCamp(g.world, theta) {
 			g.placing = false
@@ -72,7 +75,7 @@ func (g *Game) ghostPos() *Vec {
 		return nil
 	}
 	mx, my := ebiten.CursorPosition()
-	wp := screenToWorld(mx, my)
+	wp := g.screenToWorld(mx, my)
 	snapped := g.world.Planet.RimPoint(g.world.Planet.AngleOf(wp))
 	return &snapped
 }
