@@ -15,17 +15,20 @@ const autoSavePeriod = 10.0 // seconds between autosaves
 // Game is the root ebiten game object.
 type Game struct {
 	world       *World
-	scene       *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	scene       *ebiten.Image     // low-res 320×240 canvas; scaled up to the window
 	ui          *ebitenui.UI
 	hud         *HUD
-	placing     bool    // true while waiting for player to click a camp location
-	debug       bool    // F3 — verbose debug panel; session-only, not persisted
-	pulseTime   float64 // seconds remaining on the unaffordable-cost flash
-	pulseTarget int     // which button pulses: 0=none, 1=build, 2=worker
-	screenW     int     // current screen dimensions, updated each Draw()
+	placing     bool              // true while waiting for player to click a camp location
+	preview     *placementPreview // current frame's placement preview; nil when not placing
+	showMenu    bool              // true when the settings overlay is open
+	debug       bool              // F3 — verbose debug panel; session-only, not persisted
+	pulseTime   float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget int               // which button pulses: 0=none, 1=build, 2=worker
+	screenW     int               // current screen dimensions, updated each Draw()
 	screenH     int
-	hudScale    int     // integer view scale at last HUD build; triggers rebuild on change
-	saveTimer   float64 // counts down to next autosave
+	hudScale    int               // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits   int               // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer   float64           // counts down to next autosave
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -40,6 +43,7 @@ func New() (*Game, error) {
 		world:     w,
 		scene:     ebiten.NewImage(virtW, virtH),
 		hudScale:  initialScale,
+		hudDigits: woodDigits(w.Economy.Wood),
 		saveTimer: autoSavePeriod,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
@@ -49,6 +53,19 @@ func New() (*Game, error) {
 	g.hud = hud
 	g.ui = ui
 	return g, nil
+}
+
+// woodDigits returns the number of decimal digits in the integer part of x,
+// used to detect when the resource display needs more horizontal space.
+func woodDigits(x float64) int {
+	if x < 1 {
+		return 1
+	}
+	n := 1
+	for v := int(x); v >= 10; v /= 10 {
+		n++
+	}
+	return n
 }
 
 func (g *Game) Update() error {
@@ -66,7 +83,8 @@ func (g *Game) Update() error {
 		_ = Save(g.world)
 		g.saveTimer = autoSavePeriod
 	}
-	g.hud.Refresh(g.world, g.placing, g.debug)
+	g.preview = g.curPlacementPreview()
+	g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
 	g.handleInput()
 	return nil
 }
@@ -74,15 +92,23 @@ func (g *Game) Update() error {
 func (g *Game) Draw(screen *ebiten.Image) {
 	g.screenW, g.screenH = screen.Bounds().Dx(), screen.Bounds().Dy()
 
+	rebuildHUD := false
 	if newScale := g.intScale(); newScale != g.hudScale {
 		g.hudScale = newScale
-		if hud, ui, err := buildHUD(g, newScale); err == nil {
+		rebuildHUD = true
+	}
+	if d := woodDigits(g.world.Economy.Wood); d > g.hudDigits {
+		g.hudDigits = d
+		rebuildHUD = true
+	}
+	if rebuildHUD {
+		if hud, ui, err := buildHUD(g, g.hudScale); err == nil {
 			g.hud = hud
 			g.ui = ui
 		}
 	}
 
-	DrawWorld(g.scene, g.world, g.ghostPos())
+	DrawWorld(g.scene, g.world, g.preview, g.debug)
 
 	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	op := &ebiten.DrawImageOptions{}
@@ -90,6 +116,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.GeoM.Translate(offX, offY)
 	op.Filter = ebiten.FilterNearest
 	screen.DrawImage(g.scene, op)
+
+	// Dim the world behind the settings menu before EbitenUI draws, so the
+	// menu panel appears above the dim rather than beneath it.
+	if g.showMenu {
+		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
+		vector.FillRect(screen, 0, 0, float32(sw), float32(sh),
+			color.RGBA{A: 160}, false)
+	}
 
 	g.ui.Draw(screen)
 	g.drawOverlay(screen)
@@ -115,11 +149,10 @@ func (g *Game) screenToWorld(sx, sy int) Vec {
 	}
 }
 
-// drawOverlay draws normal-mode-only HUD affordances on top of EbitenUI in
-// native screen space. Skipped in debug mode — overlays are a normal-mode
-// feature. Widget Rects are valid here because ui.Draw already laid them out.
+// drawOverlay draws HUD affordances on top of EbitenUI in native screen space.
+// Widget Rects are valid here because ui.Draw already laid them out.
 func (g *Game) drawOverlay(screen *ebiten.Image) {
-	if g.debug {
+	if g.showMenu || g.debug {
 		return
 	}
 

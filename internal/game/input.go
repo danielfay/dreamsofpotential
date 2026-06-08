@@ -17,13 +17,27 @@ func (g *Game) handleInput() {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
+	// Esc: cancel placement if placing, otherwise toggle the settings menu.
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if g.placing {
+			g.placing = false
+		} else {
+			g.showMenu = !g.showMenu
+		}
+		return
+	}
+
+	// Menu is open — swallow all further input so nothing behind it fires.
+	if g.showMenu {
+		return
+	}
+
 	if !g.placing {
 		return
 	}
 
-	// Cancel placement with Escape or right-click.
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) ||
-		inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+	// Cancel placement with right-click.
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
 		g.placing = false
 		return
 	}
@@ -47,13 +61,11 @@ func (g *Game) handleInput() {
 
 // buyCamp attempts to place a camp at the given rim angle. Returns true if the
 // camp was placed. The first camp (CampsBought==0) is free but requires at
-// least one resource node within firstCampLocalArc radians; later camps cost
+// least one free resource node within previewArc radians; later camps cost
 // CampCost and skip the local-node check.
 func buyCamp(w *World, angle float64) bool {
-	if w.Economy.CampsBought == 0 {
-		if !hasLocalNode(w, angle, firstCampLocalArc) {
-			return false
-		}
+	if !buildPreview(w, angle).Valid {
+		return false
 	}
 	cost := CampCost(w)
 	if w.Economy.Wood < cost {
@@ -68,14 +80,21 @@ func buyCamp(w *World, angle float64) bool {
 	return true
 }
 
-// ghostPos returns the snapped rim position of the cursor when in placement mode,
-// or nil when not placing. Used by render.go to draw the preview building.
-func (g *Game) ghostPos() *Vec {
+// curPlacementPreview returns the placement preview for the current cursor
+// position, or nil when not placing or the cursor is too far from the rim.
+func (g *Game) curPlacementPreview() *placementPreview {
 	if !g.placing {
 		return nil
 	}
 	mx, my := ebiten.CursorPosition()
 	wp := g.screenToWorld(mx, my)
-	snapped := g.world.Planet.RimPoint(g.world.Planet.AngleOf(wp))
-	return &snapped
+	center := g.world.Planet.Center
+	radius := g.world.Planet.Radius
+	dist := wp.Dist(center)
+	if dist < radius-rimSnapBand || dist > radius+rimSnapBand {
+		return nil
+	}
+	angle := g.world.Planet.AngleOf(wp)
+	pv := buildPreview(g.world, angle)
+	return &pv
 }

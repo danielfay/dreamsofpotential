@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"strings"
 
 	"github.com/ebitenui/ebitenui"
 	eimage "github.com/ebitenui/ebitenui/image"
@@ -28,6 +29,7 @@ type HUD struct {
 	workerText   *widget.Text
 	nodeText     *widget.Text
 	fieldText    *widget.Text
+	previewText  *widget.Text
 	buyWorkerDbg *widget.Button
 	buildCampDbg *widget.Button
 	resetBtn     *widget.Button
@@ -43,6 +45,10 @@ type HUD struct {
 	normalSidebar *widget.Container
 	buildCampBtn  *widget.Button // brown square — always visible
 	buyWorkerBtn  *widget.Button // yellow square — hidden until first camp
+
+	// settings menu overlay (centered; shown when showMenu is true)
+	menuPanel   *widget.Container
+	menuSaveBtn *widget.Button
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
@@ -52,6 +58,9 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 		r := c.GetWidget().Rect
 		return r.Min.X <= sx && sx < r.Max.X && r.Min.Y <= sy && sy < r.Max.Y
 	}
+	if inRect(h.menuPanel) {
+		return true
+	}
 	if debug {
 		return inRect(h.debugPanel)
 	}
@@ -59,12 +68,18 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 }
 
 // Refresh updates all HUD labels and visibility states to match the world.
-func (h *HUD) Refresh(w *World, placing, debug bool) {
+func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview, showMenu bool) {
+	if showMenu {
+		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
+	} else {
+		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+	}
+
 	if debug {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
-		h.refreshDebug(w, placing)
+		h.refreshDebug(w, placing, pv)
 	} else {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Show)
@@ -73,7 +88,7 @@ func (h *HUD) Refresh(w *World, placing, debug bool) {
 	}
 }
 
-func (h *HUD) refreshDebug(w *World, placing bool) {
+func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	freeNodes, claimedNodes := 0, 0
 	for _, n := range w.Nodes {
 		if n.OwnerID == -1 {
@@ -108,6 +123,25 @@ func (h *HUD) refreshDebug(w *World, placing bool) {
 	cc := CampCost(w)
 	h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", cc))
 	h.buildCampDbg.GetWidget().Disabled = placing
+
+	if pv != nil {
+		validity := "valid"
+		if !pv.Valid {
+			validity = "INVALID"
+		}
+		dists := make([]string, 0, len(pv.Free))
+		for _, pr := range pv.Free {
+			dists = append(dists, fmt.Sprintf("%.0f", pr.Dist))
+		}
+		distStr := "-"
+		if len(dists) > 0 {
+			distStr = "[" + strings.Join(dists, ",") + "]"
+		}
+		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d claimed)  d=%s",
+			validity, len(pv.Free)+len(pv.Claimed), len(pv.Free), len(pv.Claimed), distStr)
+	} else {
+		h.previewText.Label = "preview: —"
+	}
 }
 
 func (h *HUD) refreshNormal(w *World) {
@@ -202,6 +236,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.workerText = mkText("workers: 0 active  0 idle  0 total")
 	hud.nodeText = mkText("nodes: 0 free  0 claimed")
 	hud.fieldText = mkText("field: 0.0 / 0.0")
+	hud.previewText = mkText("preview: —")
 
 	hud.buyWorkerDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
@@ -260,6 +295,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.workerText)
 	hud.debugPanel.AddChild(hud.nodeText)
 	hud.debugPanel.AddChild(hud.fieldText)
+	hud.debugPanel.AddChild(hud.previewText)
 	hud.debugPanel.AddChild(hud.buyWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.resetBtn)
@@ -292,8 +328,12 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	iconSz := sz(20)
 
+	// Use the current wood value as the initial label so the widget's preferred
+	// size is correct when the HUD is (re)built.
+	initialResourceLabel := fmt.Sprintf("%.0f", g.world.Economy.Wood)
+
 	hud.resourceText = widget.NewText(
-		widget.TextOpts.Text("0", face, color.NRGBA{R: 180, G: 255, B: 180, A: 255}),
+		widget.TextOpts.Text(initialResourceLabel, face, color.NRGBA{R: 180, G: 255, B: 180, A: 255}),
 	)
 	hud.resourceHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -422,13 +462,60 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.normalSidebar.AddChild(sidebarSpacer)
 	hud.normalSidebar.AddChild(hud.buyWorkerBtn)
 
-	// Root: AnchorLayout holding debug panel and both normal-mode containers.
+	// --- settings menu overlay ---
+	menuBtnSz := sz(100)
+	menuBtnImg := &widget.ButtonImage{
+		Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 80, B: 120, A: 240}),
+		Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 80, G: 110, B: 160, A: 240}),
+		Pressed:  eimage.NewNineSliceColor(color.NRGBA{R: 45, G: 65, B: 100, A: 240}),
+		Disabled: eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 40, B: 55, A: 240}),
+	}
+	menuTxtCol := &widget.ButtonTextColor{
+		Idle:  color.White,
+		Hover: color.White,
+	}
+	menuPad := &widget.Insets{Top: sz(8), Bottom: sz(8), Left: sz(16), Right: sz(16)}
+
+	hud.menuSaveBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Save", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			_ = Save(g.world)
+			g.showMenu = false
+		}),
+	)
+
+	hud.menuPanel = widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(
+			eimage.NewNineSliceColor(color.NRGBA{R: 15, G: 15, B: 25, A: 220}),
+		),
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(sz(10)),
+			widget.RowLayoutOpts.Padding(&widget.Insets{Top: sz(20), Bottom: sz(20), Left: sz(24), Right: sz(24)}),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
+				HorizontalPosition: widget.AnchorLayoutPositionCenter,
+				VerticalPosition:   widget.AnchorLayoutPositionCenter,
+			}),
+		),
+	)
+	hud.menuPanel.AddChild(hud.menuSaveBtn)
+	hud.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+
+	// Root: AnchorLayout holding debug panel, both normal-mode containers, and menu overlay.
 	root := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 	root.AddChild(hud.debugPanel)
 	root.AddChild(hud.normalTopBar)
 	root.AddChild(hud.normalSidebar)
+	root.AddChild(hud.menuPanel)
 
 	// Start in normal (minimalist) mode.
 	hud.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
