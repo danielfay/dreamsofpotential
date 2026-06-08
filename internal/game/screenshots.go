@@ -1,0 +1,182 @@
+package game
+
+import (
+	"fmt"
+	"image"
+	"image/png"
+	"math"
+	"math/rand"
+	"os"
+	"path/filepath"
+
+	"github.com/hajimehoshi/ebiten/v2"
+)
+
+// WriteScreenshotSet renders a deterministic set of world screenshots into dir.
+func WriteScreenshotSet(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	g := &screenshotGame{
+		dir:   dir,
+		shots: screenshotScenarios(),
+	}
+	ebiten.SetWindowSize(virtW*2, virtH*2)
+	ebiten.SetWindowTitle("Dreams of Potential Screenshots")
+	if err := ebiten.RunGame(g); err != nil {
+		return err
+	}
+	return g.err
+}
+
+type screenshotScenario struct {
+	name    string
+	world   *World
+	preview *placementPreview
+}
+
+func screenshotScenarios() []screenshotScenario {
+	return []screenshotScenario{
+		freshPlanetScenario(),
+		townHallPreviewScenario(),
+		townHallIdleScenario(),
+		workingLoopScenario(),
+		campPreviewScenario(),
+	}
+}
+
+func freshPlanetScenario() screenshotScenario {
+	return screenshotScenario{
+		name:  "01-fresh-planet",
+		world: screenshotWorld(11),
+	}
+}
+
+func townHallPreviewScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	angle := w.Nodes[0].Angle
+	pv := buildPreview(w, angle)
+	return screenshotScenario{
+		name:    "02-town-hall-preview",
+		world:   w,
+		preview: &pv,
+	}
+}
+
+func townHallIdleScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlace(w, w.Nodes[0].Angle)
+	w.Economy.Wood = 1000
+	for range 7 {
+		mustBuyWorker(w)
+	}
+	return screenshotScenario{
+		name:  "03-town-hall-idle-home",
+		world: w,
+	}
+}
+
+func workingLoopScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlace(w, w.Nodes[0].Angle)
+	w.Economy.Wood = 1000
+	for range 3 {
+		mustBuyWorker(w)
+	}
+	for range 60 * 12 {
+		Step(w, dt)
+	}
+	return screenshotScenario{
+		name:  "04-working-loop",
+		world: w,
+	}
+}
+
+func campPreviewScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlace(w, w.Nodes[0].Angle)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = CampCost(w)
+
+	angle := normAngle(w.Nodes[0].Angle + math.Pi/3)
+	pv := buildPreview(w, angle)
+	return screenshotScenario{
+		name:    "05-camp-preview",
+		world:   w,
+		preview: &pv,
+	}
+}
+
+func screenshotWorld(seed int64) *World {
+	rand.Seed(seed)
+	return NewWorld()
+}
+
+func mustPlace(w *World, angle float64) {
+	if !placeBuilding(w, angle) {
+		panic(fmt.Sprintf("screenshot setup failed to place building at %.3f", angle))
+	}
+}
+
+func mustBuyWorker(w *World) {
+	if !buyWorker(w) {
+		panic("screenshot setup failed to buy worker")
+	}
+}
+
+type screenshotGame struct {
+	dir   string
+	shots []screenshotScenario
+	done  bool
+	err   error
+}
+
+func (g *screenshotGame) Update() error {
+	if g.done {
+		if g.err != nil {
+			return g.err
+		}
+		return ebiten.Termination
+	}
+	return nil
+}
+
+func (g *screenshotGame) Draw(screen *ebiten.Image) {
+	scene := ebiten.NewImage(virtW, virtH)
+	for _, shot := range g.shots {
+		screen.Clear()
+		scene.Clear()
+		DrawWorld(scene, shot.world, shot.preview, false)
+
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(2, 2)
+		op.Filter = ebiten.FilterNearest
+		screen.DrawImage(scene, op)
+
+		path := filepath.Join(g.dir, shot.name+".png")
+		if err := writeScreenPNG(path, screen); err != nil {
+			g.err = fmt.Errorf("%s: %w", shot.name, err)
+			break
+		}
+	}
+	g.done = true
+}
+
+func (g *screenshotGame) Layout(outsideWidth, outsideHeight int) (int, int) {
+	return virtW * 2, virtH * 2
+}
+
+func writeScreenPNG(path string, screen *ebiten.Image) error {
+	bounds := screen.Bounds()
+	img := image.NewRGBA(bounds)
+	screen.ReadPixels(img.Pix)
+
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	return png.Encode(out, img)
+}

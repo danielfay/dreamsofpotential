@@ -37,6 +37,7 @@ plans/
 
 docs/
 logs/
+/screenshots/
 
 # Serena MCP server data
 .serena/
