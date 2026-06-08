@@ -28,6 +28,10 @@ go.work.sum
 # Claude Code
 .claude/
 
+# Codex local project guidance
+AGENTS.md
+.codex/
+
 # Plan files are ephemeral; the PR is the permanent record
 plans/
 
