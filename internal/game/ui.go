@@ -46,6 +46,10 @@ type HUD struct {
 	normalSidebar *widget.Container
 	buildCampBtn  *widget.Button // brown square — always visible
 	buyWorkerBtn  *widget.Button // yellow square — hidden until first camp
+
+	// settings menu overlay (centered; shown when showMenu is true)
+	menuPanel   *widget.Container
+	menuSaveBtn *widget.Button
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
@@ -55,6 +59,9 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 		r := c.GetWidget().Rect
 		return r.Min.X <= sx && sx < r.Max.X && r.Min.Y <= sy && sy < r.Max.Y
 	}
+	if inRect(h.menuPanel) {
+		return true
+	}
 	if debug {
 		return inRect(h.debugPanel)
 	}
@@ -62,7 +69,13 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 }
 
 // Refresh updates all HUD labels and visibility states to match the world.
-func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview) {
+func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview, showMenu bool) {
+	if showMenu {
+		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
+	} else {
+		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+	}
+
 	if debug {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
@@ -458,13 +471,60 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.normalSidebar.AddChild(sidebarSpacer)
 	hud.normalSidebar.AddChild(hud.buyWorkerBtn)
 
-	// Root: AnchorLayout holding debug panel and both normal-mode containers.
+	// --- settings menu overlay ---
+	menuBtnSz := sz(100)
+	menuBtnImg := &widget.ButtonImage{
+		Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 80, B: 120, A: 240}),
+		Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 80, G: 110, B: 160, A: 240}),
+		Pressed:  eimage.NewNineSliceColor(color.NRGBA{R: 45, G: 65, B: 100, A: 240}),
+		Disabled: eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 40, B: 55, A: 240}),
+	}
+	menuTxtCol := &widget.ButtonTextColor{
+		Idle:  color.White,
+		Hover: color.White,
+	}
+	menuPad := &widget.Insets{Top: sz(8), Bottom: sz(8), Left: sz(16), Right: sz(16)}
+
+	hud.menuSaveBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Save", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			_ = Save(g.world)
+			g.showMenu = false
+		}),
+	)
+
+	hud.menuPanel = widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(
+			eimage.NewNineSliceColor(color.NRGBA{R: 15, G: 15, B: 25, A: 220}),
+		),
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(sz(10)),
+			widget.RowLayoutOpts.Padding(&widget.Insets{Top: sz(20), Bottom: sz(20), Left: sz(24), Right: sz(24)}),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
+				HorizontalPosition: widget.AnchorLayoutPositionCenter,
+				VerticalPosition:   widget.AnchorLayoutPositionCenter,
+			}),
+		),
+	)
+	hud.menuPanel.AddChild(hud.menuSaveBtn)
+	hud.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+
+	// Root: AnchorLayout holding debug panel, both normal-mode containers, and menu overlay.
 	root := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 	root.AddChild(hud.debugPanel)
 	root.AddChild(hud.normalTopBar)
 	root.AddChild(hud.normalSidebar)
+	root.AddChild(hud.menuPanel)
 
 	// Start in normal (minimalist) mode.
 	hud.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)

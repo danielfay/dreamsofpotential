@@ -17,13 +17,27 @@ func (g *Game) handleInput() {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
+	// Esc: cancel placement if placing, otherwise toggle the settings menu.
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if g.placing {
+			g.placing = false
+		} else {
+			g.showMenu = !g.showMenu
+		}
+		return
+	}
+
+	// Menu is open — swallow all further input so nothing behind it fires.
+	if g.showMenu {
+		return
+	}
+
 	if !g.placing {
 		return
 	}
 
-	// Cancel placement with Escape or right-click.
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) ||
-		inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+	// Cancel placement with right-click.
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
 		g.placing = false
 		return
 	}
