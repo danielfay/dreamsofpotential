@@ -94,6 +94,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.Filter = ebiten.FilterNearest
 	screen.DrawImage(g.scene, op)
 
+	// Dim the world behind the settings menu before EbitenUI draws, so the
+	// menu panel appears above the dim rather than beneath it.
+	if g.showMenu {
+		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
+		vector.FillRect(screen, 0, 0, float32(sw), float32(sh),
+			color.RGBA{A: 160}, false)
+	}
+
 	g.ui.Draw(screen)
 	g.drawOverlay(screen)
 }
@@ -121,15 +129,7 @@ func (g *Game) screenToWorld(sx, sy int) Vec {
 // drawOverlay draws HUD affordances on top of EbitenUI in native screen space.
 // Widget Rects are valid here because ui.Draw already laid them out.
 func (g *Game) drawOverlay(screen *ebiten.Image) {
-	// Dim the world behind the settings menu.
-	if g.showMenu {
-		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
-		vector.FillRect(screen, 0, 0, float32(sw), float32(sh),
-			color.RGBA{A: 160}, false)
-		return
-	}
-
-	if g.debug {
+	if g.showMenu || g.debug {
 		return
 	}
 
