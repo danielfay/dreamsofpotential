@@ -160,8 +160,8 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 		if len(dists) > 0 {
 			distStr = "[" + strings.Join(dists, ",") + "]"
 		}
-		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d reserved / %d claimed)  d=%s",
-			validity, len(pv.Free)+len(pv.Reserved)+len(pv.Claimed), len(pv.Free), len(pv.Reserved), len(pv.Claimed), distStr)
+		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d reserved / %d claimed)  blocked %d  d=%s",
+			validity, len(pv.Free)+len(pv.Reserved)+len(pv.Claimed), len(pv.Free), len(pv.Reserved), len(pv.Claimed), len(pv.Blocked), distStr)
 	} else {
 		h.previewText.Label = "preview: —"
 	}

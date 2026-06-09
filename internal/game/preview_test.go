@@ -78,7 +78,7 @@ func TestLocalNodesWraparound(t *testing.T) {
 	}
 }
 
-func TestBuildPreviewFirstCampNeedsFreNode(t *testing.T) {
+func TestBuildPreviewFirstCampNeedsFreeNode(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -98,16 +98,53 @@ func TestBuildPreviewFirstCampNeedsFreNode(t *testing.T) {
 		t.Error("first camp with only claimed nodes should be invalid")
 	}
 
-	// Add a free node.
-	free := newNode(w, KindWood, 0.1)
+	// Add a free node within preview range but outside the Town Hall footprint.
+	free := newNode(w, KindWood, buildingHardHalfArc(KindTownHall, w.Planet.Radius)+nodeBuildingBlockHalfArc(&ResourceNode{Size: 1}, w.Planet.Radius)+0.01)
+	free.Size = 1
 	free.OwnerID = -1
-	w.Nodes = append(w.Nodes, free)
+	w.Nodes = []*ResourceNode{free}
 	pv = buildPreview(w, 0)
 	if !pv.Valid {
 		t.Error("first camp with a free local node should be valid")
 	}
 	if pv.Kind != KindTownHall {
 		t.Errorf("first valid preview Kind: got %v, want KindTownHall", pv.Kind)
+	}
+}
+
+func TestBuildPreviewTownHallBlockedByNodeFootprint(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	pv := buildPreview(w, 0)
+	if pv.Valid {
+		t.Error("Town Hall preview overlapping a node footprint should be invalid")
+	}
+	if len(pv.Blocked) != 1 || pv.Blocked[0] != n {
+		t.Fatalf("expected overlapping node to be reported as blocker")
+	}
+}
+
+func TestBuildPreviewTownHallNeedsFreeNodeEvenWhenFootprintClear(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	n := newNode(w, KindWood, previewArc+0.2)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	pv := buildPreview(w, 0)
+	if pv.Valid {
+		t.Error("Town Hall preview should remain invalid without a free local node")
+	}
+	if len(pv.Blocked) != 0 {
+		t.Fatalf("far node should not block Town Hall footprint")
 	}
 }
 
@@ -139,12 +176,37 @@ func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	}
 }
 
+func TestBuildPreviewLoggingCampBlockedByNodeFootprint(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = CampCost(w)
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	pv := buildPreview(w, 0)
+	if pv.Valid {
+		t.Error("logging camp preview overlapping a node footprint should be invalid")
+	}
+
+	clearAngle := buildingHardHalfArc(KindLoggingCamp, w.Planet.Radius) + nodeBuildingBlockHalfArc(n, w.Planet.Radius) + 0.001
+	pv = buildPreview(w, clearAngle)
+	if !pv.Valid {
+		t.Error("logging camp preview just outside combined footprints should be valid")
+	}
+}
+
 func TestBuildPreviewKind(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 
 	// Before Town Hall: Kind is KindTownHall.
-	free := newNode(w, KindWood, 0)
+	freeAngle := buildingHardHalfArc(KindTownHall, w.Planet.Radius) + nodeBuildingBlockHalfArc(&ResourceNode{Size: 1}, w.Planet.Radius) + 0.01
+	free := newNode(w, KindWood, freeAngle)
+	free.Size = 1
 	free.OwnerID = -1
 	w.Nodes = []*ResourceNode{free}
 	pv := buildPreview(w, 0)

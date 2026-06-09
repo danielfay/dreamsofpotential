@@ -32,6 +32,7 @@ type placementPreview struct {
 	Free       []previewRoute  // free nodes within previewArc, with distance
 	Claimed    []*ResourceNode // claimed nodes within previewArc, muted context
 	Reserved   []*ResourceNode // reserved nodes within previewArc, debug context
+	Blocked    []*ResourceNode // nodes whose physical footprint blocks placement
 }
 
 // routeDist returns the short-way rim arc distance between two angles on a
@@ -72,11 +73,12 @@ func buildPreview(w *World, angle float64) placementPreview {
 	if hasTownHall {
 		affordable = w.Economy.Wood >= CampCost(w)
 	}
-	valid := (hasTownHall || len(free) > 0) && affordable
 	kind := KindTownHall
 	if hasTownHall {
 		kind = KindLoggingCamp
 	}
+	blocked := placementBlockedNodes(w, kind, angle)
+	valid := (hasTownHall || len(free) > 0) && affordable && len(blocked) == 0
 	return placementPreview{
 		Kind:       kind,
 		Angle:      angle,
@@ -86,5 +88,17 @@ func buildPreview(w *World, angle float64) placementPreview {
 		Free:       free,
 		Claimed:    claimed,
 		Reserved:   reserved,
+		Blocked:    blocked,
 	}
+}
+
+func placementBlockedNodes(w *World, kind BuildingKind, angle float64) []*ResourceNode {
+	var blocked []*ResourceNode
+	buildingHalfArc := buildingHardHalfArc(kind, w.Planet.Radius)
+	for _, n := range w.Nodes {
+		if anglesOverlap(angle, buildingHalfArc, n.Angle, nodeBuildingBlockHalfArc(n, w.Planet.Radius)) {
+			blocked = append(blocked, n)
+		}
+	}
+	return blocked
 }

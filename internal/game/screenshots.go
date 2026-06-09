@@ -57,7 +57,7 @@ func freshPlanetScenario() screenshotScenario {
 
 func townHallPreviewScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	angle := w.Nodes[0].Angle
+	angle := normAngle(w.Nodes[0].Angle + buildingHardHalfArc(KindTownHall, w.Planet.Radius) + nodeBuildingBlockHalfArc(w.Nodes[0], w.Planet.Radius) + 0.01)
 	pv := buildPreview(w, angle)
 	return screenshotScenario{
 		name:    "02-town-hall-preview",
@@ -68,7 +68,7 @@ func townHallPreviewScenario() screenshotScenario {
 
 func townHallIdleScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlace(w, w.Nodes[0].Angle)
+	mustPlaceNearNode(w, w.Nodes[0])
 	w.Economy.Wood = 1000
 	for range 7 {
 		mustBuyWorker(w)
@@ -81,7 +81,7 @@ func townHallIdleScenario() screenshotScenario {
 
 func workingLoopScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlace(w, w.Nodes[0].Angle)
+	mustPlaceNearNode(w, w.Nodes[0])
 	w.Economy.Wood = 1000
 	for range 3 {
 		mustBuyWorker(w)
@@ -97,7 +97,7 @@ func workingLoopScenario() screenshotScenario {
 
 func campPreviewScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlace(w, w.Nodes[0].Angle)
+	mustPlaceNearNode(w, w.Nodes[0])
 	w.ResourceDiscovered = true
 	w.Economy.Wood = CampCost(w)
 
@@ -112,7 +112,7 @@ func campPreviewScenario() screenshotScenario {
 
 func affordabilityButtonsScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlace(w, w.Nodes[0].Angle)
+	mustPlaceNearNode(w, w.Nodes[0])
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 12
 	w.Economy.WorkersBought = 3
@@ -133,6 +133,15 @@ func mustPlace(w *World, angle float64) {
 	if !placeBuilding(w, angle) {
 		panic(fmt.Sprintf("screenshot setup failed to place building at %.3f", angle))
 	}
+}
+
+func mustPlaceNearNode(w *World, node *ResourceNode) {
+	kind := KindTownHall
+	if len(w.Buildings) > 0 {
+		kind = KindLoggingCamp
+	}
+	angle := normAngle(node.Angle + buildingHardHalfArc(kind, w.Planet.Radius) + nodeBuildingBlockHalfArc(node, w.Planet.Radius) + 0.01)
+	mustPlace(w, angle)
 }
 
 func mustBuyWorker(w *World) {

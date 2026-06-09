@@ -266,7 +266,8 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 }
 
 // spawnNode places a new node within the field's arc, distributing it among
-// existing nodes using a golden-ratio spacing to avoid clustering.
+// existing nodes using a golden-ratio spacing to avoid clustering. If the field
+// has no valid free surface left, the nearest same-field node grows instead.
 func spawnNode(w *World, f *ResourceField) {
 	count := 0
 	for _, n := range w.Nodes {
@@ -276,8 +277,79 @@ func spawnNode(w *World, f *ResourceField) {
 	}
 	const phi = 2.399 // ≈ golden angle in radians
 	frac := math.Mod(float64(count)*phi, math.Pi*2) / (math.Pi * 2)
-	angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*frac)
-	w.Nodes = append(w.Nodes, newNode(w, f.Kind, angle))
+	intended := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*frac)
+	candidate := newNode(w, f.Kind, intended)
+	if angle, ok := findValidNodeSpawnAngle(w, f, candidate, intended); ok {
+		candidate.Angle = angle
+		candidate.Pos = w.Planet.RimPoint(angle)
+		w.Nodes = append(w.Nodes, candidate)
+		return
+	}
+	upgradeNearestFieldNode(w, f, intended)
+}
+
+func findValidNodeSpawnAngle(w *World, f *ResourceField, candidate *ResourceNode, intended float64) (float64, bool) {
+	if nodeSpawnAngleValid(w, f, candidate, intended) {
+		return intended, true
+	}
+
+	step := 2 / w.Planet.Radius
+	maxSteps := int(math.Ceil((2*f.HalfArc)/step)) + 1
+	for i := 1; i <= maxSteps; i++ {
+		offset := float64(i) * step
+		for _, sign := range []float64{1, -1} {
+			angle := normAngle(intended + sign*offset)
+			if nodeSpawnAngleValid(w, f, candidate, angle) {
+				return angle, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func nodeSpawnAngleValid(w *World, f *ResourceField, candidate *ResourceNode, angle float64) bool {
+	if !angleWithinField(f, angle) {
+		return false
+	}
+	candidateHalf := nodeBuildingBlockHalfArc(candidate, w.Planet.Radius)
+	for _, b := range w.Buildings {
+		if anglesOverlap(angle, candidateHalf, b.Angle, buildingHardHalfArc(b.Kind, w.Planet.Radius)) {
+			return false
+		}
+	}
+
+	candidateSoftHalf := nodeSoftHalfArc(candidate, w.Planet.Radius)
+	for _, n := range w.Nodes {
+		if n.Kind != candidate.Kind || !angleWithinField(f, n.Angle) {
+			continue
+		}
+		if anglesOverlap(angle, candidateSoftHalf, n.Angle, nodeSoftHalfArc(n, w.Planet.Radius)) {
+			return false
+		}
+	}
+	return true
+}
+
+func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) {
+	var best *ResourceNode
+	bestDist := math.MaxFloat64
+	for _, n := range w.Nodes {
+		if n.Kind != f.Kind || !angleWithinField(f, n.Angle) {
+			continue
+		}
+		if dist := angularDistance(n.Angle, intended); dist < bestDist {
+			bestDist = dist
+			best = n
+		}
+	}
+	if best == nil {
+		return
+	}
+	best.Size += 0.15
+	if best.Size > 2.0 {
+		best.Size = 2.0
+	}
+	activatePulse(w, &best.Pulse)
 }
 
 // NewWorld returns a freshly initialised world ready to start the game.

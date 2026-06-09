@@ -269,6 +269,158 @@ func TestNodeSpawning(t *testing.T) {
 	}
 }
 
+func TestSpawnNodeAvoidsBuildingFootprint(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := w.Planet.Fields[0]
+
+	intended := normAngle(field.CenterAngle - field.HalfArc)
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: intended, Pos: w.Planet.RimPoint(intended)}}
+
+	spawnNode(w, field)
+
+	if len(w.Nodes) != 1 {
+		t.Fatalf("expected one spawned node, got %d", len(w.Nodes))
+	}
+	n := w.Nodes[0]
+	if anglesOverlap(n.Angle, nodeBuildingBlockHalfArc(n, w.Planet.Radius), intended, buildingHardHalfArc(KindTownHall, w.Planet.Radius)) {
+		t.Fatalf("spawned node at %.4f overlaps building footprint at %.4f", n.Angle, intended)
+	}
+}
+
+func TestSpawnNodeSearchesNearestValidAngle(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := w.Planet.Fields[0]
+
+	intended := normAngle(field.CenterAngle - field.HalfArc)
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: intended, Pos: w.Planet.RimPoint(intended)}}
+	spawnNode(w, field)
+
+	n := w.Nodes[0]
+	blockedHalf := nodeBuildingBlockHalfArc(n, w.Planet.Radius) + buildingHardHalfArc(KindTownHall, w.Planet.Radius)
+	dist := angularDistance(n.Angle, intended)
+	step := 2 / w.Planet.Radius
+	if dist < blockedHalf {
+		t.Fatalf("spawned node should be outside combined building footprint")
+	}
+	if dist > blockedHalf+step+1e-9 {
+		t.Fatalf("spawned node should choose nearest searched valid angle; dist %.6f, blocked %.6f, step %.6f", dist, blockedHalf, step)
+	}
+	if !angleWithinField(field, n.Angle) {
+		t.Fatalf("spawned node should stay inside field")
+	}
+}
+
+func TestSameFieldNodesCanPartiallyOverlapUnderSoftSpacing(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := w.Planet.Fields[0]
+
+	existing := newNode(w, KindWood, 0)
+	existing.Size = 1
+	w.Nodes = []*ResourceNode{existing}
+
+	candidate := newNode(w, KindWood, 5/w.Planet.Radius)
+	candidate.Size = 1
+	if !nodeSpawnAngleValid(w, field, candidate, candidate.Angle) {
+		t.Fatal("candidate outside soft spacing but inside larger visual/blocking width should be valid")
+	}
+}
+
+func TestSpawnNodeSaturatedFieldUpgradesNearestNode(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: nodeSpawnBaseCap}
+	w.Planet.Fields = []*ResourceField{field}
+
+	near := newNode(w, KindWood, 0.009)
+	near.Size = 1
+	far := newNode(w, KindWood, -0.002)
+	far.Size = 1
+	w.Nodes = []*ResourceNode{near, far}
+
+	spawnNode(w, field)
+
+	if len(w.Nodes) != 2 {
+		t.Fatalf("saturated field should upgrade instead of appending, got %d nodes", len(w.Nodes))
+	}
+	if math.Abs(near.Size-1.15) > 1e-9 {
+		t.Fatalf("nearest node size got %.2f, want 1.15", near.Size)
+	}
+	if far.Size != 1 {
+		t.Fatalf("far node should not be upgraded, got %.2f", far.Size)
+	}
+	if !pulseActive(w, near.Pulse) {
+		t.Fatal("upgraded node should pulse")
+	}
+}
+
+func TestUpgradeNodeSizeClamped(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: nodeSpawnBaseCap}
+	w.Planet.Fields = []*ResourceField{field}
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1.95
+	w.Nodes = []*ResourceNode{n}
+
+	spawnNode(w, field)
+
+	if n.Size != 2.0 {
+		t.Fatalf("upgraded node size got %.2f, want clamp at 2.0", n.Size)
+	}
+}
+
+func TestLargerNodeYieldsMoreWood(t *testing.T) {
+	small := newWorldSingleNode(0, 0)
+	small.Nodes[0].Size = 1
+	large := newWorldSingleNode(0, 0)
+	large.Nodes[0].Size = 1.5
+
+	addWorker(small)
+	addWorker(large)
+	runSim(small, 10)
+	runSim(large, 10)
+
+	if large.Economy.Wood <= small.Economy.Wood {
+		t.Fatalf("larger node should produce more wood, small %.2f large %.2f", small.Economy.Wood, large.Economy.Wood)
+	}
+}
+
+func TestFieldCounterAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Counter: 19, Cap: 20}
+	w.Planet.Fields = []*ResourceField{field}
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	depositToField(w, KindWood, 2)
+
+	if len(w.Nodes) != 1 {
+		t.Fatalf("expected upgrade fallback without append, got %d nodes", len(w.Nodes))
+	}
+	if math.Abs(field.Counter-1) > 1e-9 {
+		t.Fatalf("counter got %.2f, want 1", field.Counter)
+	}
+	if math.Abs(field.Cap-30) > 1e-9 {
+		t.Fatalf("cap got %.2f, want 30", field.Cap)
+	}
+	if math.Abs(n.Size-1.15) > 1e-9 {
+		t.Fatalf("node size got %.2f, want 1.15", n.Size)
+	}
+}
+
 // TestNewWorkerClaimsBestRouteNode verifies that when a worker is assigned it
 // takes the free node with the shortest route to the nearest camp, not simply
 // the node closest to its own position.

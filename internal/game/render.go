@@ -205,6 +205,9 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	if !pv.Valid {
 		col = colGhostBad
 	}
+	footprintCol := color.RGBA{R: col.R, G: col.G, B: col.B, A: 70}
+	footprintHalf := buildingHardHalfArc(pv.Kind, planet.Radius)
+	drawRimArc(scene, planet, float32(pv.Angle-footprintHalf), float32(pv.Angle+footprintHalf), 3.0, footprintCol)
 	if pv.Kind == KindTownHall {
 		drawTownHallArt(scene, planet, pv.Angle, col)
 	} else {
@@ -224,6 +227,17 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 			x1 := cx + radius*inner*float32(math.Cos(a))
 			y1 := cy + radius*inner*float32(math.Sin(a))
 			vector.StrokeLine(scene, x0, y0, x1, y1, 1.5, colPreviewDebug, false)
+		}
+		for _, side := range []float64{-footprintHalf, footprintHalf} {
+			a := pv.Angle + side
+			x0 := cx + radius*float32(math.Cos(a))
+			y0 := cy + radius*float32(math.Sin(a))
+			x1 := cx + radius*0.93*float32(math.Cos(a))
+			y1 := cy + radius*0.93*float32(math.Sin(a))
+			vector.StrokeLine(scene, x0, y0, x1, y1, 1.0, col, false)
+		}
+		for _, n := range pv.Blocked {
+			vector.FillCircle(scene, float32(n.Pos.X), float32(n.Pos.Y), 2.0, colGhostBad, false)
 		}
 	}
 }
