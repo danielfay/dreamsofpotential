@@ -180,12 +180,6 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	routeRadius := radius + 6
 	lensRadius := radius + 3
 
-	lensCol := colPreviewLens
-	if !pv.Valid {
-		lensCol.A = 10
-	}
-	drawArcAtRadius(scene, planet, lensRadius, float32(pv.Angle-previewArc), float32(pv.Angle+previewArc), 1.0, lensCol)
-
 	if pv.Valid {
 		// Free-node route lines — quality-scaled brightness and width.
 		for _, pr := range pv.Free {
@@ -232,6 +226,12 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 
 	// Debug: range boundary ticks at ±previewArc.
 	if debug {
+		lensCol := colPreviewLens
+		if !pv.Valid {
+			lensCol.A = 10
+		}
+		drawArcAtRadius(scene, planet, lensRadius, float32(pv.Angle-previewArc), float32(pv.Angle+previewArc), 1.0, lensCol)
+
 		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
 		for _, side := range []float64{-previewArc, previewArc} {
 			a := pv.Angle + side
