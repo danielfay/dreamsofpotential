@@ -59,7 +59,8 @@ var (
 	colGhostBad     = color.RGBA{R: 200, G: 80, B: 80, A: 80}
 	colRouteFree    = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
 	colRouteClaimed = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
-	colPreviewDebug = color.RGBA{R: 255, G: 220, B: 80, A: 180}  // debug range markers
+	colPreviewLens  = color.RGBA{R: 125, G: 145, B: 170, A: 16}
+	colPreviewDebug = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
 )
 
 // DrawWorld renders the complete world state onto the low-res scene image.
@@ -155,26 +156,20 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 }
 
 // previewNodeColor returns the colour to draw node n while a placement preview
-// is active. In-range free nodes are emphasised; in-range claimed nodes are
-// muted; out-of-range nodes use normal colours.
+// is active. In-range free nodes are emphasised; unavailable nodes keep their
+// normal world colours so only muted route lines imply local competition.
 func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
 	inRange := math.Abs(normAngle(n.Angle-pv.Angle)) <= previewArc
-	if !inRange {
-		if n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
-			return colNodeFree
-		}
-		if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {
-			return colNodeReserved
-		}
-		return colNodeClaimed
-	}
-	if n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
+	if inRange && n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
 		return color.RGBA{R: 80, G: 220, B: 100, A: 255} // brighter free
 	}
 	if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {
-		return color.RGBA{R: 24, G: 88, B: 34, A: 190}
+		return colNodeReserved
 	}
-	return color.RGBA{R: 15, G: 65, B: 25, A: 180} // deeper mute for claimed
+	if n.OwnerID != -1 {
+		return colNodeClaimed
+	}
+	return colNodeFree
 }
 
 // drawPreview draws route lines, the camp ghost, and (in debug mode) the range
@@ -182,22 +177,26 @@ func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
 func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug bool) {
 	radius := float32(planet.Radius)
 	maxDist := float32(previewArc) * radius
+	routeRadius := radius + 6
+	lensRadius := radius + 3
 
-	// Free-node route lines — quality-scaled brightness and width.
-	for _, pr := range pv.Free {
-		q := float32(1) - clamp32(float32(pr.Dist)/maxDist, 0, 1)
-		a := uint8(80 + 120*q)
-		col := color.RGBA{R: colRouteFree.R, G: colRouteFree.G, B: colRouteFree.B, A: a}
-		w := 1.0 + 1.5*q
-		drawRimArc(scene, planet, float32(pv.Angle), float32(pr.Node.Angle), w, col)
-	}
+	if pv.Valid {
+		// Free-node route lines — quality-scaled brightness and width.
+		for _, pr := range pv.Free {
+			q := float32(1) - clamp32(float32(pr.Dist)/maxDist, 0, 1)
+			a := uint8(80 + 120*q)
+			col := color.RGBA{R: colRouteFree.R, G: colRouteFree.G, B: colRouteFree.B, A: a}
+			w := 1.0 + 1.5*q
+			drawArcAtRadius(scene, planet, routeRadius, float32(pv.Angle), float32(pr.Node.Angle), w, col)
+		}
 
-	// Claimed-node route lines — uniform muted.
-	for _, n := range pv.Claimed {
-		drawRimArc(scene, planet, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
-	}
-	for _, n := range pv.Reserved {
-		drawRimArc(scene, planet, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
+		// Claimed/reserved route lines — uniform muted.
+		for _, n := range pv.Claimed {
+			drawArcAtRadius(scene, planet, routeRadius, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
+		}
+		for _, n := range pv.Reserved {
+			drawArcAtRadius(scene, planet, routeRadius, float32(pv.Angle), float32(n.Angle), 1.0, colRouteClaimed)
+		}
 	}
 
 	// Building ghost — validity-coloured; shape depends on kind.
@@ -205,9 +204,18 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	if !pv.Valid {
 		col = colGhostBad
 	}
+	if pv.Reject > 0 {
+		boost := uint8(80 * pv.Reject)
+		col = brighten(col, boost)
+		col.A = uint8(100 + 80*pv.Reject)
+	}
 	footprintCol := color.RGBA{R: col.R, G: col.G, B: col.B, A: 70}
 	footprintHalf := buildingHardHalfArc(pv.Kind, planet.Radius)
-	drawRimArc(scene, planet, float32(pv.Angle-footprintHalf), float32(pv.Angle+footprintHalf), 3.0, footprintCol)
+	footprintWidth := float32(3.0)
+	if pv.Reject > 0 {
+		footprintWidth += float32(2 * pv.Reject)
+	}
+	drawRimArc(scene, planet, float32(pv.Angle-footprintHalf), float32(pv.Angle+footprintHalf), footprintWidth, footprintCol)
 	if pv.Kind == KindTownHall {
 		drawTownHallArt(scene, planet, pv.Angle, col)
 	} else {
@@ -218,6 +226,12 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 
 	// Debug: range boundary ticks at ±previewArc.
 	if debug {
+		lensCol := colPreviewLens
+		if !pv.Valid {
+			lensCol.A = 10
+		}
+		drawArcAtRadius(scene, planet, lensRadius, float32(pv.Angle-previewArc), float32(pv.Angle+previewArc), 1.0, lensCol)
+
 		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
 		for _, side := range []float64{-previewArc, previewArc} {
 			a := pv.Angle + side
@@ -278,17 +292,20 @@ func brighten(col color.RGBA, amount uint8) color.RGBA {
 // drawRimArc strokes an arc from angle a to b along planet's rim with the
 // given line width and colour, following the short way round.
 func drawRimArc(scene *ebiten.Image, planet Planet, a, b, width float32, col color.RGBA) {
+	drawArcAtRadius(scene, planet, float32(planet.Radius), a, b, width, col)
+}
+
+func drawArcAtRadius(scene *ebiten.Image, planet Planet, radius, a, b, width float32, col color.RGBA) {
 	const steps = 16
 	delta := float32(normAngle(float64(b - a)))
 	cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
-	r := float32(planet.Radius)
 
 	var path vector.Path
 	for i := 0; i <= steps; i++ {
 		t := float32(i) / float32(steps)
 		angle := a + delta*t
-		x := cx + r*float32(math.Cos(float64(angle)))
-		y := cy + r*float32(math.Sin(float64(angle)))
+		x := cx + radius*float32(math.Cos(float64(angle)))
+		y := cy + radius*float32(math.Sin(float64(angle)))
 		if i == 0 {
 			path.MoveTo(x, y)
 		} else {

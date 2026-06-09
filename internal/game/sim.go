@@ -392,6 +392,23 @@ func upgradeFirstFieldForDebug(w *World) bool {
 	return true
 }
 
+func growFirstFieldUntilBlockedForDebug(w *World) bool {
+	if len(w.Planet.Fields) == 0 {
+		return false
+	}
+	const maxDebugGrowthSteps = 512
+	for i := 0; i < maxDebugGrowthSteps; i++ {
+		before := len(w.Nodes)
+		if !upgradeFirstFieldForDebug(w) {
+			return false
+		}
+		if len(w.Nodes) == before {
+			return true
+		}
+	}
+	return true
+}
+
 // EstimateRate returns the analytic resource/sec for all active workers.
 func EstimateRate(w *World) float64 {
 	var rate float64

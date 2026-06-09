@@ -15,22 +15,24 @@ const autoSavePeriod = 10.0 // seconds between autosaves
 
 // Game is the root ebiten game object.
 type Game struct {
-	world       *World
-	scene       *ebiten.Image // low-res 320×240 canvas; scaled up to the window
-	ui          *ebitenui.UI
-	hud         *HUD
-	placing     bool              // true while waiting for player to click a camp location
-	freePlacing bool              // debug-only: next placement ignores camp cost
-	preview     *placementPreview // current frame's placement preview; nil when not placing
-	showMenu    bool              // true when the settings overlay is open
-	debug       bool              // F3 — verbose debug panel; session-only, not persisted
-	pulseTime   float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget int               // which button pulses: 0=none, 1=build, 2=worker
-	screenW     int               // current screen dimensions, updated each Draw()
-	screenH     int
-	hudScale    int     // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits   int     // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer   float64 // counts down to next autosave
+	world        *World
+	scene        *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	ui           *ebitenui.UI
+	hud          *HUD
+	placing      bool              // true while waiting for player to click a camp location
+	freePlacing  bool              // debug-only: next placement ignores camp cost
+	preview      *placementPreview // current frame's placement preview; nil when not placing
+	showMenu     bool              // true when the settings overlay is open
+	debug        bool              // F3 — verbose debug panel; session-only, not persisted
+	debugSection int               // selected debug panel section; session-only
+	pulseTime    float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget  int               // which button pulses: 0=none, 1=build, 2=worker
+	rejectTime   float64           // seconds remaining on invalid placement feedback
+	screenW      int               // current screen dimensions, updated each Draw()
+	screenH      int
+	hudScale     int     // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits    int     // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer    float64 // counts down to next autosave
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -78,7 +80,7 @@ func (g *Game) Update() error {
 	g.handleGlobalInput()
 	if g.showMenu {
 		g.preview = nil
-		g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
+		g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu)
 		g.ui.Update()
 		return nil
 	}
@@ -90,13 +92,19 @@ func (g *Game) Update() error {
 	if g.pulseTime > 0 {
 		g.pulseTime -= dt
 	}
+	if g.rejectTime > 0 {
+		g.rejectTime -= dt
+		if g.rejectTime < 0 {
+			g.rejectTime = 0
+		}
+	}
 	g.saveTimer -= dt
 	if g.saveTimer <= 0 {
 		_ = Save(g.world)
 		g.saveTimer = autoSavePeriod
 	}
 	g.preview = g.curPlacementPreview()
-	g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
+	g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu)
 	return nil
 }
 
@@ -116,7 +124,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if hud, ui, err := buildHUD(g, g.hudScale); err == nil {
 			g.hud = hud
 			g.ui = ui
-			g.hud.Refresh(g.world, g.placing, g.debug, g.preview, g.showMenu)
+			g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu)
 		}
 	}
 

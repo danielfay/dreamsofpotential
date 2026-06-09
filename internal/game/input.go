@@ -58,15 +58,20 @@ func (g *Game) handleInput() {
 		if g.hud.pointInHUD(mx, my, g.debug) {
 			return // click was on the HUD panel; ignore
 		}
-		wp := g.screenToWorld(mx, my)
-		theta := g.world.Planet.AngleOf(wp)
+		pv := g.placementPreviewAtCursor()
+		if pv == nil {
+			return
+		}
 		isTownHall := len(g.world.Buildings) == 0
-		pv := buildPreviewWithFreePlacement(g.world, theta, g.freePlacing)
 		if !pv.Affordable && g.world.ResourceDiscovered {
 			g.pulseTime = pulseDuration
 			g.pulseTarget = 1
 		}
-		if placeBuildingWithFreePlacement(g.world, theta, g.freePlacing) {
+		if !pv.Valid {
+			g.rejectTime = microPulseTime
+			return
+		}
+		if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
 			if isTownHall {
 				g.placing = false
 			}
@@ -122,6 +127,17 @@ func (g *Game) curPlacementPreview() *placementPreview {
 	if !g.placing {
 		return nil
 	}
+	pv := g.placementPreviewAtCursor()
+	if pv != nil && g.rejectTime > 0 {
+		pv.Reject = g.rejectTime / microPulseTime
+		if pv.Reject > 1 {
+			pv.Reject = 1
+		}
+	}
+	return pv
+}
+
+func (g *Game) placementPreviewAtCursor() *placementPreview {
 	mx, my := ebiten.CursorPosition()
 	wp := g.screenToWorld(mx, my)
 	center := g.world.Planet.Center
