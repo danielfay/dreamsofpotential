@@ -154,8 +154,9 @@ func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	// A Town Hall must exist before camps; once it does, camp placement is
 	// distance-valid but still needs enough wood for the next camp.
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
+	angle := math.Pi / 2
 
-	pv := buildPreview(w, 0)
+	pv := buildPreview(w, angle)
 	if pv.Valid {
 		t.Error("unaffordable camp preview should be invalid/red")
 	}
@@ -164,7 +165,7 @@ func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	}
 
 	w.Economy.Wood = CampCost(w)
-	pv = buildPreview(w, 0)
+	pv = buildPreview(w, angle)
 	if !pv.Valid {
 		t.Error("affordable camp with Town Hall and no nodes should still be valid")
 	}
@@ -232,5 +233,102 @@ func TestBuildPreviewPos(t *testing.T) {
 	}
 	if pv.Angle != angle {
 		t.Errorf("Angle: got %v, want %v", pv.Angle, angle)
+	}
+}
+
+func TestBuildPreviewFreeRoutesSortedAndCapped(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = CampCost(w)
+
+	for _, a := range []float64{0.5, 0.1, -0.4, 0.3, -0.2, 0.7} {
+		n := newNode(w, KindWood, a)
+		n.Size = 1
+		w.Nodes = append(w.Nodes, n)
+	}
+
+	pv := buildPreview(w, 0)
+	if pv.FreeTotal != 6 {
+		t.Fatalf("free total got %d, want 6", pv.FreeTotal)
+	}
+	if len(pv.Free) != previewFreeRouteCap {
+		t.Fatalf("free routes got %d, want cap %d", len(pv.Free), previewFreeRouteCap)
+	}
+	for i := 1; i < len(pv.Free); i++ {
+		if pv.Free[i].Dist < pv.Free[i-1].Dist {
+			t.Fatalf("free routes should be sorted by distance: %.3f before %.3f", pv.Free[i-1].Dist, pv.Free[i].Dist)
+		}
+	}
+}
+
+func TestBuildPreviewUnavailableRoutesCappedAcrossClaimedAndReserved(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = CampCost(w)
+
+	for i, a := range []float64{0.1, 0.2, 0.3, 0.4, 0.5} {
+		n := newNode(w, KindWood, a)
+		n.Size = 1
+		if i%2 == 0 {
+			n.OwnerID = 10 + i
+		} else {
+			n.ReservedByWorkerID = 10 + i
+		}
+		w.Nodes = append(w.Nodes, n)
+	}
+
+	pv := buildPreview(w, 0)
+	if pv.ClaimedTotal != 3 || pv.ReservedTotal != 2 {
+		t.Fatalf("totals got %d claimed / %d reserved, want 3 / 2", pv.ClaimedTotal, pv.ReservedTotal)
+	}
+	if got := len(pv.Claimed) + len(pv.Reserved); got != previewUnavailableRouteCap {
+		t.Fatalf("unavailable routes got %d, want cap %d", got, previewUnavailableRouteCap)
+	}
+}
+
+func TestBuildPreviewLoggingCampBlockedByBuildingFootprint(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
+	w.Economy.Wood = CampCost(w)
+
+	pv := buildPreview(w, 0)
+	if pv.Valid {
+		t.Fatal("logging camp preview overlapping Town Hall should be invalid")
+	}
+	if len(pv.BlockedBuildings) != 1 || pv.BlockedBuildings[0] != w.Buildings[0] {
+		t.Fatal("expected Town Hall to be reported as building blocker")
+	}
+
+	clearAngle := buildingHardHalfArc(KindLoggingCamp, w.Planet.Radius) +
+		buildingHardHalfArc(KindTownHall, w.Planet.Radius) + 0.001
+	pv = buildPreview(w, clearAngle)
+	if !pv.Valid {
+		t.Fatal("logging camp preview just outside building footprints should be valid")
+	}
+}
+
+func TestZeroValidPlacementPositions(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = CampCost(w)
+
+	if zeroValidPlacementPositions(w) {
+		t.Fatal("empty surface should have valid placement positions")
+	}
+
+	for i := 0; i < 180; i++ {
+		n := newNode(w, KindWood, -math.Pi+float64(i)*2*math.Pi/180)
+		n.Size = 2
+		w.Nodes = append(w.Nodes, n)
+	}
+	if !zeroValidPlacementPositions(w) {
+		t.Fatal("densely occupied rim should report no valid placement positions")
 	}
 }

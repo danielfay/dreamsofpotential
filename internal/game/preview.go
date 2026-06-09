@@ -1,6 +1,9 @@
 package game
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 const (
 	// previewArc is the angular half-radius (radians) of the placement preview
@@ -12,6 +15,9 @@ const (
 	// rimSnapBand is the max world-px distance from the rim ring within which
 	// the placement preview is shown. Beyond this, no ghost is rendered.
 	rimSnapBand = 30.0
+
+	previewFreeRouteCap        = 5
+	previewUnavailableRouteCap = 3
 )
 
 // previewRoute pairs a free node with its rim-path distance to the ghost angle.
@@ -24,15 +30,22 @@ type previewRoute struct {
 // and enforce validity. Kind indicates whether the ghost is a Town Hall or a
 // logging camp, which controls ghost art and validity rules.
 type placementPreview struct {
-	Kind       BuildingKind
-	Angle      float64
-	Pos        Vec
-	Valid      bool
-	Affordable bool
-	Free       []previewRoute  // free nodes within previewArc, with distance
-	Claimed    []*ResourceNode // claimed nodes within previewArc, muted context
-	Reserved   []*ResourceNode // reserved nodes within previewArc, debug context
-	Blocked    []*ResourceNode // nodes whose physical footprint blocks placement
+	Kind             BuildingKind
+	Angle            float64
+	Pos              Vec
+	Valid            bool
+	Affordable       bool
+	NeedsLocalTree   bool
+	MissingLocalTree bool
+	Free             []previewRoute  // capped free nodes within previewArc
+	FreeTotal        int             // all free nodes within previewArc
+	Claimed          []*ResourceNode // capped claimed nodes within previewArc
+	ClaimedTotal     int             // all claimed nodes within previewArc
+	Reserved         []*ResourceNode // capped reserved nodes within previewArc
+	ReservedTotal    int             // all reserved nodes within previewArc
+	Blocked          []*ResourceNode // nodes whose physical footprint blocks placement
+	BlockedBuildings []*Building     // buildings whose physical footprint blocks placement
+	Reject           float64         // transient invalid-confirm feedback intensity [0,1]
 }
 
 // routeDist returns the short-way rim arc distance between two angles on a
@@ -62,6 +75,39 @@ func localNodes(w *World, angle float64) (free []previewRoute, claimed, reserved
 	return
 }
 
+func capPreviewRoutes(angle float64, free []previewRoute, claimed, reserved []*ResourceNode) ([]previewRoute, []*ResourceNode, []*ResourceNode) {
+	sort.Slice(free, func(i, j int) bool {
+		return free[i].Dist < free[j].Dist
+	})
+	if len(free) > previewFreeRouteCap {
+		free = free[:previewFreeRouteCap]
+	}
+
+	unavailable := make([]*ResourceNode, 0, len(claimed)+len(reserved))
+	unavailable = append(unavailable, claimed...)
+	unavailable = append(unavailable, reserved...)
+	sort.Slice(unavailable, func(i, j int) bool {
+		if unavailable[i].Angle == unavailable[j].Angle {
+			return unavailable[i].ID < unavailable[j].ID
+		}
+		return angularDistance(unavailable[i].Angle, angle) < angularDistance(unavailable[j].Angle, angle)
+	})
+	if len(unavailable) > previewUnavailableRouteCap {
+		unavailable = unavailable[:previewUnavailableRouteCap]
+	}
+
+	cappedClaimed := make([]*ResourceNode, 0, len(unavailable))
+	cappedReserved := make([]*ResourceNode, 0, len(unavailable))
+	for _, n := range unavailable {
+		if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {
+			cappedReserved = append(cappedReserved, n)
+		} else {
+			cappedClaimed = append(cappedClaimed, n)
+		}
+	}
+	return free, cappedClaimed, cappedReserved
+}
+
 // buildPreview assembles a placementPreview for a ghost at the given rim angle.
 // The first placement (no buildings yet) is a Town Hall and requires at least
 // one free local node. Subsequent placements are logging camps and are valid
@@ -72,6 +118,10 @@ func buildPreview(w *World, angle float64) placementPreview {
 
 func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) placementPreview {
 	free, claimed, reserved := localNodes(w, angle)
+	freeTotal := len(free)
+	claimedTotal := len(claimed)
+	reservedTotal := len(reserved)
+	free, claimed, reserved = capPreviewRoutes(angle, free, claimed, reserved)
 	hasTownHall := len(w.Buildings) > 0
 	affordable := true
 	if hasTownHall && !freePlacement {
@@ -82,17 +132,26 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 		kind = KindLoggingCamp
 	}
 	blocked := placementBlockedNodes(w, kind, angle)
-	valid := (hasTownHall || len(free) > 0) && affordable && len(blocked) == 0
+	blockedBuildings := placementBlockedBuildings(w, kind, angle)
+	needsLocalTree := !hasTownHall
+	missingLocalTree := needsLocalTree && freeTotal == 0
+	valid := !missingLocalTree && affordable && len(blocked) == 0 && len(blockedBuildings) == 0
 	return placementPreview{
-		Kind:       kind,
-		Angle:      angle,
-		Pos:        w.Planet.RimPoint(angle),
-		Valid:      valid,
-		Affordable: affordable,
-		Free:       free,
-		Claimed:    claimed,
-		Reserved:   reserved,
-		Blocked:    blocked,
+		Kind:             kind,
+		Angle:            angle,
+		Pos:              w.Planet.RimPoint(angle),
+		Valid:            valid,
+		Affordable:       affordable,
+		NeedsLocalTree:   needsLocalTree,
+		MissingLocalTree: missingLocalTree,
+		Free:             free,
+		FreeTotal:        freeTotal,
+		Claimed:          claimed,
+		ClaimedTotal:     claimedTotal,
+		Reserved:         reserved,
+		ReservedTotal:    reservedTotal,
+		Blocked:          blocked,
+		BlockedBuildings: blockedBuildings,
 	}
 }
 
@@ -105,4 +164,26 @@ func placementBlockedNodes(w *World, kind BuildingKind, angle float64) []*Resour
 		}
 	}
 	return blocked
+}
+
+func placementBlockedBuildings(w *World, kind BuildingKind, angle float64) []*Building {
+	var blocked []*Building
+	buildingHalfArc := buildingHardHalfArc(kind, w.Planet.Radius)
+	for _, b := range w.Buildings {
+		if anglesOverlap(angle, buildingHalfArc, b.Angle, buildingHardHalfArc(b.Kind, w.Planet.Radius)) {
+			blocked = append(blocked, b)
+		}
+	}
+	return blocked
+}
+
+func zeroValidPlacementPositions(w *World) bool {
+	const steps = 180
+	for i := 0; i < steps; i++ {
+		angle := -math.Pi + float64(i)*2*math.Pi/steps
+		if buildPreviewWithFreePlacement(w, angle, true).Valid {
+			return false
+		}
+	}
+	return true
 }

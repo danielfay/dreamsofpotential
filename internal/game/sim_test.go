@@ -443,6 +443,28 @@ func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
 	}
 }
 
+func TestGrowFirstFieldUntilBlockedForDebugStopsOnUpgrade(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: nodeSpawnBaseCap}
+	w.Planet.Fields = []*ResourceField{field}
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	if !growFirstFieldUntilBlockedForDebug(w) {
+		t.Fatal("expected debug grow-until-full to run")
+	}
+	if len(w.Nodes) != 1 {
+		t.Fatalf("saturated debug growth should stop on upgrade without append, got %d nodes", len(w.Nodes))
+	}
+	if math.Abs(n.Size-1.15) > 1e-9 {
+		t.Fatalf("node size got %.2f, want 1.15", n.Size)
+	}
+}
+
 // TestNewWorkerClaimsBestRouteNode verifies that when a worker is assigned it
 // takes the free node with the shortest route to the nearest camp, not simply
 // the node closest to its own position.

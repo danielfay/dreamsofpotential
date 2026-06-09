@@ -13,6 +13,12 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
+const (
+	debugSectionCore = iota
+	debugSectionPlacement
+	debugSectionGrowth
+)
+
 // HUD holds the live EbitenUI widgets for the resource display and action buttons.
 //
 // Normal mode uses two separate anchored containers:
@@ -21,10 +27,15 @@ import (
 //
 // Debug mode (F3) replaces both with a single verbose debugPanel.
 type HUD struct {
-	face text.Face
+	face         text.Face
+	debugSection int
 
 	// debug panel
 	debugPanel      *widget.Container
+	debugTabs       *widget.Container
+	debugCoreBtn    *widget.Button
+	debugPlaceBtn   *widget.Button
+	debugGrowthBtn  *widget.Button
 	woodText        *widget.Text
 	workerText      *widget.Text
 	nodeText        *widget.Text
@@ -35,6 +46,7 @@ type HUD struct {
 	buildCampDbg    *widget.Button
 	freeCampDbg     *widget.Button
 	upgradeFieldDbg *widget.Button
+	growFullDbg     *widget.Button
 	resetBtn        *widget.Button
 
 	// normal mode — top bar (resource info, horizontal, full-width)
@@ -71,7 +83,8 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 }
 
 // Refresh updates all HUD labels and visibility states to match the world.
-func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview, showMenu bool) {
+func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *placementPreview, showMenu bool) {
+	h.debugSection = debugSection
 	if showMenu {
 		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
@@ -96,6 +109,11 @@ func (h *HUD) Refresh(w *World, placing, debug bool, pv *placementPreview, showM
 }
 
 func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
+	if h.debugCoreBtn != nil {
+		h.debugCoreBtn.SetText("Core")
+		h.debugPlaceBtn.SetText("Placement")
+		h.debugGrowthBtn.SetText("Growth")
+	}
 	freeNodes, reservedNodes, claimedNodes := 0, 0, 0
 	for _, n := range w.Nodes {
 		if n.OwnerID != -1 {
@@ -155,6 +173,7 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	}
 	h.freeCampDbg.GetWidget().Disabled = placing
 	h.upgradeFieldDbg.GetWidget().Disabled = len(w.Planet.Fields) == 0
+	h.growFullDbg.GetWidget().Disabled = len(w.Planet.Fields) == 0
 
 	if pv != nil {
 		validity := "valid"
@@ -169,11 +188,48 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 		if len(dists) > 0 {
 			distStr = "[" + strings.Join(dists, ",") + "]"
 		}
-		h.previewText.Label = fmt.Sprintf("preview: %s  nearby %d (%d free / %d reserved / %d claimed)  blocked %d  d=%s",
-			validity, len(pv.Free)+len(pv.Reserved)+len(pv.Claimed), len(pv.Free), len(pv.Reserved), len(pv.Claimed), len(pv.Blocked), distStr)
+		blocked := len(pv.Blocked) + len(pv.BlockedBuildings)
+		afford := "no"
+		if pv.Affordable {
+			afford = "yes"
+		}
+		zeroValid := zeroValidPlacementPositions(w)
+		h.previewText.Label = fmt.Sprintf("preview: %s  afford %s\nnearby: %d free  %d res  %d claimed\nroutes: %d/%d free  %d/%d unavailable\nblocked: %d  zero valid: %t\nmissing local: %t  d: %s",
+			validity, afford, pv.FreeTotal, pv.ReservedTotal, pv.ClaimedTotal,
+			len(pv.Free), pv.FreeTotal, len(pv.Reserved)+len(pv.Claimed), pv.ReservedTotal+pv.ClaimedTotal, blocked, zeroValid, pv.MissingLocalTree, distStr)
 	} else {
 		h.previewText.Label = "preview: —"
 	}
+	h.applyDebugSectionVisibility()
+}
+
+func (h *HUD) applyDebugSectionVisibility() {
+	showCore := widget.Visibility_Hide
+	showPlacement := widget.Visibility_Hide
+	showGrowth := widget.Visibility_Hide
+	switch h.debugSection {
+	case debugSectionPlacement:
+		showPlacement = widget.Visibility_Show
+	case debugSectionGrowth:
+		showGrowth = widget.Visibility_Show
+	default:
+		showCore = widget.Visibility_Show
+	}
+
+	h.woodText.GetWidget().SetVisibility(showCore)
+	h.workerText.GetWidget().SetVisibility(showCore)
+	h.nodeText.GetWidget().SetVisibility(showCore)
+	h.buyWorkerDbg.GetWidget().SetVisibility(showCore)
+	h.addWorkerDbg.GetWidget().SetVisibility(showCore)
+	h.buildCampDbg.GetWidget().SetVisibility(showCore)
+	h.resetBtn.GetWidget().SetVisibility(showCore)
+
+	h.previewText.GetWidget().SetVisibility(showPlacement)
+	h.freeCampDbg.GetWidget().SetVisibility(showPlacement)
+
+	h.fieldText.GetWidget().SetVisibility(showGrowth)
+	h.upgradeFieldDbg.GetWidget().SetVisibility(showGrowth)
+	h.growFullDbg.GetWidget().SetVisibility(showGrowth)
 }
 
 func (h *HUD) refreshNormal(w *World) {
@@ -297,6 +353,29 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.fieldText = mkText("field: 0.0 / 0.0")
 	hud.previewText = mkText("preview: —")
 
+	tabBtn := func(label string, section int) *widget.Button {
+		return widget.NewButton(
+			widget.ButtonOpts.Image(dbgBtnImg()),
+			widget.ButtonOpts.Text(label, face, dbgTxtCol),
+			widget.ButtonOpts.TextPadding(&widget.Insets{Top: sz(4), Bottom: sz(4), Left: sz(8), Right: sz(8)}),
+			widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+				g.debugSection = section
+			}),
+		)
+	}
+	hud.debugCoreBtn = tabBtn("Core", debugSectionCore)
+	hud.debugPlaceBtn = tabBtn("Placement", debugSectionPlacement)
+	hud.debugGrowthBtn = tabBtn("Growth", debugSectionGrowth)
+	hud.debugTabs = widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
+			widget.RowLayoutOpts.Spacing(sz(4)),
+		)),
+	)
+	hud.debugTabs.AddChild(hud.debugCoreBtn)
+	hud.debugTabs.AddChild(hud.debugPlaceBtn)
+	hud.debugTabs.AddChild(hud.debugGrowthBtn)
+
 	hud.buyWorkerDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
 		widget.ButtonOpts.Text(fmt.Sprintf("Buy worker (%.0f)", workerBaseCost), face, dbgTxtCol),
@@ -354,6 +433,15 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		}),
 	)
 
+	hud.growFullDbg = widget.NewButton(
+		widget.ButtonOpts.Image(dbgBtnImg()),
+		widget.ButtonOpts.Text("Grow until blocked/full", face, dbgTxtCol),
+		widget.ButtonOpts.TextPadding(dbgPad),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			growFirstFieldUntilBlockedForDebug(g.world)
+		}),
+	)
+
 	hud.resetBtn = widget.NewButton(
 		widget.ButtonOpts.Image(&widget.ButtonImage{
 			Idle:    eimage.NewNineSliceColor(color.NRGBA{R: 160, G: 40, B: 40, A: 255}),
@@ -374,6 +462,9 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	)
 
 	hud.debugPanel = widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(
+			eimage.NewNineSliceColor(color.NRGBA{R: 12, G: 12, B: 24, A: 210}),
+		),
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
 			widget.RowLayoutOpts.Spacing(sz(6)),
@@ -386,6 +477,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			}),
 		),
 	)
+	hud.debugPanel.AddChild(hud.debugTabs)
 	hud.debugPanel.AddChild(hud.woodText)
 	hud.debugPanel.AddChild(hud.workerText)
 	hud.debugPanel.AddChild(hud.nodeText)
@@ -396,6 +488,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.freeCampDbg)
 	hud.debugPanel.AddChild(hud.upgradeFieldDbg)
+	hud.debugPanel.AddChild(hud.growFullDbg)
 	hud.debugPanel.AddChild(hud.resetBtn)
 
 	// --- normal mode: top bar ---

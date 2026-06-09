@@ -31,10 +31,13 @@ func WriteScreenshotSet(dir string) error {
 }
 
 type screenshotScenario struct {
-	name    string
-	world   *World
-	preview *placementPreview
-	fullHUD bool
+	name         string
+	world        *World
+	preview      *placementPreview
+	fullHUD      bool
+	debug        bool
+	debugSection int
+	placing      bool
 }
 
 func screenshotScenarios() []screenshotScenario {
@@ -44,6 +47,8 @@ func screenshotScenarios() []screenshotScenario {
 		townHallIdleScenario(),
 		workingLoopScenario(),
 		campPreviewScenario(),
+		invalidFullRimPreviewScenario(),
+		debugPlacementDiagnosticsScenario(),
 		affordabilityButtonsScenario(),
 		wideResourceHUDScenario(),
 	}
@@ -98,16 +103,73 @@ func workingLoopScenario() screenshotScenario {
 
 func campPreviewScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
 	w.ResourceDiscovered = true
 	w.Economy.Wood = CampCost(w)
 
-	angle := normAngle(w.Nodes[0].Angle + math.Pi/3)
+	angle := 0.0
+	for _, a := range []float64{0.15, 0.22, -0.25, 0.35, -0.42, 0.55, -0.65} {
+		n := newNode(w, KindWood, a)
+		n.Size = 1
+		w.Nodes = append(w.Nodes, n)
+	}
+	claimed := newNode(w, KindWood, 0.72)
+	claimed.OwnerID = 42
+	w.Nodes = append(w.Nodes, claimed)
+
 	pv := buildPreview(w, angle)
 	return screenshotScenario{
 		name:    "05-camp-preview",
 		world:   w,
 		preview: &pv,
+	}
+}
+
+func invalidFullRimPreviewScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.ResourceDiscovered = true
+	w.Economy.Wood = CampCost(w)
+
+	for i := 0; i < 48; i++ {
+		a := normAngle(float64(i) * math.Pi * 2 / 48)
+		n := newNode(w, KindWood, a)
+		n.Size = 1.3
+		w.Nodes = append(w.Nodes, n)
+	}
+	pv := buildPreview(w, 0)
+	return screenshotScenario{
+		name:    "06-invalid-full-rim-preview",
+		world:   w,
+		preview: &pv,
+	}
+}
+
+func debugPlacementDiagnosticsScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.ResourceDiscovered = true
+	w.Economy.Wood = CampCost(w)
+	for _, a := range []float64{0.18, -0.28, 0.38, -0.58} {
+		n := newNode(w, KindWood, a)
+		n.Size = 1
+		w.Nodes = append(w.Nodes, n)
+	}
+	pv := buildPreview(w, 0)
+	return screenshotScenario{
+		name:         "07-debug-placement-diagnostics",
+		world:        w,
+		preview:      &pv,
+		fullHUD:      true,
+		debug:        true,
+		debugSection: debugSectionPlacement,
+		placing:      true,
 	}
 }
 
@@ -119,7 +181,7 @@ func affordabilityButtonsScenario() screenshotScenario {
 	w.Economy.WorkersBought = 3
 
 	return screenshotScenario{
-		name:    "06-affordability-buttons",
+		name:    "08-affordability-buttons",
 		world:   w,
 		fullHUD: true,
 	}
@@ -148,7 +210,7 @@ func wideResourceHUDScenario() screenshotScenario {
 	}
 
 	return screenshotScenario{
-		name:    "07-wide-resource-hud",
+		name:    "09-wide-resource-hud",
 		world:   w,
 		fullHUD: true,
 	}
@@ -213,7 +275,7 @@ func (g *screenshotGame) Draw(screen *ebiten.Image) {
 	for _, shot := range g.shots {
 		screen.Clear()
 		if shot.fullHUD {
-			if err := drawHUDScreenshot(screen, shot.world); err != nil {
+			if err := drawHUDScreenshot(screen, shot); err != nil {
 				g.err = fmt.Errorf("%s: %w", shot.name, err)
 				break
 			}
@@ -240,13 +302,17 @@ func (g *screenshotGame) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return virtW * 2, virtH * 2
 }
 
-func drawHUDScreenshot(screen *ebiten.Image, w *World) error {
+func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 	const scale = 2
 	game := &Game{
-		world:     w,
-		scene:     ebiten.NewImage(virtW, virtH),
-		hudScale:  scale,
-		hudDigits: woodDigits(w.Economy.Wood),
+		world:        shot.world,
+		scene:        ebiten.NewImage(virtW, virtH),
+		hudScale:     scale,
+		hudDigits:    woodDigits(shot.world.Economy.Wood),
+		preview:      shot.preview,
+		placing:      shot.placing,
+		debug:        shot.debug,
+		debugSection: shot.debugSection,
 	}
 	hud, ui, err := buildHUD(game, scale)
 	if err != nil {
@@ -254,7 +320,7 @@ func drawHUDScreenshot(screen *ebiten.Image, w *World) error {
 	}
 	game.hud = hud
 	game.ui = ui
-	game.hud.Refresh(game.world, false, false, nil, false)
+	game.hud.Refresh(game.world, game.placing, game.debug, game.debugSection, game.preview, false)
 	game.Draw(screen)
 	return nil
 }
