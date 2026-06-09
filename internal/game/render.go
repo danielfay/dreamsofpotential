@@ -80,6 +80,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// Resource field interior fill: stable composition, not node-spawn progress.
 	for _, f := range w.Planet.Fields {
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
+		drawResourceFieldPulse(scene, w, f, r-rimWidth, pv != nil)
 	}
 
 	// resource nodes — pine-tree shape; muted when in preview and unavailable
@@ -96,7 +97,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		if pulseActive(w, n.Pulse) {
 			col = brighten(col, 45)
 		}
-		drawPineTree(scene, n, col)
+		drawPineTree(scene, n, col, growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n))
 	}
 
 	// placement preview — route lines and ghost, drawn above nodes/below buildings
@@ -329,10 +330,41 @@ func clamp32(v, lo, hi float32) float32 {
 	return v
 }
 
+func growthNodeVisualScale(w *World, n *ResourceNode) float32 {
+	if w.growthCue.NodeID != n.ID || w.growthCue.NodeDelay > 0 || w.growthCue.NodeCue <= 0 {
+		return 1
+	}
+	progress := float32(1 - w.growthCue.NodeCue/growthNodeCueTime)
+	progress = clamp32(progress, 0, 1)
+	switch w.growthCue.Outcome {
+	case growthOutcomeSpawnedNode:
+		return 0.35 + 0.65*smoothStep(progress)
+	case growthOutcomeUpgradedNode:
+		return 1 + 0.16*float32(math.Sin(float64(progress)*math.Pi))
+	default:
+		return 1
+	}
+}
+
+func growthNodeVisualAlpha(w *World, n *ResourceNode) uint8 {
+	if w.growthCue.NodeID != n.ID || w.growthCue.NodeDelay > 0 || w.growthCue.NodeCue <= 0 {
+		return 0
+	}
+	t := w.growthCue.NodeCue / growthNodeCueTime
+	return uint8(55 * clamp32(float32(t), 0, 1))
+}
+
+func smoothStep(t float32) float32 {
+	return t * t * (3 - 2*t)
+}
+
 // drawPineTree draws a 3-layer pine tree at n.Pos oriented inward along the
 // planet surface normal. Layer widths and spacing scale with n.Size.
-func drawPineTree(scene *ebiten.Image, n *ResourceNode, col color.RGBA) {
-	s := float32(n.Size)
+func drawPineTree(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visualScale float32, alphaBoost uint8) {
+	s := float32(n.Size) * visualScale
+	if alphaBoost > 0 {
+		col = brighten(col, alphaBoost)
+	}
 
 	// Outward normal (away from planet center) and tangent (along rim).
 	ix := float32(math.Cos(n.Angle))
@@ -462,6 +494,36 @@ func drawResourceFieldFill(scene *ebiten.Image, planet Planet, f *ResourceField,
 		return
 	}
 	drawFieldSector(scene, cx, cy, radius, start, end, color.RGBA{R: 200, G: 200, B: 200, A: 54})
+}
+
+func drawResourceFieldPulse(scene *ebiten.Image, w *World, f *ResourceField, radius float32, placementActive bool) {
+	if w.growthCue.FieldDelay > 0 || w.growthCue.FieldPulse <= 0 || w.growthCue.Kind != f.Kind {
+		return
+	}
+	if math.Abs(normAngle(w.growthCue.CenterAngle-f.CenterAngle)) > 1e-9 ||
+		math.Abs(w.growthCue.HalfArc-f.HalfArc) > 1e-9 {
+		return
+	}
+	remaining := float32(w.growthCue.FieldPulse / growthFieldPulseTime)
+	progress := 1 - clamp32(remaining, 0, 1)
+	intensity := float32(math.Sin(float64(progress) * math.Pi))
+	if placementActive {
+		intensity *= 0.45
+	}
+	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
+	start := f.CenterAngle - f.HalfArc
+	end := f.CenterAngle + f.HalfArc
+	ringAlpha := uint8(30 * intensity)
+	if ringAlpha == 0 {
+		return
+	}
+
+	outer := radius * (0.18 + 0.80*progress)
+	inner := outer - radius*0.16
+	if inner > 0 {
+		drawFieldSectorBand(scene, cx, cy, inner, 1, start, end, color.RGBA{R: 95, G: 210, B: 108, A: uint8(float32(ringAlpha) * 0.55)})
+	}
+	drawFieldSectorBand(scene, cx, cy, outer, 2, start, end, color.RGBA{R: 118, G: 235, B: 124, A: ringAlpha})
 }
 
 // drawForestFieldFill layers low-alpha greens so the forest reads as a filled

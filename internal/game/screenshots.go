@@ -51,6 +51,9 @@ func screenshotScenarios() []screenshotScenario {
 		debugPlacementDiagnosticsScenario(),
 		affordabilityButtonsScenario(),
 		wideResourceHUDScenario(),
+		fieldGrowthSpawnCueScenario(),
+		fieldGrowthUpgradeCueScenario(),
+		fieldGrowthPlacementCueScenario(),
 	}
 }
 
@@ -213,6 +216,94 @@ func wideResourceHUDScenario() screenshotScenario {
 		name:    "09-wide-resource-hud",
 		world:   w,
 		fullHUD: true,
+	}
+}
+
+func fieldGrowthSpawnCueScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 42
+	field := w.Planet.Fields[0]
+	field.Counter = 0
+	field.Cap = nodeSpawnBaseCap * nodeCapGrowth
+
+	before := len(w.Nodes)
+	result := spawnNode(w, field)
+	if result.Outcome != growthOutcomeSpawnedNode || len(w.Nodes) == before {
+		panic("screenshot setup failed to spawn growth-cue node")
+	}
+	activateGrowthCue(w, result)
+	w.growthCue.GaugeRelease = growthGaugeReleaseTime * 0.7
+	w.growthCue.GaugeAfterglow = growthGaugeAfterglowTime * 0.85
+	w.growthCue.FieldDelay = 0
+	w.growthCue.FieldPulse = growthFieldPulseTime * 0.75
+	w.growthCue.NodeDelay = 0
+	w.growthCue.NodeCue = growthNodeCueTime * 0.9
+
+	return screenshotScenario{
+		name:    "10-field-growth-spawn-cue",
+		world:   w,
+		fullHUD: true,
+	}
+}
+
+func fieldGrowthUpgradeCueScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 42
+	field := w.Planet.Fields[0]
+	node := w.Nodes[0]
+	node.Size = 1.45
+	activateGrowthCue(w, growthResult{
+		Outcome:     growthOutcomeUpgradedNode,
+		Kind:        field.Kind,
+		CenterAngle: field.CenterAngle,
+		HalfArc:     field.HalfArc,
+		NodeID:      node.ID,
+	})
+	w.growthCue.GaugeRelease = growthGaugeReleaseTime * 0.55
+	w.growthCue.GaugeAfterglow = growthGaugeAfterglowTime * 0.75
+	w.growthCue.FieldDelay = 0
+	w.growthCue.FieldPulse = growthFieldPulseTime * 0.65
+	w.growthCue.NodeDelay = 0
+	w.growthCue.NodeCue = growthNodeCueTime * 0.55
+
+	return screenshotScenario{
+		name:    "11-field-growth-upgrade-cue",
+		world:   w,
+		fullHUD: true,
+	}
+}
+
+func fieldGrowthPlacementCueScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = CampCost(w)
+	mustPlaceNearNode(w, w.Nodes[0])
+	field := w.Planet.Fields[0]
+	node := w.Nodes[1]
+	activateGrowthCue(w, growthResult{
+		Outcome:     growthOutcomeSpawnedNode,
+		Kind:        field.Kind,
+		CenterAngle: field.CenterAngle,
+		HalfArc:     field.HalfArc,
+		NodeID:      node.ID,
+	})
+	w.growthCue.GaugeRelease = growthGaugeReleaseTime * 0.45
+	w.growthCue.GaugeAfterglow = growthGaugeAfterglowTime * 0.65
+	w.growthCue.FieldDelay = 0
+	w.growthCue.FieldPulse = growthFieldPulseTime * 0.9
+	w.growthCue.NodeDelay = 0
+	w.growthCue.NodeCue = growthNodeCueTime * 0.5
+
+	angle := normAngle(node.Angle + previewArc*0.45)
+	pv := buildPreview(w, angle)
+	return screenshotScenario{
+		name:    "12-field-growth-placement-cue",
+		world:   w,
+		preview: &pv,
+		fullHUD: true,
+		placing: true,
 	}
 }
 

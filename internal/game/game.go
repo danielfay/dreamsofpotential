@@ -206,6 +206,16 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		if frac > 0 {
 			vector.FillRect(screen, x, y, w*frac, h, colFill, false)
 		}
+		if g.world.growthCue.GaugeAfterglow > 0 {
+			t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
+			alpha := uint8(120 * t)
+			vector.FillRect(screen, x, y, w, h, color.RGBA{R: 70, G: 210, B: 90, A: alpha}, false)
+		}
+		if g.world.growthCue.GaugeRelease > 0 {
+			t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
+			alpha := uint8(210 * t)
+			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, color.RGBA{R: 140, G: 255, B: 130, A: alpha}, false)
+		}
 	}
 
 	// Unaffordable-cost pulse flash: fades out over pulseDuration seconds.

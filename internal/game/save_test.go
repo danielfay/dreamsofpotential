@@ -1,9 +1,11 @@
 package game
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -128,6 +130,44 @@ func TestSaveLoadRoundTripWorkerReservationAndPulseState(t *testing.T) {
 	gb := got.Buildings[0]
 	if gb.DeliveredWood != 3 || gb.DeliveryCount != 2 || gb.Pulse != w.Buildings[0].Pulse {
 		t.Fatalf("building delivery/pulse state did not round-trip")
+	}
+}
+
+func TestGrowthCueStateIsTransientAndNotSaved(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newWorldSingleNode(0, 0)
+	field := w.Planet.Fields[0]
+	activateGrowthCue(w, growthResult{
+		Outcome:     growthOutcomeUpgradedNode,
+		Kind:        field.Kind,
+		CenterAngle: field.CenterAngle,
+		HalfArc:     field.HalfArc,
+		NodeID:      w.Nodes[0].ID,
+	})
+
+	data, err := json.Marshal(w)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(data), "growthCue") ||
+		strings.Contains(string(data), "GaugeRelease") ||
+		strings.Contains(string(data), "FieldPulse") {
+		t.Fatalf("transient growth cue leaked into save JSON: %s", data)
+	}
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.growthCue.Outcome != growthOutcomeNone ||
+		got.growthCue.GaugeRelease != 0 ||
+		got.growthCue.FieldPulse != 0 ||
+		got.growthCue.NodeCue != 0 {
+		t.Fatalf("loaded world should not restore transient growth cue: %+v", got.growthCue)
 	}
 }
 
