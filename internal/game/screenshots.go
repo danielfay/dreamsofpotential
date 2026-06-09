@@ -45,6 +45,7 @@ func screenshotScenarios() []screenshotScenario {
 		workingLoopScenario(),
 		campPreviewScenario(),
 		affordabilityButtonsScenario(),
+		wideResourceHUDScenario(),
 	}
 }
 
@@ -124,6 +125,35 @@ func affordabilityButtonsScenario() screenshotScenario {
 	}
 }
 
+func wideResourceHUDScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlaceNearNode(w, w.Nodes[0])
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 1234
+	w.Economy.WorkersBought = 16
+	for i := 0; i < 16; i++ {
+		state := StateIdleWaiting
+		nodeID := -1
+		if i < 13 {
+			state = StateToForest
+			nodeID = 0
+		}
+		w.Workers = append(w.Workers, &Worker{
+			ID:            i,
+			State:         state,
+			NodeID:        nodeID,
+			TargetNodeID:  -1,
+			PendingNodeID: -1,
+		})
+	}
+
+	return screenshotScenario{
+		name:    "07-wide-resource-hud",
+		world:   w,
+		fullHUD: true,
+	}
+}
+
 func screenshotWorld(seed int64) *World {
 	rand.Seed(seed)
 	return NewWorld()
@@ -140,8 +170,19 @@ func mustPlaceNearNode(w *World, node *ResourceNode) {
 	if len(w.Buildings) > 0 {
 		kind = KindLoggingCamp
 	}
-	angle := normAngle(node.Angle + buildingHardHalfArc(kind, w.Planet.Radius) + nodeBuildingBlockHalfArc(node, w.Planet.Radius) + 0.01)
-	mustPlace(w, angle)
+	clearance := buildingHardHalfArc(kind, w.Planet.Radius) + nodeBuildingBlockHalfArc(node, w.Planet.Radius) + 0.01
+	step := 2 / w.Planet.Radius
+	for i := 0; i < 120; i++ {
+		offset := clearance + float64(i)*step
+		for _, sign := range []float64{1, -1} {
+			angle := normAngle(node.Angle + sign*offset)
+			if buildPreview(w, angle).Valid {
+				mustPlace(w, angle)
+				return
+			}
+		}
+	}
+	panic(fmt.Sprintf("screenshot setup failed to find valid placement near node %d", node.ID))
 }
 
 func mustBuyWorker(w *World) {

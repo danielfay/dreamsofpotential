@@ -425,6 +425,11 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	}
 
 	iconSz := sz(20)
+	digitWidth := sz(10)
+	minResourceDigits := 4
+	if g.hudDigits > minResourceDigits {
+		minResourceDigits = g.hudDigits
+	}
 
 	// Use the current wood value as the initial label so the widget's preferred
 	// size is correct when the HUD is (re)built.
@@ -432,6 +437,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.resourceText = widget.NewText(
 		widget.TextOpts.Text(initialResourceLabel, face, color.NRGBA{R: 180, G: 255, B: 180, A: 255}),
+		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*minResourceDigits, 0)),
 	)
 	hud.resourceHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -445,6 +451,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.workerRatio = widget.NewText(
 		widget.TextOpts.Text("0/0", face, color.NRGBA{R: 255, G: 240, B: 180, A: 255}),
+		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*5, 0)),
 	)
 	hud.workerHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
