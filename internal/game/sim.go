@@ -6,6 +6,7 @@ import "math"
 func Step(w *World, dt float64) {
 	w.SimTime += dt
 	tickPulses(w, dt)
+	tickGrowthCue(w, dt)
 	assignNodes(w)
 	for _, wk := range w.Workers {
 		stepWorker(w, wk, dt)
@@ -373,9 +374,28 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 		for f.Counter >= f.Cap {
 			f.Counter -= f.Cap
 			f.Cap *= nodeCapGrowth
-			spawnNode(w, f)
+			activateGrowthCue(w, spawnNode(w, f))
 		}
 		return
+	}
+}
+
+func activateGrowthCue(w *World, result growthResult) {
+	if result.Outcome == growthOutcomeNone {
+		return
+	}
+	w.growthCue = growthCueState{
+		Outcome:        result.Outcome,
+		Kind:           result.Kind,
+		CenterAngle:    result.CenterAngle,
+		HalfArc:        result.HalfArc,
+		NodeID:         result.NodeID,
+		GaugeRelease:   growthGaugeReleaseTime,
+		GaugeAfterglow: growthGaugeAfterglowTime,
+		FieldDelay:     growthFieldPulseDelay,
+		FieldPulse:     growthFieldPulseTime,
+		NodeDelay:      growthNodeCueDelay,
+		NodeCue:        growthNodeCueTime,
 	}
 }
 
@@ -482,12 +502,42 @@ func tickPulses(w *World, dt float64) {
 	}
 }
 
+func tickGrowthCue(w *World, dt float64) {
+	tickTimer(&w.growthCue.GaugeRelease, dt)
+	tickTimer(&w.growthCue.GaugeAfterglow, dt)
+	if w.growthCue.FieldDelay > 0 {
+		tickTimer(&w.growthCue.FieldDelay, dt)
+	} else {
+		tickTimer(&w.growthCue.FieldPulse, dt)
+	}
+	if w.growthCue.NodeDelay > 0 {
+		tickTimer(&w.growthCue.NodeDelay, dt)
+	} else {
+		tickTimer(&w.growthCue.NodeCue, dt)
+	}
+	if w.growthCue.GaugeRelease == 0 &&
+		w.growthCue.GaugeAfterglow == 0 &&
+		w.growthCue.FieldDelay == 0 &&
+		w.growthCue.FieldPulse == 0 &&
+		w.growthCue.NodeDelay == 0 &&
+		w.growthCue.NodeCue == 0 {
+		w.growthCue = growthCueState{NodeID: -1}
+	}
+}
+
 func tickPulse(p *PulseState, dt float64) {
 	if p.Remaining > 0 {
-		p.Remaining -= dt
-		if p.Remaining < 0 {
-			p.Remaining = 0
-		}
+		tickTimer(&p.Remaining, dt)
+	}
+}
+
+func tickTimer(v *float64, dt float64) {
+	if *v <= 0 {
+		return
+	}
+	*v -= dt
+	if *v < 0 {
+		*v = 0
 	}
 }
 

@@ -114,6 +114,36 @@ type ResourceField struct {
 	Cap         float64
 }
 
+type growthOutcome int
+
+const (
+	growthOutcomeNone growthOutcome = iota
+	growthOutcomeSpawnedNode
+	growthOutcomeUpgradedNode
+)
+
+type growthResult struct {
+	Outcome     growthOutcome
+	Kind        ResourceKind
+	CenterAngle float64
+	HalfArc     float64
+	NodeID      int
+}
+
+type growthCueState struct {
+	Outcome        growthOutcome
+	Kind           ResourceKind
+	CenterAngle    float64
+	HalfArc        float64
+	NodeID         int
+	GaugeRelease   float64
+	GaugeAfterglow float64
+	FieldDelay     float64
+	FieldPulse     float64
+	NodeDelay      float64
+	NodeCue        float64
+}
+
 // Planet is the disc the player operates on.
 type Planet struct {
 	Center      Vec
@@ -163,6 +193,8 @@ type World struct {
 	NextWorkerID       int
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
+
+	growthCue growthCueState
 }
 
 // --- cost helpers ---
@@ -247,6 +279,13 @@ const (
 	nodeCapGrowth    = 1.5  // cap multiplier each time a node spawns
 	forestHalfArc    = math.Pi
 	startingNodes    = 5
+
+	growthGaugeReleaseTime   = 0.36
+	growthGaugeAfterglowTime = 0.72
+	growthFieldPulseDelay    = 0.12
+	growthFieldPulseTime     = 0.82
+	growthNodeCueDelay       = 0.22
+	growthNodeCueTime        = 0.48
 )
 
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
@@ -268,7 +307,14 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 // spawnNode places a new node within the field's arc, distributing it among
 // existing nodes using a golden-ratio spacing to avoid clustering. If the field
 // has no valid free surface left, the nearest same-field node grows instead.
-func spawnNode(w *World, f *ResourceField) {
+func spawnNode(w *World, f *ResourceField) growthResult {
+	result := growthResult{
+		Outcome:     growthOutcomeNone,
+		Kind:        f.Kind,
+		CenterAngle: f.CenterAngle,
+		HalfArc:     f.HalfArc,
+		NodeID:      -1,
+	}
 	count := 0
 	for _, n := range w.Nodes {
 		if n.Kind == f.Kind {
@@ -283,9 +329,16 @@ func spawnNode(w *World, f *ResourceField) {
 		candidate.Angle = angle
 		candidate.Pos = w.Planet.RimPoint(angle)
 		w.Nodes = append(w.Nodes, candidate)
-		return
+		activatePulse(w, &candidate.Pulse)
+		result.Outcome = growthOutcomeSpawnedNode
+		result.NodeID = candidate.ID
+		return result
 	}
-	upgradeNearestFieldNode(w, f, intended)
+	if upgraded := upgradeNearestFieldNode(w, f, intended); upgraded != nil {
+		result.Outcome = growthOutcomeUpgradedNode
+		result.NodeID = upgraded.ID
+	}
+	return result
 }
 
 func findValidNodeSpawnAngle(w *World, f *ResourceField, candidate *ResourceNode, intended float64) (float64, bool) {
@@ -330,7 +383,7 @@ func nodeSpawnAngleValid(w *World, f *ResourceField, candidate *ResourceNode, an
 	return true
 }
 
-func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) {
+func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *ResourceNode {
 	var best *ResourceNode
 	bestDist := math.MaxFloat64
 	for _, n := range w.Nodes {
@@ -343,13 +396,14 @@ func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) {
 		}
 	}
 	if best == nil {
-		return
+		return nil
 	}
 	best.Size += 0.15
 	if best.Size > 2.0 {
 		best.Size = 2.0
 	}
 	activatePulse(w, &best.Pulse)
+	return best
 }
 
 // NewWorld returns a freshly initialised world ready to start the game.

@@ -269,6 +269,84 @@ func TestNodeSpawning(t *testing.T) {
 	}
 }
 
+func TestFieldCounterAdvanceBelowCapRecordsNoGrowthCue(t *testing.T) {
+	w := NewWorld()
+	field := w.Planet.Fields[0]
+	field.Counter = 3
+	field.Cap = 20
+
+	depositToField(w, KindWood, 2)
+
+	if field.Counter != 5 {
+		t.Fatalf("field counter got %.2f, want 5", field.Counter)
+	}
+	if w.growthCue.Outcome != growthOutcomeNone ||
+		w.growthCue.GaugeRelease != 0 ||
+		w.growthCue.FieldPulse != 0 ||
+		w.growthCue.NodeCue != 0 {
+		t.Fatalf("below-cap deposit should not record a growth cue: %+v", w.growthCue)
+	}
+}
+
+func TestFieldGrowthCueRecordsSpawnedNode(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := w.Planet.Fields[0]
+	field.Counter = 19
+	field.Cap = 20
+
+	depositToField(w, KindWood, 1)
+
+	if len(w.Nodes) != 1 {
+		t.Fatalf("expected one spawned node, got %d", len(w.Nodes))
+	}
+	if w.growthCue.Outcome != growthOutcomeSpawnedNode {
+		t.Fatalf("growth cue outcome got %v, want spawned node", w.growthCue.Outcome)
+	}
+	if w.growthCue.NodeID != w.Nodes[0].ID {
+		t.Fatalf("growth cue node ID got %d, want %d", w.growthCue.NodeID, w.Nodes[0].ID)
+	}
+	if w.growthCue.Kind != KindWood || w.growthCue.GaugeRelease <= 0 || w.growthCue.FieldPulse <= 0 || w.growthCue.NodeCue <= 0 {
+		t.Fatalf("growth cue timers/kind not initialized: %+v", w.growthCue)
+	}
+}
+
+func TestGrowthCueDelaysFieldAndNodeResponses(t *testing.T) {
+	w := NewWorld()
+	field := w.Planet.Fields[0]
+	activateGrowthCue(w, growthResult{
+		Outcome:     growthOutcomeSpawnedNode,
+		Kind:        field.Kind,
+		CenterAngle: field.CenterAngle,
+		HalfArc:     field.HalfArc,
+		NodeID:      w.Nodes[0].ID,
+	})
+
+	tickGrowthCue(w, growthFieldPulseDelay/2)
+	if w.growthCue.FieldPulse != growthFieldPulseTime {
+		t.Fatalf("field pulse should not tick before delay clears")
+	}
+	if w.growthCue.NodeCue != growthNodeCueTime {
+		t.Fatalf("node cue should not tick before delay clears")
+	}
+
+	tickGrowthCue(w, growthFieldPulseDelay)
+	tickGrowthCue(w, dt)
+	if w.growthCue.FieldPulse >= growthFieldPulseTime {
+		t.Fatalf("field pulse should tick after delay clears")
+	}
+	if w.growthCue.NodeCue != growthNodeCueTime {
+		t.Fatalf("node cue should still wait for its longer delay")
+	}
+
+	tickGrowthCue(w, growthNodeCueDelay)
+	tickGrowthCue(w, dt)
+	if w.growthCue.NodeCue >= growthNodeCueTime {
+		t.Fatalf("node cue should tick after delay clears")
+	}
+}
+
 func TestSpawnNodeAvoidsBuildingFootprint(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
@@ -418,6 +496,15 @@ func TestFieldCounterAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 	}
 	if math.Abs(n.Size-1.15) > 1e-9 {
 		t.Fatalf("node size got %.2f, want 1.15", n.Size)
+	}
+	if w.growthCue.Outcome != growthOutcomeUpgradedNode {
+		t.Fatalf("growth cue outcome got %v, want upgraded node", w.growthCue.Outcome)
+	}
+	if w.growthCue.NodeID != n.ID {
+		t.Fatalf("growth cue node ID got %d, want %d", w.growthCue.NodeID, n.ID)
+	}
+	if w.growthCue.GaugeRelease <= 0 || w.growthCue.FieldPulse <= 0 || w.growthCue.NodeCue <= 0 {
+		t.Fatalf("growth cue timers not initialized: %+v", w.growthCue)
 	}
 }
 
