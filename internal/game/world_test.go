@@ -237,6 +237,45 @@ func TestPlaceBuildingSecondIsLoggingCamp(t *testing.T) {
 	}
 }
 
+func TestFreePlacementIgnoresCampCost(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = 0
+
+	if !placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("free camp placement should succeed without wood")
+	}
+	if len(w.Buildings) != 2 {
+		t.Fatalf("expected 2 buildings, got %d", len(w.Buildings))
+	}
+	if w.Buildings[1].Kind != KindLoggingCamp {
+		t.Fatalf("free placement should add logging camp, got kind %v", w.Buildings[1].Kind)
+	}
+	if w.Economy.Wood != 0 {
+		t.Fatalf("free placement should not change wood, got %.2f", w.Economy.Wood)
+	}
+	if w.Economy.CampsBought != 0 {
+		t.Fatalf("free placement should not advance camp cost progression, got %d", w.Economy.CampsBought)
+	}
+}
+
+func TestFreePlacementStillRespectsFootprints(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	if placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("free camp placement should still fail when overlapping a node")
+	}
+}
+
 func TestTownHallHelper(t *testing.T) {
 	w := NewWorld()
 

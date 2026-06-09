@@ -20,6 +20,7 @@ type Game struct {
 	ui          *ebitenui.UI
 	hud         *HUD
 	placing     bool              // true while waiting for player to click a camp location
+	freePlacing bool              // debug-only: next placement ignores camp cost
 	preview     *placementPreview // current frame's placement preview; nil when not placing
 	showMenu    bool              // true when the settings overlay is open
 	debug       bool              // F3 — verbose debug panel; session-only, not persisted

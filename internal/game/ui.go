@@ -24,16 +24,18 @@ type HUD struct {
 	face text.Face
 
 	// debug panel
-	debugPanel   *widget.Container
-	woodText     *widget.Text
-	workerText   *widget.Text
-	nodeText     *widget.Text
-	fieldText    *widget.Text
-	previewText  *widget.Text
-	buyWorkerDbg *widget.Button
-	addWorkerDbg *widget.Button
-	buildCampDbg *widget.Button
-	resetBtn     *widget.Button
+	debugPanel      *widget.Container
+	woodText        *widget.Text
+	workerText      *widget.Text
+	nodeText        *widget.Text
+	fieldText       *widget.Text
+	previewText     *widget.Text
+	buyWorkerDbg    *widget.Button
+	addWorkerDbg    *widget.Button
+	buildCampDbg    *widget.Button
+	freeCampDbg     *widget.Button
+	upgradeFieldDbg *widget.Button
+	resetBtn        *widget.Button
 
 	// normal mode — top bar (resource info, horizontal, full-width)
 	normalTopBar *widget.Container
@@ -146,6 +148,13 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 		h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", CampCost(w)))
 	}
 	h.buildCampDbg.GetWidget().Disabled = placing
+	if len(w.Buildings) == 0 {
+		h.freeCampDbg.SetText("Free Town Hall")
+	} else {
+		h.freeCampDbg.SetText("Free camp")
+	}
+	h.freeCampDbg.GetWidget().Disabled = placing
+	h.upgradeFieldDbg.GetWidget().Disabled = len(w.Planet.Fields) == 0
 
 	if pv != nil {
 		validity := "valid"
@@ -313,9 +322,35 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			if g.placing {
 				g.placing = false
+				g.freePlacing = false
 				return
 			}
+			g.freePlacing = false
 			g.placing = true
+		}),
+	)
+
+	hud.freeCampDbg = widget.NewButton(
+		widget.ButtonOpts.Image(dbgBtnImg()),
+		widget.ButtonOpts.Text("Free camp", face, dbgTxtCol),
+		widget.ButtonOpts.TextPadding(dbgPad),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			if g.placing {
+				g.placing = false
+				g.freePlacing = false
+				return
+			}
+			g.freePlacing = true
+			g.placing = true
+		}),
+	)
+
+	hud.upgradeFieldDbg = widget.NewButton(
+		widget.ButtonOpts.Image(dbgBtnImg()),
+		widget.ButtonOpts.Text("Upgrade field", face, dbgTxtCol),
+		widget.ButtonOpts.TextPadding(dbgPad),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			upgradeFirstFieldForDebug(g.world)
 		}),
 	)
 
@@ -334,6 +369,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			ClearSave()
 			g.world = NewWorld()
 			g.placing = false
+			g.freePlacing = false
 		}),
 	)
 
@@ -358,6 +394,8 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.buyWorkerDbg)
 	hud.debugPanel.AddChild(hud.addWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
+	hud.debugPanel.AddChild(hud.freeCampDbg)
+	hud.debugPanel.AddChild(hud.upgradeFieldDbg)
 	hud.debugPanel.AddChild(hud.resetBtn)
 
 	// --- normal mode: top bar ---
@@ -464,6 +502,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			if g.placing {
 				g.placing = false
+				g.freePlacing = false
 				return
 			}
 			// Town Hall is free; only check affordability once a Town Hall exists.
@@ -472,6 +511,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 				g.pulseTarget = 1
 				return
 			}
+			g.freePlacing = false
 			g.placing = true
 		}),
 	)

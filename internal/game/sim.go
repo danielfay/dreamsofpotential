@@ -379,6 +379,19 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 	}
 }
 
+func upgradeFirstFieldForDebug(w *World) bool {
+	if len(w.Planet.Fields) == 0 {
+		return false
+	}
+	f := w.Planet.Fields[0]
+	amount := f.Cap - f.Counter
+	if amount <= 0 {
+		amount = f.Cap
+	}
+	depositToField(w, f.Kind, amount)
+	return true
+}
+
 // EstimateRate returns the analytic resource/sec for all active workers.
 func EstimateRate(w *World) float64 {
 	var rate float64

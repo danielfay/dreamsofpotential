@@ -421,6 +421,28 @@ func TestFieldCounterAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 	}
 }
 
+func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := w.Planet.Fields[0]
+	field.Counter = 7
+	field.Cap = 20
+
+	if !upgradeFirstFieldForDebug(w) {
+		t.Fatal("expected debug field upgrade to run")
+	}
+	if len(w.Nodes) != 1 {
+		t.Fatalf("expected one spawned node, got %d", len(w.Nodes))
+	}
+	if field.Counter != 0 {
+		t.Fatalf("field counter got %.2f, want 0", field.Counter)
+	}
+	if math.Abs(field.Cap-30) > 1e-9 {
+		t.Fatalf("field cap got %.2f, want 30", field.Cap)
+	}
+}
+
 // TestNewWorkerClaimsBestRouteNode verifies that when a worker is assigned it
 // takes the free node with the shortest route to the nearest camp, not simply
 // the node closest to its own position.

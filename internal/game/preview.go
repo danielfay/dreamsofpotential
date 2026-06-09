@@ -67,10 +67,14 @@ func localNodes(w *World, angle float64) (free []previewRoute, claimed, reserved
 // one free local node. Subsequent placements are logging camps and are valid
 // regardless of node proximity, but only while affordable.
 func buildPreview(w *World, angle float64) placementPreview {
+	return buildPreviewWithFreePlacement(w, angle, false)
+}
+
+func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) placementPreview {
 	free, claimed, reserved := localNodes(w, angle)
 	hasTownHall := len(w.Buildings) > 0
 	affordable := true
-	if hasTownHall {
+	if hasTownHall && !freePlacement {
 		affordable = w.Economy.Wood >= CampCost(w)
 	}
 	kind := KindTownHall
