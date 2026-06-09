@@ -127,6 +127,33 @@ func TestLocalNodesPartitioning(t *testing.T) {
 	}
 }
 
+func TestFootprintHelpers(t *testing.T) {
+	radius := 90.0
+	node := &ResourceNode{Size: 1.25}
+
+	if got, want := buildingHardHalfArc(KindLoggingCamp, radius), 6/radius; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("logging camp hard footprint got %.9f, want %.9f", got, want)
+	}
+	if got, want := buildingHardHalfArc(KindTownHall, radius), 10/radius; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("Town Hall hard footprint got %.9f, want %.9f", got, want)
+	}
+	if got, want := nodeBuildingBlockHalfArc(node, radius), (4*node.Size+2)/radius; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("node building blocker footprint got %.9f, want %.9f", got, want)
+	}
+	if got, want := nodeSoftHalfArc(node, radius), (2*node.Size)/radius; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("node soft footprint got %.9f, want %.9f", got, want)
+	}
+}
+
+func TestAnglesOverlapWraparound(t *testing.T) {
+	if !anglesOverlap(math.Pi-0.02, 0.03, -math.Pi+0.02, 0.03) {
+		t.Fatal("expected overlap across ±pi boundary")
+	}
+	if anglesOverlap(math.Pi-0.2, 0.03, -math.Pi+0.2, 0.03) {
+		t.Fatal("did not expect distant wraparound angles to overlap")
+	}
+}
+
 func TestPlaceBuildingFirstIsTownHall(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
@@ -134,7 +161,9 @@ func TestPlaceBuildingFirstIsTownHall(t *testing.T) {
 
 	// Single node at a known angle.
 	nodeAngle := 0.0
-	w.Nodes = []*ResourceNode{newNode(w, KindWood, nodeAngle)}
+	n := newNode(w, KindWood, nodeAngle)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
 
 	// Far from the node — should fail (Town Hall needs a local free node).
 	farAngle := normAngle(nodeAngle + math.Pi)
@@ -145,8 +174,9 @@ func TestPlaceBuildingFirstIsTownHall(t *testing.T) {
 		t.Error("no building should be added when first placeBuilding fails local check")
 	}
 
-	// Near the node — should succeed and place a free Town Hall.
-	if !placeBuilding(w, nodeAngle) {
+	// Near the node but outside its footprint — should succeed and place a free Town Hall.
+	clearAngle := buildingHardHalfArc(KindTownHall, w.Planet.Radius) + nodeBuildingBlockHalfArc(n, w.Planet.Radius) + 0.01
+	if !placeBuilding(w, clearAngle) {
 		t.Error("first placeBuilding near a node should succeed")
 	}
 	if len(w.Buildings) != 1 {
@@ -160,6 +190,26 @@ func TestPlaceBuildingFirstIsTownHall(t *testing.T) {
 	}
 	if w.Economy.Wood != 0 {
 		t.Errorf("Wood after free Town Hall: got %.2f, want 0", w.Economy.Wood)
+	}
+}
+
+func TestPlaceBuildingRefusesNodeFootprintOverlap(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	if placeBuilding(w, 0) {
+		t.Fatal("Town Hall placement overlapping a node should fail")
+	}
+
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = CampCost(w)
+	if placeBuilding(w, 0) {
+		t.Fatal("logging camp placement overlapping a node should fail")
 	}
 }
 
@@ -184,6 +234,45 @@ func TestPlaceBuildingSecondIsLoggingCamp(t *testing.T) {
 	}
 	if w.Economy.CampsBought != 1 {
 		t.Errorf("CampsBought: got %d, want 1", w.Economy.CampsBought)
+	}
+}
+
+func TestFreePlacementIgnoresCampCost(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = 0
+
+	if !placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("free camp placement should succeed without wood")
+	}
+	if len(w.Buildings) != 2 {
+		t.Fatalf("expected 2 buildings, got %d", len(w.Buildings))
+	}
+	if w.Buildings[1].Kind != KindLoggingCamp {
+		t.Fatalf("free placement should add logging camp, got kind %v", w.Buildings[1].Kind)
+	}
+	if w.Economy.Wood != 0 {
+		t.Fatalf("free placement should not change wood, got %.2f", w.Economy.Wood)
+	}
+	if w.Economy.CampsBought != 0 {
+		t.Fatalf("free placement should not advance camp cost progression, got %d", w.Economy.CampsBought)
+	}
+}
+
+func TestFreePlacementStillRespectsFootprints(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1
+	w.Nodes = []*ResourceNode{n}
+
+	if placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("free camp placement should still fail when overlapping a node")
 	}
 }
 

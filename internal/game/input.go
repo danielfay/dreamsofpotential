@@ -19,6 +19,7 @@ func (g *Game) handleGlobalInput() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		if g.placing {
 			g.placing = false
+			g.freePlacing = false
 		} else {
 			g.showMenu = !g.showMenu
 		}
@@ -43,6 +44,7 @@ func (g *Game) handleInput() {
 	// Cancel placement with right-click.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
 		g.placing = false
+		g.freePlacing = false
 		return
 	}
 
@@ -59,13 +61,18 @@ func (g *Game) handleInput() {
 		wp := g.screenToWorld(mx, my)
 		theta := g.world.Planet.AngleOf(wp)
 		isTownHall := len(g.world.Buildings) == 0
-		pv := buildPreview(g.world, theta)
+		pv := buildPreviewWithFreePlacement(g.world, theta, g.freePlacing)
 		if !pv.Affordable && g.world.ResourceDiscovered {
 			g.pulseTime = pulseDuration
 			g.pulseTarget = 1
 		}
-		if placeBuilding(g.world, theta) && isTownHall {
-			g.placing = false
+		if placeBuildingWithFreePlacement(g.world, theta, g.freePlacing) {
+			if isTownHall {
+				g.placing = false
+			}
+			if isTownHall || !g.debug {
+				g.freePlacing = false
+			}
 		}
 	}
 }
@@ -75,7 +82,11 @@ func (g *Game) handleInput() {
 // Hall (requires a local free node within previewArc). Subsequent placements
 // are paid logging camps that skip the local-node check.
 func placeBuilding(w *World, angle float64) bool {
-	pv := buildPreview(w, angle)
+	return placeBuildingWithFreePlacement(w, angle, false)
+}
+
+func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool) bool {
+	pv := buildPreviewWithFreePlacement(w, angle, freePlacement)
 	if !pv.Valid {
 		return false
 	}
@@ -90,11 +101,13 @@ func placeBuilding(w *World, angle float64) bool {
 	}
 	// Paid logging camp.
 	cost := CampCost(w)
-	if w.Economy.Wood < cost {
+	if !freePlacement && w.Economy.Wood < cost {
 		return false
 	}
-	w.Economy.Wood -= cost
-	w.Economy.CampsBought++
+	if !freePlacement {
+		w.Economy.Wood -= cost
+		w.Economy.CampsBought++
+	}
 	w.Buildings = append(w.Buildings, &Building{
 		Kind:  KindLoggingCamp,
 		Angle: angle,
@@ -118,6 +131,6 @@ func (g *Game) curPlacementPreview() *placementPreview {
 		return nil
 	}
 	angle := g.world.Planet.AngleOf(wp)
-	pv := buildPreview(g.world, angle)
+	pv := buildPreviewWithFreePlacement(g.world, angle, g.freePlacing)
 	return &pv
 }
