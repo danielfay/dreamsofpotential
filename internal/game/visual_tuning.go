@@ -7,6 +7,9 @@ const (
 	pulseMinInterval = 0.50 // activations faster than this become steady-lit
 
 	nurtureConfirmDuration   = 0.18 // seconds for the nurture success flash
+
+	holdInitialDelay   = 0.50 // seconds before first repeat fires
+	holdRepeatInterval = 0.15 // seconds between subsequent repeats
 	nurtureAttentionInterval = 7.0  // seconds between attention pulse fires
 	nurtureAttentionPulseDur = 0.35 // duration of each attention flash
 

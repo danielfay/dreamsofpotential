@@ -13,6 +13,12 @@ import (
 const dt = 1.0 / 60.0
 const autoSavePeriod = 10.0 // seconds between autosaves
 
+const (
+	holdNone      = 0
+	holdNurture   = 1
+	holdBuyWorker = 2
+)
+
 // Game is the root ebiten game object.
 type Game struct {
 	world        *World
@@ -33,9 +39,11 @@ type Game struct {
 	hudScale              int     // integer view scale at last HUD build; triggers rebuild on change
 	hudDigits             int     // digit count of wood at last HUD build; triggers rebuild on grow
 	saveTimer             float64 // counts down to next autosave
-	nurtureConfirmLeft       float64 // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown float64 // counts down to next attention pulse fire
+	nurtureConfirmLeft        float64 // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown  float64 // counts down to next attention pulse fire
 	nurtureAttentionPulseLeft float64 // seconds remaining on the current attention flash
+	holdAction                int     // current held purchase action (holdNone, holdNurture, …)
+	holdTimer                 float64 // counts down to next repeat fire
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -76,6 +84,37 @@ func woodDigits(x float64) int {
 	return n
 }
 
+// activateHold fires action once immediately and, if it succeeds, starts the
+// hold-to-repeat timer. Called from button PressedHandlers.
+func (g *Game) activateHold(action int) {
+	if g.tryHoldAction(action) {
+		g.holdAction = action
+		g.holdTimer = holdInitialDelay
+	}
+}
+
+// tryHoldAction executes the purchase action and returns true on success.
+func (g *Game) tryHoldAction(action int) bool {
+	switch action {
+	case holdNurture:
+		if nurtureField(g.world, KindWood) {
+			g.nurtureConfirmLeft = nurtureConfirmDuration
+			return true
+		}
+		g.pulseTime = pulseDuration
+		g.pulseTarget = 3
+	case holdBuyWorker:
+		if buyWorker(g.world) {
+			return true
+		}
+		if g.world.ResourceDiscovered && g.world.Economy.Wood < WorkerCost(g.world) {
+			g.pulseTime = pulseDuration
+			g.pulseTarget = 2
+		}
+	}
+	return false
+}
+
 func (g *Game) Update() error {
 	if ebiten.IsWindowBeingClosed() {
 		_ = Save(g.world)
@@ -91,6 +130,20 @@ func (g *Game) Update() error {
 
 	g.ui.Update()
 	g.handleInput()
+
+	if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+		g.holdAction = holdNone
+	}
+	if g.holdAction != holdNone {
+		g.holdTimer -= dt
+		if g.holdTimer <= 0 {
+			if g.tryHoldAction(g.holdAction) {
+				g.holdTimer = holdRepeatInterval
+			} else {
+				g.holdAction = holdNone
+			}
+		}
+	}
 
 	Step(g.world, dt)
 	if g.pulseTime > 0 {

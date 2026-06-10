@@ -556,13 +556,8 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 				MaxHeight: iconSz,
 			}),
 		),
-		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			if nurtureField(g.world, KindWood) {
-				g.nurtureConfirmLeft = nurtureConfirmDuration
-				return
-			}
-			g.pulseTime = pulseDuration
-			g.pulseTarget = 3
+		widget.ButtonOpts.PressedHandler(func(_ *widget.ButtonPressedEventArgs) {
+			g.activateHold(holdNurture)
 		}),
 	)
 	hud.resourceHUD.AddChild(hud.resourceSquare)
@@ -654,14 +649,8 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			widget.WidgetOpts.MinSize(btnSz, btnSz),
 			widget.WidgetOpts.LayoutData(widget.RowLayoutData{MaxWidth: btnSz, MaxHeight: btnSz}),
 		),
-		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			if buyWorker(g.world) {
-				return
-			}
-			if g.world.ResourceDiscovered && g.world.Economy.Wood < WorkerCost(g.world) {
-				g.pulseTime = pulseDuration
-				g.pulseTarget = 2
-			}
+		widget.ButtonOpts.PressedHandler(func(_ *widget.ButtonPressedEventArgs) {
+			g.activateHold(holdBuyWorker)
 		}),
 	)
 	hud.buyWorkerBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
