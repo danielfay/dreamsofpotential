@@ -433,6 +433,60 @@ func growFirstFieldUntilBlockedForDebug(w *World) bool {
 	return true
 }
 
+// nurtureField spends nurtureCost wood to add nurtureEXP field EXP to the
+// matching field, triggering the normal growth path if the cap is crossed.
+// Returns false if resource is not yet discovered, the field is missing, or
+// the player cannot afford the cost.
+func nurtureField(w *World, kind ResourceKind) bool {
+	if !w.ResourceDiscovered || w.Economy.Wood < nurtureCost {
+		return false
+	}
+	for _, f := range w.Planet.Fields {
+		if f.Kind == kind {
+			w.Economy.Wood -= nurtureCost
+			depositToField(w, kind, nurtureEXP)
+			return true
+		}
+	}
+	return false
+}
+
+// nurtureAttentionActive reports whether the resource square should show its
+// attention pulse. True when Nurture is affordable and either an idle worker
+// has no free node to claim, or one click would complete the current cap.
+func nurtureAttentionActive(w *World, kind ResourceKind) bool {
+	if !w.ResourceDiscovered || w.Economy.Wood < nurtureCost {
+		return false
+	}
+	// Condition 1: idle worker with no free (unclaimed, unreserved) node.
+	hasIdle := false
+	for _, wk := range w.Workers {
+		if wk.State == StateIdleWaiting {
+			hasIdle = true
+			break
+		}
+	}
+	if hasIdle {
+		hasFreeNode := false
+		for _, n := range w.Nodes {
+			if n.Kind == kind && n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
+				hasFreeNode = true
+				break
+			}
+		}
+		if !hasFreeNode {
+			return true
+		}
+	}
+	// Condition 2: one click would complete the current cap.
+	for _, f := range w.Planet.Fields {
+		if f.Kind == kind && f.EXP+nurtureEXP >= f.Cap {
+			return true
+		}
+	}
+	return false
+}
+
 // EstimateRate returns the analytic resource/sec for all active workers.
 func EstimateRate(w *World) float64 {
 	var rate float64

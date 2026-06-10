@@ -30,9 +30,12 @@ type Game struct {
 	rejectTime   float64           // seconds remaining on invalid placement feedback
 	screenW      int               // current screen dimensions, updated each Draw()
 	screenH      int
-	hudScale     int     // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits    int     // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer    float64 // counts down to next autosave
+	hudScale              int     // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits             int     // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer             float64 // counts down to next autosave
+	nurtureConfirmLeft       float64 // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown float64 // counts down to next attention pulse fire
+	nurtureAttentionPulseLeft float64 // seconds remaining on the current attention flash
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -44,11 +47,12 @@ func New() (*Game, error) {
 	}
 	const initialScale = 2
 	g := &Game{
-		world:     w,
-		scene:     ebiten.NewImage(virtW, virtH),
-		hudScale:  initialScale,
-		hudDigits: woodDigits(w.Economy.Wood),
-		saveTimer: autoSavePeriod,
+		world:                    w,
+		scene:                    ebiten.NewImage(virtW, virtH),
+		hudScale:                 initialScale,
+		hudDigits:                woodDigits(w.Economy.Wood),
+		saveTimer:                autoSavePeriod,
+		nurtureAttentionCooldown: nurtureAttentionInterval,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -91,6 +95,19 @@ func (g *Game) Update() error {
 	Step(g.world, dt)
 	if g.pulseTime > 0 {
 		g.pulseTime -= dt
+	}
+	if g.nurtureConfirmLeft > 0 {
+		g.nurtureConfirmLeft -= dt
+	}
+	if g.nurtureAttentionPulseLeft > 0 {
+		g.nurtureAttentionPulseLeft -= dt
+	}
+	g.nurtureAttentionCooldown -= dt
+	if g.nurtureAttentionCooldown <= 0 {
+		g.nurtureAttentionCooldown = nurtureAttentionInterval
+		if nurtureAttentionActive(g.world, KindWood) {
+			g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+		}
 	}
 	if g.rejectTime > 0 {
 		g.rejectTime -= dt
@@ -216,6 +233,22 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			alpha := uint8(210 * t)
 			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, color.RGBA{R: 140, G: 255, B: 130, A: alpha}, false)
 		}
+
+		sr := g.hud.resourceSquare.GetWidget().Rect
+		srx := float32(sr.Min.X)
+		sry := float32(sr.Min.Y)
+		srw := float32(sr.Max.X - sr.Min.X)
+		srh := float32(sr.Max.Y - sr.Min.Y)
+		if g.nurtureAttentionPulseLeft > 0 {
+			t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
+			alpha := uint8(90 * t)
+			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 120, G: 255, B: 150, A: alpha}, false)
+		}
+		if g.nurtureConfirmLeft > 0 {
+			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
+			alpha := uint8(210 * t)
+			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 200, G: 255, B: 210, A: alpha}, false)
+		}
 	}
 
 	// Unaffordable-cost pulse flash: fades out over pulseDuration seconds.
@@ -231,6 +264,12 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				2, colPulse, false)
 		case 2:
 			pr := g.hud.buyWorkerBtn.GetWidget().Rect
+			vector.StrokeRect(screen,
+				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+				2, colPulse, false)
+		case 3:
+			pr := g.hud.resourceSquare.GetWidget().Rect
 			vector.StrokeRect(screen,
 				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,

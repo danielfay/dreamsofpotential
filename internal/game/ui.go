@@ -39,8 +39,9 @@ type HUD struct {
 	woodText        *widget.Text
 	workerText      *widget.Text
 	nodeText        *widget.Text
-	fieldText       *widget.Text
-	previewText     *widget.Text
+	fieldText      *widget.Text
+	previewText    *widget.Text
+	resourceSquare *widget.Button
 	buyWorkerDbg    *widget.Button
 	addWorkerDbg    *widget.Button
 	buildCampDbg    *widget.Button
@@ -152,9 +153,10 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f",
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %.1f EXP",
 			f.EXP, f.Cap, fieldReturnRatio*100,
-			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned)
+			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
+			nurtureCost, nurtureEXP)
 	}
 
 	wc := WorkerCost(w)
@@ -540,7 +542,30 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			widget.RowLayoutOpts.Spacing(sz(4)),
 		)),
 	)
-	hud.resourceHUD.AddChild(smallSquare(color.NRGBA{R: 40, G: 160, B: 60, A: 255}, iconSz))
+	hud.resourceSquare = widget.NewButton(
+		widget.ButtonOpts.Image(&widget.ButtonImage{
+			Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 160, B: 60, A: 255}),
+			Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 185, B: 80, A: 255}),
+			Pressed:  eimage.NewNineSliceColor(color.NRGBA{R: 30, G: 130, B: 50, A: 255}),
+			Disabled: eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 160, B: 60, A: 255}),
+		}),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(iconSz, iconSz),
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				MaxWidth:  iconSz,
+				MaxHeight: iconSz,
+			}),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			if nurtureField(g.world, KindWood) {
+				g.nurtureConfirmLeft = nurtureConfirmDuration
+				return
+			}
+			g.pulseTime = pulseDuration
+			g.pulseTarget = 3
+		}),
+	)
+	hud.resourceHUD.AddChild(hud.resourceSquare)
 	hud.resourceHUD.AddChild(hud.resourceText)
 	hud.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 

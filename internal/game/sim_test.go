@@ -926,3 +926,129 @@ func TestFieldEXPCapTriggersCycle(t *testing.T) {
 		t.Fatalf("field EXP after exact cap deposit got %.2f, want 0", field.EXP)
 	}
 }
+
+func TestNurtureFieldSuccess(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost + 10
+	initialEXP := w.Planet.Fields[0].EXP
+
+	if !nurtureField(w, KindWood) {
+		t.Fatal("nurtureField should succeed with enough wood")
+	}
+	if math.Abs(w.Economy.Wood-10) > 1e-9 {
+		t.Errorf("wood got %.2f, want 10 after nurtureCost spent", w.Economy.Wood)
+	}
+	if math.Abs(w.Planet.Fields[0].EXP-(initialEXP+nurtureEXP)) > 1e-9 {
+		t.Errorf("field EXP got %.2f, want %.2f", w.Planet.Fields[0].EXP, initialEXP+nurtureEXP)
+	}
+}
+
+func TestNurtureFieldUnaffordable(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost - 1
+	initialEXP := w.Planet.Fields[0].EXP
+	initialWood := w.Economy.Wood
+
+	if nurtureField(w, KindWood) {
+		t.Fatal("nurtureField should fail without enough wood")
+	}
+	if w.Economy.Wood != initialWood {
+		t.Errorf("wood should not change on failed nurture")
+	}
+	if w.Planet.Fields[0].EXP != initialEXP {
+		t.Errorf("field EXP should not change on failed nurture")
+	}
+}
+
+func TestNurtureFieldNotDiscovered(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = false
+	w.Economy.Wood = nurtureCost * 10
+
+	if nurtureField(w, KindWood) {
+		t.Fatal("nurtureField should fail when resource not yet discovered")
+	}
+}
+
+func TestNurtureFieldCapCrossing(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost * 10
+
+	field := w.Planet.Fields[0]
+	field.EXP = field.Cap - (nurtureEXP / 2) // just below cap
+
+	nurtureField(w, KindWood)
+
+	if w.growthCue.Outcome == growthOutcomeNone {
+		t.Fatal("nurture crossing cap should trigger field growth cue")
+	}
+}
+
+func TestNurtureFieldRepeatClicks(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost * 3
+
+	for i := 0; i < 3; i++ {
+		if !nurtureField(w, KindWood) {
+			t.Fatalf("nurture %d should succeed", i+1)
+		}
+	}
+	if math.Abs(w.Economy.Wood) > 1e-9 {
+		t.Errorf("after 3 nurtures, wood got %.2f, want 0", w.Economy.Wood)
+	}
+	if nurtureField(w, KindWood) {
+		t.Error("4th nurture should fail (no wood left)")
+	}
+}
+
+func TestNurtureAttentionActiveIdleWorkerNoFreeNode(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost
+
+	// All nodes are owned.
+	for _, n := range w.Nodes {
+		n.OwnerID = 99
+	}
+	// One idle worker.
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+
+	if !nurtureAttentionActive(w, KindWood) {
+		t.Error("expected attention active: idle worker with no free node")
+	}
+}
+
+func TestNurtureAttentionActiveCapProximity(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost
+
+	// Set EXP so one click would cross the cap.
+	field := w.Planet.Fields[0]
+	field.EXP = field.Cap - nurtureEXP
+
+	if !nurtureAttentionActive(w, KindWood) {
+		t.Error("expected attention active: one click would complete the cap")
+	}
+}
+
+func TestNurtureAttentionInactiveWhenUnaffordable(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost - 1
+
+	for _, n := range w.Nodes {
+		n.OwnerID = 99
+	}
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+
+	if nurtureAttentionActive(w, KindWood) {
+		t.Error("expected attention inactive: cannot afford nurture")
+	}
+}

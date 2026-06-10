@@ -6,6 +6,10 @@ const (
 	microPulseTime   = 0.30 // seconds for worker/node/building activity pulse
 	pulseMinInterval = 0.50 // activations faster than this become steady-lit
 
+	nurtureConfirmDuration   = 0.18 // seconds for the nurture success flash
+	nurtureAttentionInterval = 7.0  // seconds between attention pulse fires
+	nurtureAttentionPulseDur = 0.35 // duration of each attention flash
+
 	growthGaugeReleaseTime   = 0.36
 	growthGaugeAfterglowTime = 0.72
 	growthFieldPulseDelay    = 0.12
