@@ -1,0 +1,11 @@
+{
+  "name": "near-cap-stall",
+  "description": "Idle workers, no free nodes, field gauge one Nurture from completing",
+  "seed": 11,
+  "discovered": true,
+  "placeTownHall": true,
+  "workers": 7,
+  "settleSeconds": 1,
+  "fieldExpFromCap": -5,
+  "wood": 100
+}

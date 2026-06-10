@@ -1,0 +1,12 @@
+{
+  "name": "far-cap-stall",
+  "description": "Idle workers, no free nodes, field gauge far from completing",
+  "seed": 11,
+  "discovered": true,
+  "placeTownHall": true,
+  "workers": 7,
+  "settleSeconds": 1,
+  "fieldCapCycles": 2,
+  "fieldExpAbs": 5,
+  "wood": 100
+}
