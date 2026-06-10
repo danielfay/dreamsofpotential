@@ -5,6 +5,7 @@ package game
 import (
 	"encoding/json"
 	"syscall/js"
+	"time"
 )
 
 // exportSaveDialog triggers a browser download of the world JSON.
@@ -28,7 +29,7 @@ func exportSaveDialog(w *World) {
 
 	a := js.Global().Get("document").Call("createElement", "a")
 	a.Set("href", url)
-	a.Set("download", "dreamsofpotential-save.json")
+	a.Set("download", time.Now().Format("dreams-2006-01-02-15-04.json"))
 	a.Set("style", "display:none")
 	js.Global().Get("document").Get("body").Call("appendChild", a)
 	a.Call("click")

@@ -706,7 +706,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			_ = Save(g.world)
-			g.showMenu = false
 		}),
 	)
 
@@ -719,7 +718,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			exportSaveDialog(g.world)
-			g.showMenu = false
 		}),
 	)
 
@@ -732,7 +730,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			importSaveDialog(g)
-			g.showMenu = false
 		}),
 	)
 
