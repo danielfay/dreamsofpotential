@@ -265,11 +265,11 @@ func TestNodeSpawning(t *testing.T) {
 		t.Errorf("expected new node after deliveries; still have %d nodes", len(w.Nodes))
 	}
 	if field.EXP >= field.Cap {
-		t.Errorf("field counter should have reset after spawn, got %.2f / %.2f", field.EXP, field.Cap)
+		t.Errorf("field EXP should have reset after spawn, got %.2f / %.2f", field.EXP, field.Cap)
 	}
 }
 
-func TestFieldCounterAdvanceBelowCapRecordsNoGrowthCue(t *testing.T) {
+func TestFieldEXPAdvanceBelowCapRecordsNoGrowthCue(t *testing.T) {
 	w := NewWorld()
 	field := w.Planet.Fields[0]
 	field.EXP = 3
@@ -278,7 +278,7 @@ func TestFieldCounterAdvanceBelowCapRecordsNoGrowthCue(t *testing.T) {
 	depositToField(w, KindWood, 2)
 
 	if field.EXP != 5 {
-		t.Fatalf("field counter got %.2f, want 5", field.EXP)
+		t.Fatalf("field EXP got %.2f, want 5", field.EXP)
 	}
 	if w.growthCue.Outcome != growthOutcomeNone ||
 		w.growthCue.GaugeRelease != 0 ||
@@ -472,7 +472,7 @@ func TestLargerNodeYieldsMoreWood(t *testing.T) {
 	}
 }
 
-func TestFieldCounterAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
+func TestFieldEXPAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -489,7 +489,7 @@ func TestFieldCounterAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 		t.Fatalf("expected upgrade fallback without append, got %d nodes", len(w.Nodes))
 	}
 	if math.Abs(field.EXP-1) > 1e-9 {
-		t.Fatalf("counter got %.2f, want 1", field.EXP)
+		t.Fatalf("field EXP got %.2f, want 1", field.EXP)
 	}
 	if math.Abs(field.Cap-40) > 1e-9 {
 		t.Fatalf("cap got %.2f, want 40", field.Cap)
@@ -523,7 +523,7 @@ func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
 		t.Fatalf("expected one spawned node, got %d", len(w.Nodes))
 	}
 	if field.EXP != 0 {
-		t.Fatalf("field counter got %.2f, want 0", field.EXP)
+		t.Fatalf("field EXP got %.2f, want 0", field.EXP)
 	}
 	if math.Abs(field.Cap-40) > 1e-9 {
 		t.Fatalf("field cap got %.2f, want 40", field.Cap)

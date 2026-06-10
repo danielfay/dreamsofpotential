@@ -366,8 +366,8 @@ func findNode(w *World, id int) *ResourceNode {
 	return nil
 }
 
-// depositToField increments the field counter for kind and spawns a new node
-// each time the counter meets or exceeds the cap. Assignment happens
+// depositToField increments the field EXP for kind and spawns a new node
+// each time EXP meets or exceeds the cap. Assignment happens
 // automatically on the next tick via assignNodes.
 func depositToField(w *World, kind ResourceKind, amount float64) {
 	for _, f := range w.Planet.Fields {
