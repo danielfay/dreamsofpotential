@@ -568,7 +568,8 @@ func townFieldSlots(p Planet, th *Building) []Vec {
 		if cols == 0 {
 			continue
 		}
-		for col := 0; col < cols; col++ {
+		for order := 0; order < cols; order++ {
+			col := townFieldColumnIndex(order, cols)
 			tangOffset := (float64(col) - float64(cols-1)/2) * townFieldSlotSpacing
 			slots = append(slots, Vec{
 				X: rim.X + inx*d + tx*tangOffset,
@@ -577,6 +578,18 @@ func townFieldSlots(p Planet, th *Building) []Vec {
 		}
 	}
 	return slots
+}
+
+func townFieldColumnIndex(order, cols int) int {
+	centerLeft := (cols - 1) / 2
+	if order == 0 {
+		return centerLeft
+	}
+	step := (order + 1) / 2
+	if order%2 == 1 {
+		return centerLeft + step
+	}
+	return centerLeft - step
 }
 
 // maxTownSlots returns the geometry-derived maximum worker capacity for the

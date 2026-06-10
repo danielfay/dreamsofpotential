@@ -23,31 +23,31 @@ const (
 
 // Game is the root ebiten game object.
 type Game struct {
-	world        *World
-	scene        *ebiten.Image // low-res 320×240 canvas; scaled up to the window
-	ui           *ebitenui.UI
-	hud          *HUD
-	placing      bool              // true while waiting for player to click a camp location
-	freePlacing  bool              // debug-only: next placement ignores camp cost
-	preview      *placementPreview // current frame's placement preview; nil when not placing
-	showMenu     bool              // true when the settings overlay is open
-	debug        bool              // F3 — verbose debug panel; session-only, not persisted
-	debugSection int               // selected debug panel section; session-only
-	pulseTime    float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget  int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
-	rejectTime   float64           // seconds remaining on invalid placement feedback
-	screenW      int               // current screen dimensions, updated each Draw()
-	screenH      int
-	hudScale              int     // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits             int     // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer             float64 // counts down to next autosave
-	nurtureConfirmLeft        float64 // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown  float64 // counts down to next attention pulse fire
-	nurtureAttentionPulseLeft float64 // seconds remaining on the current attention flash
-	holdAction                int     // current held purchase action (holdNone, holdNurture, …)
-	holdTimer                 float64 // counts down to next repeat fire
-	holdDuration              float64 // total seconds the current hold has been active
-	importCh                  chan *World  // receives a validated world from an import goroutine
+	world                     *World
+	scene                     *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	ui                        *ebitenui.UI
+	hud                       *HUD
+	placing                   bool              // true while waiting for player to click a camp location
+	freePlacing               bool              // debug-only: next placement ignores camp cost
+	preview                   *placementPreview // current frame's placement preview; nil when not placing
+	showMenu                  bool              // true when the settings overlay is open
+	debug                     bool              // F3 — verbose debug panel; session-only, not persisted
+	debugSection              int               // selected debug panel section; session-only
+	pulseTime                 float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget               int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
+	rejectTime                float64           // seconds remaining on invalid placement feedback
+	screenW                   int               // current screen dimensions, updated each Draw()
+	screenH                   int
+	hudScale                  int         // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits                 int         // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer                 float64     // counts down to next autosave
+	nurtureConfirmLeft        float64     // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown  float64     // counts down to next attention pulse fire
+	nurtureAttentionPulseLeft float64     // seconds remaining on the current attention flash
+	holdAction                int         // current held purchase action (holdNone, holdNurture, …)
+	holdTimer                 float64     // counts down to next repeat fire
+	holdDuration              float64     // total seconds the current hold has been active
+	importCh                  chan *World // receives a validated world from an import goroutine
 	dialogOpen                atomic.Bool // true while a file dialog is open; blocks UI input
 }
 
@@ -117,7 +117,7 @@ func (g *Game) tryHoldAction(action int) bool {
 		// Genuinely unaffordable: show pulse and stop.
 		g.pulseTime = pulseDuration
 		g.pulseTarget = 3
-}
+	}
 	return false
 }
 
@@ -387,7 +387,7 @@ func (g *Game) drawAffordabilityProgress(screen *ebiten.Image) {
 		drawButtonProgress(screen, g.hud.buildCampBtn, affordabilityFrac(g.world.Economy.Wood, CampCost(g.world)),
 			color.RGBA{R: 140, G: 90, B: 50, A: 230})
 	}
-	if hasTownHall {
+	if hasTownHall && !townFieldFull(g.world) {
 		drawButtonProgress(screen, g.hud.buildTownCapacityBtn,
 			affordabilityFrac(g.world.Economy.Wood, townCapacityCost(g.world)),
 			color.RGBA{R: 220, G: 200, B: 60, A: 230})

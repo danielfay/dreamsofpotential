@@ -302,8 +302,8 @@ func TestMaxTownSlotsFromGeometry(t *testing.T) {
 		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	slots := maxTownSlots(w)
-	if slots < 10 || slots > 20 {
-		t.Errorf("expected 10-20 slots at radius 90, got %d", slots)
+	if slots != 12 {
+		t.Errorf("expected 12 slots at radius 90, got %d", slots)
 	}
 	// Smaller planet should yield fewer slots.
 	w2 := NewWorld()
@@ -314,6 +314,30 @@ func TestMaxTownSlotsFromGeometry(t *testing.T) {
 	slots2 := maxTownSlots(w2)
 	if slots2 >= slots {
 		t.Errorf("smaller planet (radius 50, slots %d) should yield fewer slots than radius 90 (%d)", slots2, slots)
+	}
+}
+
+func TestTownFieldSlotsStartBelowTownHall(t *testing.T) {
+	w := NewWorld()
+	th := &Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}
+	w.Buildings = append(w.Buildings, th)
+
+	slots := townFieldSlots(w.Planet, th)
+	if len(slots) == 0 {
+		t.Fatal("expected town field slots")
+	}
+	rim := w.Planet.RimPoint(th.Angle)
+	firstDepth := rim.X - slots[0].X
+	if math.Abs(firstDepth-townFieldRimInset) > 1e-9 {
+		t.Errorf("first slot depth: got %.2f, want %.2f", firstDepth, townFieldRimInset)
+	}
+	townHallHeight := 2 * float64(townHallBldHalfH)
+	if firstDepth < townHallHeight {
+		t.Errorf("first slot depth %.2f should start below Town Hall art height %.2f", firstDepth, townHallHeight)
+	}
+	firstTangentialOffset := math.Abs(slots[0].Y - rim.Y)
+	if firstTangentialOffset > townFieldSlotSpacing/2 {
+		t.Errorf("first slot tangential offset: got %.2f, want <= %.2f", firstTangentialOffset, townFieldSlotSpacing/2)
 	}
 }
 

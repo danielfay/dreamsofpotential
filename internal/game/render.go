@@ -44,27 +44,26 @@ const (
 
 // palette
 var (
-	colBackground   = color.RGBA{R: 10, G: 10, B: 20, A: 255}
-	colPlanetBody   = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
-	colPlanetEdge   = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
-	colNodeFree     = color.RGBA{R: 40, G: 160, B: 60, A: 255}
-	colNodeReserved = color.RGBA{R: 32, G: 130, B: 48, A: 255}
-	colNodeClaimed  = color.RGBA{R: 20, G: 100, B: 35, A: 255}
-	colTownHall       = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
-	colBuilding       = color.RGBA{R: 140, G: 90, B: 50, A: 255}
-	colTownFieldBase  = color.RGBA{R: 120, G: 82, B: 40, A: 150} // warm clay wedge fill
-	colTownFieldEdge  = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
-	colTownFieldSlot  = color.RGBA{R: 200, G: 148, B: 72, A: 220} // built dwelling slot
-	colTownFieldPoten = color.RGBA{R: 160, G: 115, B: 60, A: 55}  // potential (unbuilt) slot
-	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255}
-	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}
-	colWorkerLaden  = color.RGBA{R: 255, G: 240, B: 80, A: 255}
-	colGhostOk      = color.RGBA{R: 200, G: 200, B: 255, A: 160}
-	colGhostBad     = color.RGBA{R: 200, G: 80, B: 80, A: 80}
-	colRouteFree    = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
-	colRouteClaimed = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
-	colPreviewLens  = color.RGBA{R: 125, G: 145, B: 170, A: 16}
-	colPreviewDebug = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
+	colBackground    = color.RGBA{R: 10, G: 10, B: 20, A: 255}
+	colPlanetBody    = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
+	colPlanetEdge    = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
+	colNodeFree      = color.RGBA{R: 40, G: 160, B: 60, A: 255}
+	colNodeReserved  = color.RGBA{R: 32, G: 130, B: 48, A: 255}
+	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
+	colTownHall      = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
+	colBuilding      = color.RGBA{R: 140, G: 90, B: 50, A: 255}
+	colTownFieldBase = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
+	colTownFieldEdge = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
+	colTownFieldSlot = color.RGBA{R: 200, G: 148, B: 72, A: 220} // built dwelling slot
+	colWorkerEmpty   = color.RGBA{R: 220, G: 200, B: 150, A: 255}
+	colWorkerReturn  = color.RGBA{R: 125, G: 115, B: 95, A: 255}
+	colWorkerLaden   = color.RGBA{R: 255, G: 240, B: 80, A: 255}
+	colGhostOk       = color.RGBA{R: 200, G: 200, B: 255, A: 160}
+	colGhostBad      = color.RGBA{R: 200, G: 80, B: 80, A: 80}
+	colRouteFree     = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
+	colRouteClaimed  = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
+	colPreviewLens   = color.RGBA{R: 125, G: 145, B: 170, A: 16}
+	colPreviewDebug  = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
 )
 
 // DrawWorld renders the complete world state onto the low-res scene image.
@@ -694,7 +693,8 @@ func drawFilledAnnularSector(scene *ebiten.Image, cx, cy, innerR, outerR float32
 }
 
 // drawTownField renders the settlement wedge inside the planet at the Town Hall
-// angle, with built and potential dwelling slots. No-op until a Town Hall exists.
+// angle, with visible dwelling slots for built capacity. No-op until a Town
+// Hall exists.
 func drawTownField(scene *ebiten.Image, w *World, radius float32) {
 	th := townHall(w)
 	if th == nil {
@@ -712,10 +712,18 @@ func drawTownField(scene *ebiten.Image, w *World, radius float32) {
 	drawFieldSectorBand(scene, cx, cy, radius-0.5, 1.5, start, end, colTownFieldEdge)
 	drawFieldSectorBand(scene, cx, cy, innerR+0.5, 1.0, start, end, colTownFieldEdge)
 
-	// Dwelling slots — built (solid) and potential (faint).
+	// Dwelling slots — only built capacity is visible, so fresh towns start with
+	// one house and fill in one purchase at a time.
 	slots := townFieldSlots(w.Planet, th)
 	if len(slots) == 0 {
 		return
+	}
+	builtSlots := w.Economy.WorkerCapacity
+	if builtSlots < 0 {
+		builtSlots = 0
+	}
+	if builtSlots > len(slots) {
+		builtSlots = len(slots)
 	}
 	cos := float32(math.Cos(th.Angle))
 	sin := float32(math.Sin(th.Angle))
@@ -723,11 +731,7 @@ func drawTownField(scene *ebiten.Image, w *World, radius float32) {
 	iy := -sin
 	tx := -sin // tangent
 	ty := cos
-	for i, pos := range slots {
-		col := colTownFieldPoten
-		if i < w.Economy.WorkerCapacity {
-			col = colTownFieldSlot
-		}
-		drawOrientedRect(scene, float32(pos.X), float32(pos.Y), tx, ty, ix, iy, 1.5, 1.5, col)
+	for _, pos := range slots[:builtSlots] {
+		drawOrientedRect(scene, float32(pos.X), float32(pos.Y), tx, ty, ix, iy, 1.5, 1.5, colTownFieldSlot)
 	}
 }

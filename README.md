@@ -39,6 +39,6 @@ Available presets:
 - `town-growth-arrival` — Town Growth one delivery from spawning a new worker
 - `town-growth-cramped` — 10 workers, first planet feeling close to needing a new objective
 - `town-growth-capacity-blocked` — Town Growth full, all dwelling slots occupied, no spawn
-- `town-field-fresh` — Town Hall just placed, town field visible with one built slot and potential slots
+- `town-field-fresh` — Town Hall just placed, town field visible with one built slot
 - `town-field-growing` — several dwelling slots built, unused capacity, Town Growth partial
 - `town-field-full` — all dwelling slots built, capacity action disabled despite affordable wood
