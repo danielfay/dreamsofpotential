@@ -28,9 +28,10 @@ type QAPreset struct {
 	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N boosted-delivery charges
 	Wood            *float64 `json:"wood"`
 	// Town Growth overrides — applied after workers, before final Wood stamp.
-	TownGrowth     *float64 `json:"townGrowth"`
-	TownGrowthCap  *float64 `json:"townGrowthCap"`
-	WorkerCapacity *int     `json:"workerCapacity"`
+	TownGrowth       *float64 `json:"townGrowth"`
+	TownGrowthCap    *float64 `json:"townGrowthCap"`
+	WorkerCapacity   *int     `json:"workerCapacity"`
+	FillTownCapacity bool     `json:"fillTownCapacity"` // set WorkerCapacity to the geometry max
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -118,7 +119,11 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	}
 
 	// Town Growth overrides — applied after workers so capacity is already known.
-	if p.WorkerCapacity != nil && *p.WorkerCapacity > w.Economy.WorkerCapacity {
+	if p.FillTownCapacity {
+		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+			w.Economy.WorkerCapacity = max
+		}
+	} else if p.WorkerCapacity != nil && *p.WorkerCapacity > w.Economy.WorkerCapacity {
 		w.Economy.WorkerCapacity = *p.WorkerCapacity
 	}
 	if p.TownGrowthCap != nil {

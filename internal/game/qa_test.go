@@ -237,6 +237,29 @@ func TestBuildQAWorld_TownGrowthCapacityBlocked(t *testing.T) {
 	}
 }
 
+func TestBuildQAWorld_FillTownCapacity(t *testing.T) {
+	p := QAPreset{
+		Seed:             11,
+		PlaceTownHall:    true,
+		FillTownCapacity: true,
+		Wood:             qaPtr(200.0),
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	max := maxTownSlots(w)
+	if max == 0 {
+		t.Fatal("expected maxTownSlots > 0 after Town Hall placement")
+	}
+	if w.Economy.WorkerCapacity != max {
+		t.Errorf("WorkerCapacity: got %d, want %d (geometry max)", w.Economy.WorkerCapacity, max)
+	}
+	if !townFieldFull(w) {
+		t.Error("townFieldFull should return true when WorkerCapacity == maxTownSlots")
+	}
+}
+
 func TestTownGrowthClampedToCapOnPreset(t *testing.T) {
 	p := QAPreset{
 		Seed:          11,

@@ -1,0 +1,8 @@
+{
+  "name": "town-field-full",
+  "description": "Worker capacity equals max town slots. Enough wood to afford another capacity purchase. Expected read: town field is full and the capacity action is disabled.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "wood": 200
+}

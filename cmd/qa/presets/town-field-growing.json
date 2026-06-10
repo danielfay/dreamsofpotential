@@ -1,0 +1,12 @@
+{
+  "name": "town-field-growing",
+  "description": "Several dwelling slots built, some unused capacity, Town Growth partially filled. Expected read: settlement visibly growing inside the planet.",
+  "seed": 11,
+  "placeTownHall": true,
+  "workers": 3,
+  "settleSeconds": 1,
+  "workerCapacity": 6,
+  "townGrowthCap": 15,
+  "townGrowth": 8,
+  "wood": 60
+}

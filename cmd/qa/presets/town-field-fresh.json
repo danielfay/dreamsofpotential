@@ -1,0 +1,8 @@
+{
+  "name": "town-field-fresh",
+  "description": "Town Hall just placed, founding worker present, no capacity purchases. Expected read: town field visible with first built slot and remaining potential slots.",
+  "seed": 11,
+  "placeTownHall": true,
+  "settleSeconds": 1,
+  "wood": 80
+}

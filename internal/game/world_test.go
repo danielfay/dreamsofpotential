@@ -296,6 +296,47 @@ func TestFreePlacementStillRespectsFootprints(t *testing.T) {
 	}
 }
 
+func TestMaxTownSlotsFromGeometry(t *testing.T) {
+	w := NewWorld()
+	w.Buildings = append(w.Buildings, &Building{
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
+	})
+	slots := maxTownSlots(w)
+	if slots < 10 || slots > 20 {
+		t.Errorf("expected 10-20 slots at radius 90, got %d", slots)
+	}
+	// Smaller planet should yield fewer slots.
+	w2 := NewWorld()
+	w2.Planet.Radius = 50
+	w2.Buildings = append(w2.Buildings, &Building{
+		Kind: KindTownHall, Angle: 0, Pos: w2.Planet.RimPoint(0),
+	})
+	slots2 := maxTownSlots(w2)
+	if slots2 >= slots {
+		t.Errorf("smaller planet (radius 50, slots %d) should yield fewer slots than radius 90 (%d)", slots2, slots)
+	}
+}
+
+func TestBuildTownCapacityBlockedAtMax(t *testing.T) {
+	w := NewWorld()
+	w.Buildings = append(w.Buildings, &Building{
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
+	})
+	max := maxTownSlots(w)
+	w.Economy.WorkerCapacity = max
+	w.Economy.Wood = 10000
+
+	if buildTownCapacity(w) {
+		t.Error("buildTownCapacity at geometry max should return false")
+	}
+	if w.Economy.WorkerCapacity != max {
+		t.Errorf("WorkerCapacity should stay %d; got %d", max, w.Economy.WorkerCapacity)
+	}
+	if w.Economy.Wood != 10000 {
+		t.Errorf("Wood should be unchanged; got %.2f", w.Economy.Wood)
+	}
+}
+
 func TestTownHallHelper(t *testing.T) {
 	w := NewWorld()
 

@@ -2,6 +2,7 @@ package game
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -107,6 +108,49 @@ func TestWorkerArrivalOnCapacityBuild(t *testing.T) {
 	}
 	if w.Economy.TownGrowth != 0 {
 		t.Errorf("TownGrowth should reset to 0 after spawn; got %.4f", w.Economy.TownGrowth)
+	}
+}
+
+func TestNoWorkerArrivalBeyondMaxSlots(t *testing.T) {
+	w, node := newDeliveryWorld()
+	gross := baseLoadAmount * node.Size
+	w.Economy.TownGrowthCap = gross * 0.5
+	w.Economy.TownGrowth = 0
+
+	// Fill exactly to the geometry max.
+	max := maxTownSlots(w)
+	w.Economy.WorkerCapacity = max
+	for i := 0; i < max-1; i++ {
+		w.Workers = append(w.Workers, &Worker{
+			ID:            w.NextWorkerID,
+			State:         StateIdleWaiting,
+			NodeID:        -1,
+			TargetNodeID:  -1,
+			PendingNodeID: -1,
+		})
+		w.NextWorkerID++
+	}
+	// The delivery worker occupies the last slot.
+	wk := &Worker{
+		ID:            w.NextWorkerID,
+		Carried:       gross,
+		NodeID:        node.ID,
+		Angle:         0,
+		Pos:           w.Planet.RimPoint(0),
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+	}
+	node.OwnerID = wk.ID
+	w.Workers = append(w.Workers, wk)
+	w.NextWorkerID++
+
+	completeUnload(w, wk, node)
+
+	if len(w.Workers) != max {
+		t.Errorf("no worker should spawn beyond max slots; got %d workers, want %d", len(w.Workers), max)
+	}
+	if w.Economy.TownGrowth != w.Economy.TownGrowthCap {
+		t.Errorf("TownGrowth should clamp to cap %.4f; got %.4f", w.Economy.TownGrowthCap, w.Economy.TownGrowth)
 	}
 }
 
@@ -234,6 +278,7 @@ func TestAnalyticRateMatchesSim(t *testing.T) {
 	const dist = 100.0
 	const simSeconds = 60.0
 
+	rand.Seed(42) //nolint:staticcheck // fixed seed so this test is order-independent
 	w := newTestWorld(dist)
 	addWorker(w)
 	addWorker(w)

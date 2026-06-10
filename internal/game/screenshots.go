@@ -45,6 +45,8 @@ func screenshotScenarios() []screenshotScenario {
 		freshPlanetScenario(),
 		townHallPreviewScenario(),
 		townHallIdleScenario(),
+		townFieldFreshScenario(),
+		townFieldFullScenario(),
 		workingLoopScenario(),
 		campPreviewScenario(),
 		invalidFullRimPreviewScenario(),
@@ -88,6 +90,26 @@ func townHallIdleScenario() screenshotScenario {
 	}
 }
 
+func townFieldFreshScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlaceNearNode(w, w.Nodes[0])
+	return screenshotScenario{
+		name:  "04-town-field-fresh",
+		world: w,
+	}
+}
+
+func townFieldFullScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlaceNearNode(w, w.Nodes[0])
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	w.Economy.Wood = 200
+	return screenshotScenario{
+		name:  "05-town-field-full",
+		world: w,
+	}
+}
+
 func workingLoopScenario() screenshotScenario {
 	w := screenshotWorld(11)
 	mustPlaceNearNode(w, w.Nodes[0])
@@ -99,7 +121,7 @@ func workingLoopScenario() screenshotScenario {
 		Step(w, dt)
 	}
 	return screenshotScenario{
-		name:  "04-working-loop",
+		name:  "06-working-loop",
 		world: w,
 	}
 }
@@ -124,7 +146,7 @@ func campPreviewScenario() screenshotScenario {
 
 	pv := buildPreview(w, angle)
 	return screenshotScenario{
-		name:    "05-camp-preview",
+		name:    "07-camp-preview",
 		world:   w,
 		preview: &pv,
 	}
@@ -146,7 +168,7 @@ func invalidFullRimPreviewScenario() screenshotScenario {
 	}
 	pv := buildPreview(w, 0)
 	return screenshotScenario{
-		name:    "06-invalid-full-rim-preview",
+		name:    "08-invalid-full-rim-preview",
 		world:   w,
 		preview: &pv,
 	}
@@ -166,7 +188,7 @@ func debugPlacementDiagnosticsScenario() screenshotScenario {
 	}
 	pv := buildPreview(w, 0)
 	return screenshotScenario{
-		name:         "07-debug-placement-diagnostics",
+		name:         "09-debug-placement-diagnostics",
 		world:        w,
 		preview:      &pv,
 		fullHUD:      true,
@@ -185,7 +207,7 @@ func affordabilityButtonsScenario() screenshotScenario {
 	w.Economy.WorkerCapacity = 3
 
 	return screenshotScenario{
-		name:    "08-affordability-buttons",
+		name:    "10-affordability-buttons",
 		world:   w,
 		fullHUD: true,
 	}
@@ -215,7 +237,7 @@ func wideResourceHUDScenario() screenshotScenario {
 	}
 
 	return screenshotScenario{
-		name:    "09-wide-resource-hud",
+		name:    "11-wide-resource-hud",
 		world:   w,
 		fullHUD: true,
 	}
@@ -243,7 +265,7 @@ func fieldGrowthSpawnCueScenario() screenshotScenario {
 	w.growthCue.NodeCue = growthNodeCueTime * 0.9
 
 	return screenshotScenario{
-		name:    "10-field-growth-spawn-cue",
+		name:    "12-field-growth-spawn-cue",
 		world:   w,
 		fullHUD: true,
 	}
@@ -271,7 +293,7 @@ func fieldGrowthUpgradeCueScenario() screenshotScenario {
 	w.growthCue.NodeCue = growthNodeCueTime * 0.55
 
 	return screenshotScenario{
-		name:    "11-field-growth-upgrade-cue",
+		name:    "13-field-growth-upgrade-cue",
 		world:   w,
 		fullHUD: true,
 	}
@@ -301,7 +323,7 @@ func fieldGrowthPlacementCueScenario() screenshotScenario {
 	angle := normAngle(node.Angle + previewArc*0.45)
 	pv := buildPreview(w, angle)
 	return screenshotScenario{
-		name:    "12-field-growth-placement-cue",
+		name:    "14-field-growth-placement-cue",
 		world:   w,
 		preview: &pv,
 		fullHUD: true,

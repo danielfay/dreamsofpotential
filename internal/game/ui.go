@@ -156,18 +156,22 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)\ntown growth %.1f/%.1f  cap %d  used %d  avail %d  next cap %.0f",
+		fullStr := ""
+		if townFieldFull(w) {
+			fullStr = "  FULL"
+		}
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
 			f.EXP, f.Cap, fieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
 			nurtureCost, nurtureCharges, nurtureEXPMultiplier, f.NurtureCharges,
 			w.Economy.TownGrowth, w.Economy.TownGrowthCap,
-			w.Economy.WorkerCapacity, w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
-			townCapacityCost(w))
+			w.Economy.WorkerCapacity, maxTownSlots(w), w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
+			townCapacityCost(w), fullStr)
 	}
 
 	cc := townCapacityCost(w)
 	h.buildCapacityDbg.SetText(fmt.Sprintf("Build capacity (%.0f)", cc))
-	h.buildCapacityDbg.GetWidget().Disabled = w.Economy.Wood < cc || townHall(w) == nil
+	h.buildCapacityDbg.GetWidget().Disabled = w.Economy.Wood < cc || townHall(w) == nil || townFieldFull(w)
 	h.addWorkerDbg.GetWidget().Disabled = townHall(w) == nil
 
 	if len(w.Buildings) == 0 {
@@ -258,7 +262,7 @@ func (h *HUD) refreshNormal(w *World) {
 	// Capacity button: hidden until Town Hall exists; disabled when unaffordable.
 	if hasTownHall {
 		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Show)
-		h.buildTownCapacityBtn.GetWidget().Disabled = w.Economy.Wood < townCapacityCost(w)
+		h.buildTownCapacityBtn.GetWidget().Disabled = w.Economy.Wood < townCapacityCost(w) || townFieldFull(w)
 	} else {
 		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}

@@ -6,10 +6,16 @@ const (
 	// economy / cost constants
 	campBaseCost          = 120.0
 	campCostGrowth        = 1.50
-	townCapacityBaseCost  = 40.0  // cost of the first paid capacity slot (CapacityBought==0)
-	townCapacityCostGrowth = 1.15 // per paid capacity purchase
-	townGrowthBaseCap     = 10.0  // initial Town Growth threshold
-	townGrowthCapGrowth   = 1.35  // cap multiplier per worker arrival
+	townCapacityBaseCost   = 40.0  // cost of the first paid capacity slot (CapacityBought==0)
+	townCapacityCostGrowth = 1.15  // per paid capacity purchase
+	townGrowthBaseCap      = 10.0  // initial Town Growth threshold
+	townGrowthCapGrowth    = 1.35  // cap multiplier per worker arrival
+
+	// Town field geometry — the settlement wedge anchored to the Town Hall angle.
+	townFieldHalfArc     = 0.30  // half angular width of the town wedge (radians)
+	townFieldDepthFrac   = 0.42  // inward depth as a fraction of planet radius
+	townFieldRimInset    = 6.0   // px inside the rim where the first slot row sits
+	townFieldSlotSpacing = 10.0  // px between dwelling slots (row + column pitch)
 
 	// simulation constants
 	workerSpeed      = 40.0 // world px / second
