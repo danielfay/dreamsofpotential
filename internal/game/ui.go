@@ -683,7 +683,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.normalSidebar.AddChild(hud.buyWorkerBtn)
 
 	// --- settings menu overlay ---
-	menuBtnSz := sz(100)
 	menuBtnImg := &widget.ButtonImage{
 		Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 80, B: 120, A: 240}),
 		Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 80, G: 110, B: 160, A: 240}),
@@ -696,12 +695,14 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	}
 	menuPad := &widget.Insets{Top: sz(8), Bottom: sz(8), Left: sz(16), Right: sz(16)}
 
+	menuBtnLayoutData := widget.RowLayoutData{Stretch: true}
+
 	hud.menuSaveBtn = widget.NewButton(
 		widget.ButtonOpts.Image(menuBtnImg),
 		widget.ButtonOpts.Text("Save", face, menuTxtCol),
 		widget.ButtonOpts.TextPadding(menuPad),
 		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			_ = Save(g.world)
@@ -714,7 +715,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.ButtonOpts.Text("Export Save", face, menuTxtCol),
 		widget.ButtonOpts.TextPadding(menuPad),
 		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			exportSaveDialog(g.world)
@@ -727,7 +728,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.ButtonOpts.Text("Import Save", face, menuTxtCol),
 		widget.ButtonOpts.TextPadding(menuPad),
 		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			importSaveDialog(g)
@@ -740,7 +741,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.ButtonOpts.Text("Reset Game", face, menuTxtCol),
 		widget.ButtonOpts.TextPadding(menuPad),
 		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			ClearSave()
