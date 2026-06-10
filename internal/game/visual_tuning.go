@@ -8,8 +8,10 @@ const (
 
 	nurtureConfirmDuration   = 0.18 // seconds for the nurture success flash
 
-	holdInitialDelay   = 0.50 // seconds before first repeat fires
-	holdRepeatInterval = 0.15 // seconds between subsequent repeats
+	holdInitialDelay   = 0.50  // seconds before first repeat fires
+	holdRepeatInterval = 0.15  // starting interval between repeats
+	holdMinInterval    = 0.03  // fastest repeat interval (reached after ~4 s of holding)
+	holdRampRate       = 0.03  // interval reduction per second of hold duration
 	nurtureAttentionInterval = 7.0  // seconds between attention pulse fires
 	nurtureAttentionPulseDur = 0.35 // duration of each attention flash
 

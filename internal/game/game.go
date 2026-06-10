@@ -44,6 +44,7 @@ type Game struct {
 	nurtureAttentionPulseLeft float64 // seconds remaining on the current attention flash
 	holdAction                int     // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                 float64 // counts down to next repeat fire
+	holdDuration              float64 // total seconds the current hold has been active
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -133,14 +134,21 @@ func (g *Game) Update() error {
 
 	if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 		g.holdAction = holdNone
+		g.holdDuration = 0
 	}
 	if g.holdAction != holdNone {
+		g.holdDuration += dt
 		g.holdTimer -= dt
 		if g.holdTimer <= 0 {
 			if g.tryHoldAction(g.holdAction) {
-				g.holdTimer = holdRepeatInterval
+				interval := holdRepeatInterval - g.holdDuration*holdRampRate
+				if interval < holdMinInterval {
+					interval = holdMinInterval
+				}
+				g.holdTimer = interval
 			} else {
 				g.holdAction = holdNone
+				g.holdDuration = 0
 			}
 		}
 	}
