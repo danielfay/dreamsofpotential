@@ -7,7 +7,6 @@ func Step(w *World, dt float64) {
 	w.SimTime += dt
 	tickPulses(w, dt)
 	tickGrowthCue(w, dt)
-	tickTimer(&w.nurtureBoostCue, dt)
 	assignNodes(w)
 	for _, wk := range w.Workers {
 		stepWorker(w, wk, dt)
@@ -177,7 +176,6 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 	if f := fieldForKind(w, node.Kind); f != nil && f.NurtureCharges > 0 {
 		f.NurtureCharges--
 		returned *= nurtureEXPMultiplier
-		w.nurtureBoostCue = nurtureBoostCueDur
 	}
 	w.Economy.Wood += banked
 	w.lastDelivery = deliverySplit{Gross: gross, Banked: banked, Returned: returned}

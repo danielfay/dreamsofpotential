@@ -7,7 +7,6 @@ const (
 	pulseMinInterval = 0.50 // activations faster than this become steady-lit
 
 	nurtureConfirmDuration   = 0.18 // seconds for the nurture success flash
-	nurtureBoostCueDur       = 0.30 // seconds for the boosted-delivery cue flash
 
 	holdInitialDelay   = 0.50  // seconds before first repeat fires
 	holdRepeatInterval = 0.15  // starting interval between repeats

@@ -309,27 +309,26 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			// Active border: soft green stroke around the square.
 			vector.StrokeRect(screen, srx-1, sry-1, srw+2, srh+2, 2,
 				color.RGBA{R: 120, G: 255, B: 150, A: 200}, false)
-			// Boost cue: brief fill flash on a boosted delivery landing.
-			if g.world.nurtureBoostCue > 0 {
-				t := float32(g.world.nurtureBoostCue / nurtureBoostCueDur)
-				alpha := uint8(160 * t)
+			// Charge badge: count centered on the square.
+			chargeStr := fmt.Sprintf("%d", charges)
+			tw, th := text.Measure(chargeStr, g.hud.face, 0)
+			op := &text.DrawOptions{}
+			op.GeoM.Translate(float64(srx)+float64(srw)/2-tw/2, float64(sry)+float64(srh)/2-th/2)
+			op.ColorScale.Scale(120.0/255.0, 1.0, 150.0/255.0, 1.0)
+			text.Draw(screen, chargeStr, g.hud.face, op)
+		} else {
+			// Attention and confirm flashes only render when no charges are active
+			// so they don't obscure the charge badge.
+			if g.nurtureAttentionPulseLeft > 0 {
+				t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
+				alpha := uint8(90 * t)
 				vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 120, G: 255, B: 150, A: alpha}, false)
 			}
-			// Charge badge: numeric count in top-left corner.
-			op := &text.DrawOptions{}
-			op.GeoM.Translate(float64(srx)+2, float64(sry)+1)
-			op.ColorScale.Scale(120.0/255.0, 1.0, 150.0/255.0, 1.0)
-			text.Draw(screen, fmt.Sprintf("%d", charges), g.hud.face, op)
-		}
-		if g.nurtureAttentionPulseLeft > 0 {
-			t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
-			alpha := uint8(90 * t)
-			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 120, G: 255, B: 150, A: alpha}, false)
-		}
-		if g.nurtureConfirmLeft > 0 {
-			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
-			alpha := uint8(210 * t)
-			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 200, G: 255, B: 210, A: alpha}, false)
+			if g.nurtureConfirmLeft > 0 {
+				t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
+				alpha := uint8(210 * t)
+				vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 200, G: 255, B: 210, A: alpha}, false)
+			}
 		}
 	}
 

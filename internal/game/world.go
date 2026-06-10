@@ -195,9 +195,8 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 
-	growthCue      growthCueState
-	lastDelivery   deliverySplit
-	nurtureBoostCue float64 // seconds remaining on the boosted-delivery flash; transient, not saved
+	growthCue    growthCueState
+	lastDelivery deliverySplit
 }
 
 type deliverySplit struct{ Gross, Banked, Returned float64 }
