@@ -1,0 +1,11 @@
+{
+  "name": "near-cap-boosted",
+  "description": "Idle workers, no free nodes, next boosted delivery should complete field growth",
+  "seed": 11,
+  "discovered": true,
+  "placeTownHall": true,
+  "workers": 7,
+  "settleSeconds": 1,
+  "fieldExpFromCap": -2,
+  "wood": 100
+}

@@ -17,6 +17,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	runSim(w, 5)
 
 	w.ResourceDiscovered = true // ensure the bool is tested in the round-trip
+	if len(w.Planet.Fields) > 0 {
+		w.Planet.Fields[0].NurtureCharges = 3 // ensure NurtureCharges survives round-trip
+	}
 	if err := Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -63,6 +66,12 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	if got.ResourceDiscovered != w.ResourceDiscovered {
 		t.Errorf("ResourceDiscovered: got %v, want %v", got.ResourceDiscovered, w.ResourceDiscovered)
+	}
+	if len(got.Planet.Fields) > 0 && len(w.Planet.Fields) > 0 {
+		if got.Planet.Fields[0].NurtureCharges != w.Planet.Fields[0].NurtureCharges {
+			t.Errorf("Fields[0].NurtureCharges: got %d, want %d",
+				got.Planet.Fields[0].NurtureCharges, w.Planet.Fields[0].NurtureCharges)
+		}
 	}
 
 	if len(got.Workers) != len(w.Workers) {

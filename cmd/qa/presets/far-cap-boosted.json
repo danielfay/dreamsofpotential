@@ -1,6 +1,6 @@
 {
-  "name": "far-cap-stall",
-  "description": "Idle workers, no free nodes, field gauge far from completing",
+  "name": "far-cap-boosted",
+  "description": "Active workers, high-cap field far from completion, boosted deliveries show visible gauge progress",
   "seed": 11,
   "discovered": true,
   "placeTownHall": true,

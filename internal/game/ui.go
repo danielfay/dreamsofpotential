@@ -63,8 +63,11 @@ type HUD struct {
 	buyWorkerBtn  *widget.Button // yellow square — hidden until first camp
 
 	// settings menu overlay (centered; shown when showMenu is true)
-	menuPanel   *widget.Container
-	menuSaveBtn *widget.Button
+	menuPanel      *widget.Container
+	menuSaveBtn    *widget.Button
+	menuExportBtn  *widget.Button
+	menuImportBtn  *widget.Button
+	menuResetBtn   *widget.Button
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
@@ -153,10 +156,10 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %.1f EXP",
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)",
 			f.EXP, f.Cap, fieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
-			nurtureCost, nurtureEXP)
+			nurtureCost, nurtureCharges, nurtureEXPMultiplier, f.NurtureCharges)
 	}
 
 	wc := WorkerCost(w)
@@ -680,7 +683,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.normalSidebar.AddChild(hud.buyWorkerBtn)
 
 	// --- settings menu overlay ---
-	menuBtnSz := sz(100)
 	menuBtnImg := &widget.ButtonImage{
 		Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 80, B: 120, A: 240}),
 		Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 80, G: 110, B: 160, A: 240}),
@@ -693,15 +695,56 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	}
 	menuPad := &widget.Insets{Top: sz(8), Bottom: sz(8), Left: sz(16), Right: sz(16)}
 
+	menuBtnLayoutData := widget.RowLayoutData{Stretch: true}
+
 	hud.menuSaveBtn = widget.NewButton(
 		widget.ButtonOpts.Image(menuBtnImg),
 		widget.ButtonOpts.Text("Save", face, menuTxtCol),
 		widget.ButtonOpts.TextPadding(menuPad),
 		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
 			_ = Save(g.world)
+		}),
+	)
+
+	hud.menuExportBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Export Save", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			exportSaveDialog(g)
+		}),
+	)
+
+	hud.menuImportBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Import Save", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			importSaveDialog(g)
+		}),
+	)
+
+	hud.menuResetBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Reset Game", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			ClearSave()
+			g.world = NewWorld()
+			g.placing = false
+			g.freePlacing = false
 			g.showMenu = false
 		}),
 	)
@@ -723,6 +766,9 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 	hud.menuPanel.AddChild(hud.menuSaveBtn)
+	hud.menuPanel.AddChild(hud.menuExportBtn)
+	hud.menuPanel.AddChild(hud.menuImportBtn)
+	hud.menuPanel.AddChild(hud.menuResetBtn)
 	hud.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 
 	// Root: AnchorLayout holding debug panel, both normal-mode containers, and menu overlay.
