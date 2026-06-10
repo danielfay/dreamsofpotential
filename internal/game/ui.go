@@ -63,8 +63,11 @@ type HUD struct {
 	buyWorkerBtn  *widget.Button // yellow square — hidden until first camp
 
 	// settings menu overlay (centered; shown when showMenu is true)
-	menuPanel   *widget.Container
-	menuSaveBtn *widget.Button
+	menuPanel      *widget.Container
+	menuSaveBtn    *widget.Button
+	menuExportBtn  *widget.Button
+	menuImportBtn  *widget.Button
+	menuResetBtn   *widget.Button
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
@@ -706,6 +709,48 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		}),
 	)
 
+	hud.menuExportBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Export Save", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			exportSaveDialog(g.world)
+			g.showMenu = false
+		}),
+	)
+
+	hud.menuImportBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Import Save", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			importSaveDialog(g)
+			g.showMenu = false
+		}),
+	)
+
+	hud.menuResetBtn = widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Reset Game", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(menuBtnSz, 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			ClearSave()
+			g.world = NewWorld()
+			g.placing = false
+			g.freePlacing = false
+			g.showMenu = false
+		}),
+	)
+
 	hud.menuPanel = widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(
 			eimage.NewNineSliceColor(color.NRGBA{R: 15, G: 15, B: 25, A: 220}),
@@ -723,6 +768,9 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 	hud.menuPanel.AddChild(hud.menuSaveBtn)
+	hud.menuPanel.AddChild(hud.menuExportBtn)
+	hud.menuPanel.AddChild(hud.menuImportBtn)
+	hud.menuPanel.AddChild(hud.menuResetBtn)
 	hud.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 
 	// Root: AnchorLayout holding debug panel, both normal-mode containers, and menu overlay.

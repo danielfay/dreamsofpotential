@@ -4,6 +4,7 @@ package game
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -62,6 +63,23 @@ func ClearSave() {
 		return
 	}
 	_ = os.Remove(path)
+}
+
+// LoadFrom deserialises a world from an explicit file path.
+// Returns an error if the file is missing, unparseable, or has a version mismatch.
+func LoadFrom(path string) (*World, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var w World
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, err
+	}
+	if w.Version != SaveVersion {
+		return nil, fmt.Errorf("save version %d, want %d", w.Version, SaveVersion)
+	}
+	return &w, nil
 }
 
 // Load deserialises the save file and returns the world.

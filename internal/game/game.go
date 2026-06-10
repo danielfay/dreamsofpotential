@@ -47,6 +47,7 @@ type Game struct {
 	holdAction                int     // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                 float64 // counts down to next repeat fire
 	holdDuration              float64 // total seconds the current hold has been active
+	importCh                  chan *World // receives a validated world from an import goroutine
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -64,6 +65,7 @@ func New() (*Game, error) {
 		hudDigits:                woodDigits(w.Economy.Wood),
 		saveTimer:                autoSavePeriod,
 		nurtureAttentionCooldown: nurtureAttentionInterval,
+		importCh:                 make(chan *World, 1),
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -131,6 +133,17 @@ func (g *Game) Update() error {
 		_ = Save(g.world)
 		os.Exit(0)
 	}
+
+	// Apply any world imported via the file dialog goroutine.
+	select {
+	case imported := <-g.importCh:
+		g.world = imported
+		g.placing = false
+		g.freePlacing = false
+		_ = Save(g.world)
+	default:
+	}
+
 	g.handleGlobalInput()
 	if g.showMenu {
 		g.preview = nil
