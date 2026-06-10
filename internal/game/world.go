@@ -110,7 +110,7 @@ type ResourceField struct {
 	Kind        ResourceKind
 	CenterAngle float64
 	HalfArc     float64
-	Counter     float64
+	EXP         float64
 	Cap         float64
 }
 
@@ -179,7 +179,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 5
+const SaveVersion = 6
 
 // World holds all game state for a single planet.
 type World struct {
@@ -194,20 +194,11 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 
-	growthCue growthCueState
+	growthCue   growthCueState
+	lastDelivery deliverySplit
 }
 
-// --- cost helpers ---
-
-const (
-	workerBaseCost   = 10.0
-	workerCostGrowth = 1.15
-	campBaseCost     = 30.0
-	campCostGrowth   = 1.50
-
-	// pulseDuration is how long (seconds) the unaffordable-cost flash lasts.
-	pulseDuration = 0.4
-)
+type deliverySplit struct{ Gross, Banked, Returned float64 }
 
 // WorkerCost returns the wood cost to buy the next worker.
 // The first worker (WorkersBought==0) is free.
@@ -263,30 +254,6 @@ func buyWorker(w *World) bool {
 	})
 	return true
 }
-
-// --- simulation constants ---
-
-const (
-	workerSpeed      = 40.0 // world px / second
-	loadTime         = 0.5  // seconds to load at the node
-	unloadTime       = 0.3  // seconds to unload at the camp
-	loadAmount       = 1.0  // resource units carried per trip
-	settleDelay      = 0.25 // seconds before a new worker can claim work
-	reactionDelay    = 0.25 // seconds before an idle worker departs for new work
-	microPulseTime   = 0.30 // seconds for worker/node/building activity pulse
-	pulseMinInterval = 0.50 // activations faster than this become steady-lit
-	nodeSpawnBaseCap = 20.0 // deliveries needed for the first new node
-	nodeCapGrowth    = 1.5  // cap multiplier each time a node spawns
-	forestHalfArc    = math.Pi
-	startingNodes    = 5
-
-	growthGaugeReleaseTime   = 0.36
-	growthGaugeAfterglowTime = 0.72
-	growthFieldPulseDelay    = 0.12
-	growthFieldPulseTime     = 0.82
-	growthNodeCueDelay       = 0.22
-	growthNodeCueTime        = 0.48
-)
 
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
@@ -416,7 +383,7 @@ func NewWorld() *World {
 		Kind:        KindWood,
 		CenterAngle: forestAngle,
 		HalfArc:     forestHalfArc,
-		Cap:         nodeSpawnBaseCap,
+		Cap:         fieldBaseEXP,
 	}
 
 	w := &World{

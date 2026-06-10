@@ -25,7 +25,7 @@ func TestWorkerCostFirstFree(t *testing.T) {
 func TestCampCostProgression(t *testing.T) {
 	w := NewWorld()
 	// First logging camp (CampsBought==0) costs campBaseCost.
-	want0 := campBaseCost * math.Pow(campCostGrowth, 0) // 30
+	want0 := campBaseCost * math.Pow(campCostGrowth, 0) // 120
 	if got := CampCost(w); math.Abs(got-want0) > 1e-9 {
 		t.Errorf("CampCost with CampsBought=0: got %.4f, want %.4f", got, want0)
 	}
