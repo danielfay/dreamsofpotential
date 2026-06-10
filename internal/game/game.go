@@ -17,9 +17,8 @@ const dt = 1.0 / 60.0
 const autoSavePeriod = 10.0 // seconds between autosaves
 
 const (
-	holdNone      = 0
-	holdBuyWorker = 1
-	holdNurture   = 2
+	holdNone    = 0
+	holdNurture = 2
 )
 
 // Game is the root ebiten game object.
@@ -35,7 +34,7 @@ type Game struct {
 	debug        bool              // F3 — verbose debug panel; session-only, not persisted
 	debugSection int               // selected debug panel section; session-only
 	pulseTime    float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget  int               // which button pulses: 0=none, 1=build, 2=worker
+	pulseTarget  int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
 	rejectTime   float64           // seconds remaining on invalid placement feedback
 	screenW      int               // current screen dimensions, updated each Draw()
 	screenH      int
@@ -118,15 +117,7 @@ func (g *Game) tryHoldAction(action int) bool {
 		// Genuinely unaffordable: show pulse and stop.
 		g.pulseTime = pulseDuration
 		g.pulseTarget = 3
-	case holdBuyWorker:
-		if buyWorker(g.world) {
-			return true
-		}
-		if g.world.ResourceDiscovered && g.world.Economy.Wood < WorkerCost(g.world) {
-			g.pulseTime = pulseDuration
-			g.pulseTarget = 2
-		}
-	}
+}
 	return false
 }
 
@@ -372,7 +363,7 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
 				2, colPulse, false)
 		case 2:
-			pr := g.hud.buyWorkerBtn.GetWidget().Rect
+			pr := g.hud.buildTownCapacityBtn.GetWidget().Rect
 			vector.StrokeRect(screen,
 				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
@@ -397,11 +388,9 @@ func (g *Game) drawAffordabilityProgress(screen *ebiten.Image) {
 			color.RGBA{R: 140, G: 90, B: 50, A: 230})
 	}
 	if hasTownHall {
-		workerLocked := g.world.Economy.WorkersBought > 0 && !discovered
-		if !workerLocked {
-			drawButtonProgress(screen, g.hud.buyWorkerBtn, affordabilityFrac(g.world.Economy.Wood, WorkerCost(g.world)),
-				color.RGBA{R: 220, G: 200, B: 60, A: 230})
-		}
+		drawButtonProgress(screen, g.hud.buildTownCapacityBtn,
+			affordabilityFrac(g.world.Economy.Wood, townCapacityCost(g.world)),
+			color.RGBA{R: 220, G: 200, B: 60, A: 230})
 	}
 }
 

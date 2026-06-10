@@ -42,8 +42,8 @@ type HUD struct {
 	fieldText      *widget.Text
 	previewText    *widget.Text
 	resourceSquare *widget.Button
-	buyWorkerDbg    *widget.Button
-	addWorkerDbg    *widget.Button
+	buildCapacityDbg *widget.Button
+	addWorkerDbg     *widget.Button
 	buildCampDbg    *widget.Button
 	freeCampDbg     *widget.Button
 	upgradeFieldDbg *widget.Button
@@ -58,9 +58,9 @@ type HUD struct {
 	workerRatio  *widget.Text
 
 	// normal mode — left sidebar (action buttons, vertical)
-	normalSidebar *widget.Container
-	buildCampBtn  *widget.Button // brown square — always visible
-	buyWorkerBtn  *widget.Button // yellow square — hidden until first camp
+	normalSidebar        *widget.Container
+	buildCampBtn         *widget.Button // brown square — always visible
+	buildTownCapacityBtn *widget.Button // yellow square — hidden until Town Hall exists
 
 	// settings menu overlay (centered; shown when showMenu is true)
 	menuPanel      *widget.Container
@@ -156,15 +156,18 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)",
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)\ntown growth %.1f/%.1f  cap %d  used %d  avail %d  next cap %.0f",
 			f.EXP, f.Cap, fieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
-			nurtureCost, nurtureCharges, nurtureEXPMultiplier, f.NurtureCharges)
+			nurtureCost, nurtureCharges, nurtureEXPMultiplier, f.NurtureCharges,
+			w.Economy.TownGrowth, w.Economy.TownGrowthCap,
+			w.Economy.WorkerCapacity, w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
+			townCapacityCost(w))
 	}
 
-	wc := WorkerCost(w)
-	h.buyWorkerDbg.SetText(fmt.Sprintf("Buy worker (%.0f)", wc))
-	h.buyWorkerDbg.GetWidget().Disabled = w.Economy.Wood < wc || len(w.Buildings) == 0
+	cc := townCapacityCost(w)
+	h.buildCapacityDbg.SetText(fmt.Sprintf("Build capacity (%.0f)", cc))
+	h.buildCapacityDbg.GetWidget().Disabled = w.Economy.Wood < cc || townHall(w) == nil
 	h.addWorkerDbg.GetWidget().Disabled = townHall(w) == nil
 
 	if len(w.Buildings) == 0 {
@@ -226,7 +229,7 @@ func (h *HUD) applyDebugSectionVisibility() {
 	h.woodText.GetWidget().SetVisibility(showCore)
 	h.workerText.GetWidget().SetVisibility(showCore)
 	h.nodeText.GetWidget().SetVisibility(showCore)
-	h.buyWorkerDbg.GetWidget().SetVisibility(showCore)
+	h.buildCapacityDbg.GetWidget().SetVisibility(showCore)
 	h.addWorkerDbg.GetWidget().SetVisibility(showCore)
 	h.buildCampDbg.GetWidget().SetVisibility(showCore)
 	h.resetBtn.GetWidget().SetVisibility(showCore)
@@ -252,13 +255,12 @@ func (h *HUD) refreshNormal(w *World) {
 	campLocked := hasTownHall && !discovered
 	h.buildCampBtn.GetWidget().Disabled = campLocked || (hasTownHall && w.Economy.Wood < CampCost(w))
 
-	// Worker button: hidden until Town Hall exists; disabled if locked or unaffordable.
+	// Capacity button: hidden until Town Hall exists; disabled when unaffordable.
 	if hasTownHall {
-		h.buyWorkerBtn.GetWidget().SetVisibility(widget.Visibility_Show)
-		workerLocked := w.Economy.WorkersBought > 0 && !discovered
-		h.buyWorkerBtn.GetWidget().Disabled = workerLocked || w.Economy.Wood < WorkerCost(w)
+		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Show)
+		h.buildTownCapacityBtn.GetWidget().Disabled = w.Economy.Wood < townCapacityCost(w)
 	} else {
-		h.buyWorkerBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
 
 	// --- top bar: resource info ---
@@ -383,12 +385,12 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugTabs.AddChild(hud.debugPlaceBtn)
 	hud.debugTabs.AddChild(hud.debugGrowthBtn)
 
-	hud.buyWorkerDbg = widget.NewButton(
+	hud.buildCapacityDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
-		widget.ButtonOpts.Text(fmt.Sprintf("Buy worker (%.0f)", workerBaseCost), face, dbgTxtCol),
+		widget.ButtonOpts.Text(fmt.Sprintf("Build capacity (%.0f)", townCapacityBaseCost), face, dbgTxtCol),
 		widget.ButtonOpts.TextPadding(dbgPad),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			buyWorker(g.world)
+			buildTownCapacity(g.world)
 		}),
 	)
 
@@ -490,7 +492,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.nodeText)
 	hud.debugPanel.AddChild(hud.fieldText)
 	hud.debugPanel.AddChild(hud.previewText)
-	hud.debugPanel.AddChild(hud.buyWorkerDbg)
+	hud.debugPanel.AddChild(hud.buildCapacityDbg)
 	hud.debugPanel.AddChild(hud.addWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.freeCampDbg)
@@ -641,7 +643,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		}),
 	)
 
-	hud.buyWorkerBtn = widget.NewButton(
+	hud.buildTownCapacityBtn = widget.NewButton(
 		widget.ButtonOpts.Image(actionSquare(
 			color.NRGBA{R: 220, G: 200, B: 60, A: 255},
 			color.NRGBA{R: 255, G: 240, B: 80, A: 255},
@@ -652,11 +654,14 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			widget.WidgetOpts.MinSize(btnSz, btnSz),
 			widget.WidgetOpts.LayoutData(widget.RowLayoutData{MaxWidth: btnSz, MaxHeight: btnSz}),
 		),
-		widget.ButtonOpts.PressedHandler(func(_ *widget.ButtonPressedEventArgs) {
-			g.activateHold(holdBuyWorker)
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
+				g.pulseTime = pulseDuration
+				g.pulseTarget = 2
+			}
 		}),
 	)
-	hud.buyWorkerBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
+	hud.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
 
 	sidebarSpacer := widget.NewContainer(
 		widget.ContainerOpts.WidgetOpts(
@@ -680,7 +685,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	)
 	hud.normalSidebar.AddChild(hud.buildCampBtn)
 	hud.normalSidebar.AddChild(sidebarSpacer)
-	hud.normalSidebar.AddChild(hud.buyWorkerBtn)
+	hud.normalSidebar.AddChild(hud.buildTownCapacityBtn)
 
 	// --- settings menu overlay ---
 	menuBtnImg := &widget.ButtonImage{

@@ -5,6 +5,134 @@ import (
 	"testing"
 )
 
+// newDeliveryWorld builds a minimal world for completeUnload tests: one Town Hall
+// and one Size-1 node, both at angle 0, with no other workers.
+func newDeliveryWorld() (*World, *ResourceNode) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	campAngle := 0.0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	node := newNode(w, KindWood, campAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
+	w.Economy.WorkerCapacity = 99 // pre-set high so capacity is never the bottleneck
+	return w, node
+}
+
+func TestDeliveryFeedsGrowth(t *testing.T) {
+	w, node := newDeliveryWorld()
+	w.Economy.TownGrowthCap = 100 // cap far above one delivery
+
+	gross := baseLoadAmount * node.Size
+	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
+		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	completeUnload(w, wk, node)
+
+	if math.Abs(w.Economy.TownGrowth-gross) > 1e-9 {
+		t.Errorf("TownGrowth got %.4f, want %.4f (gross)", w.Economy.TownGrowth, gross)
+	}
+	if len(w.Workers) != 1 {
+		t.Errorf("no worker should spawn (growth below cap); got %d workers", len(w.Workers))
+	}
+}
+
+func TestWorkerArrivalOnDelivery(t *testing.T) {
+	w, node := newDeliveryWorld()
+	gross := baseLoadAmount * node.Size
+	w.Economy.TownGrowthCap = gross * 0.5 // cap below one delivery so growth triggers
+	w.Economy.TownGrowth = 0
+
+	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
+		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	prevCap := w.Economy.TownGrowthCap
+	completeUnload(w, wk, node)
+
+	if len(w.Workers) != 2 {
+		t.Errorf("expected 1 original + 1 spawned worker; got %d", len(w.Workers))
+	}
+	if w.Economy.TownGrowth != 0 {
+		t.Errorf("TownGrowth should reset to 0 after spawn; got %.4f", w.Economy.TownGrowth)
+	}
+	wantCap := prevCap * townGrowthCapGrowth
+	if math.Abs(w.Economy.TownGrowthCap-wantCap) > 1e-9 {
+		t.Errorf("TownGrowthCap got %.4f, want %.4f (×townGrowthCapGrowth)", w.Economy.TownGrowthCap, wantCap)
+	}
+}
+
+func TestGrowthCappedWithoutCapacity(t *testing.T) {
+	w, node := newDeliveryWorld()
+	gross := baseLoadAmount * node.Size
+	w.Economy.TownGrowthCap = gross * 0.5
+	w.Economy.TownGrowth = 0
+	// Fill capacity: 1 slot, 1 worker already occupying it.
+	w.Economy.WorkerCapacity = 1
+
+	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
+		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	completeUnload(w, wk, node)
+
+	if len(w.Workers) != 1 {
+		t.Errorf("no worker should spawn when capacity full; got %d", len(w.Workers))
+	}
+	if w.Economy.TownGrowth != w.Economy.TownGrowthCap {
+		t.Errorf("TownGrowth should clamp to cap %.4f; got %.4f", w.Economy.TownGrowthCap, w.Economy.TownGrowth)
+	}
+}
+
+func TestWorkerArrivalOnCapacityBuild(t *testing.T) {
+	w, _ := newDeliveryWorld()
+	w.Economy.TownGrowthCap = 5.0
+	w.Economy.TownGrowth = w.Economy.TownGrowthCap // growth already at cap
+	w.Economy.WorkerCapacity = 1
+	// One worker occupies the slot.
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+	w.Economy.Wood = townCapacityCost(w) + 1
+
+	if !buildTownCapacity(w) {
+		t.Fatal("buildTownCapacity should succeed")
+	}
+
+	if len(w.Workers) != 2 {
+		t.Errorf("expected 1 existing + 1 spawned worker; got %d", len(w.Workers))
+	}
+	if w.Economy.TownGrowth != 0 {
+		t.Errorf("TownGrowth should reset to 0 after spawn; got %.4f", w.Economy.TownGrowth)
+	}
+}
+
+func TestNoMultiWorkerBurst(t *testing.T) {
+	w, node := newDeliveryWorld()
+	w.Economy.TownGrowthCap = 1.0 // tiny cap; huge gross will dwarf it
+	w.Economy.TownGrowth = 0
+	node.Size = 100.0 // gross = 500, far above cap
+
+	gross := baseLoadAmount * node.Size
+	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
+		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	completeUnload(w, wk, node)
+
+	// At most one new worker should have spawned (original + 1 = 2).
+	if len(w.Workers) > 2 {
+		t.Errorf("expected at most 1 spawned worker; got %d total (original + spawned)", len(w.Workers))
+	}
+	if len(w.Workers) != 2 {
+		t.Errorf("expected exactly 1 spawned worker; got %d total", len(w.Workers))
+	}
+}
+
 // newTestWorld builds a minimal world with one camp placed campDist arc-units
 // away from the resource field's center angle. campDist values above the field's
 // half-arc width (54 world units for the default wood field) put the camp clearly
@@ -582,8 +710,8 @@ func TestNewWorkerClaimsBestRouteNode(t *testing.T) {
 
 func TestSettlingWorkerNotEligibleUntilDelayFinishes(t *testing.T) {
 	w := newWorldSingleNode(0, 0)
-	if !buyWorker(w) {
-		t.Fatal("expected first worker purchase to succeed")
+	if spawnWorkerAtTownHall(w) == nil {
+		t.Fatal("expected spawnWorkerAtTownHall to succeed")
 	}
 	wk := w.Workers[0]
 

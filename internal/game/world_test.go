@@ -5,20 +5,21 @@ import (
 	"testing"
 )
 
-func TestWorkerCostFirstFree(t *testing.T) {
+func TestTownCapacityCostProgression(t *testing.T) {
 	w := NewWorld()
-	if got := WorkerCost(w); got != 0 {
-		t.Errorf("WorkerCost with WorkersBought=0: got %.2f, want 0", got)
+	want0 := townCapacityBaseCost * math.Pow(townCapacityCostGrowth, 0)
+	if got := townCapacityCost(w); math.Abs(got-want0) > 1e-9 {
+		t.Errorf("townCapacityCost with CapacityBought=0: got %.4f, want %.4f", got, want0)
 	}
-	w.Economy.WorkersBought = 1
-	want := workerBaseCost * math.Pow(workerCostGrowth, 1)
-	if got := WorkerCost(w); math.Abs(got-want) > 1e-9 {
-		t.Errorf("WorkerCost with WorkersBought=1: got %.4f, want %.4f", got, want)
+	w.Economy.CapacityBought = 1
+	want1 := townCapacityBaseCost * math.Pow(townCapacityCostGrowth, 1)
+	if got := townCapacityCost(w); math.Abs(got-want1) > 1e-9 {
+		t.Errorf("townCapacityCost with CapacityBought=1: got %.4f, want %.4f", got, want1)
 	}
-	w.Economy.WorkersBought = 2
-	want2 := workerBaseCost * math.Pow(workerCostGrowth, 2)
-	if got := WorkerCost(w); math.Abs(got-want2) > 1e-9 {
-		t.Errorf("WorkerCost with WorkersBought=2: got %.4f, want %.4f", got, want2)
+	w.Economy.CapacityBought = 3
+	want3 := townCapacityBaseCost * math.Pow(townCapacityCostGrowth, 3)
+	if got := townCapacityCost(w); math.Abs(got-want3) > 1e-9 {
+		t.Errorf("townCapacityCost with CapacityBought=3: got %.4f, want %.4f", got, want3)
 	}
 }
 
@@ -36,57 +37,76 @@ func TestCampCostProgression(t *testing.T) {
 	}
 }
 
-func TestBuyWorkerNoCamp(t *testing.T) {
+func TestBuildTownCapacityNoTownHall(t *testing.T) {
 	w := NewWorld()
-	if buyWorker(w) {
-		t.Error("buyWorker with no camps should return false")
+	w.Economy.Wood = 1000
+	if buildTownCapacity(w) {
+		t.Error("buildTownCapacity with no Town Hall should return false")
 	}
-	if len(w.Workers) != 0 {
-		t.Error("buyWorker with no camps should not add a worker")
+	if w.Economy.WorkerCapacity != 0 {
+		t.Errorf("WorkerCapacity should stay 0 when no Town Hall; got %d", w.Economy.WorkerCapacity)
 	}
 }
 
-func TestBuyWorkerFirstFree(t *testing.T) {
+func TestBuildTownCapacitySpends(t *testing.T) {
 	w := NewWorld()
-	// Add a Town Hall manually so we test buyWorker in isolation.
+	w.Buildings = append(w.Buildings, &Building{
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
+	})
+	w.Economy.WorkerCapacity = 1 // founding slot occupied (1 worker will exist)
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+	cost := townCapacityCost(w)
+	w.Economy.Wood = cost
+
+	if !buildTownCapacity(w) {
+		t.Fatal("buildTownCapacity with enough wood should succeed")
+	}
+	if w.Economy.WorkerCapacity != 2 {
+		t.Errorf("WorkerCapacity: got %d, want 2", w.Economy.WorkerCapacity)
+	}
+	if w.Economy.CapacityBought != 1 {
+		t.Errorf("CapacityBought: got %d, want 1", w.Economy.CapacityBought)
+	}
+	if math.Abs(w.Economy.Wood) > 1e-9 {
+		t.Errorf("Wood after purchase: got %.4f, want 0", w.Economy.Wood)
+	}
+}
+
+func TestBuildTownCapacityInsufficientWood(t *testing.T) {
+	w := NewWorld()
 	w.Buildings = append(w.Buildings, &Building{
 		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	w.Economy.Wood = 0
 
-	if !buyWorker(w) {
-		t.Fatal("first buyWorker should succeed even with Wood=0 (free)")
+	if buildTownCapacity(w) {
+		t.Error("buildTownCapacity with no wood should return false")
 	}
-	if len(w.Workers) != 1 {
-		t.Errorf("expected 1 worker after first buy, got %d", len(w.Workers))
-	}
-	if w.Economy.WorkersBought != 1 {
-		t.Errorf("WorkersBought: got %d, want 1", w.Economy.WorkersBought)
-	}
-	if w.Economy.Wood != 0 {
-		t.Errorf("Wood after free buy: got %.2f, want 0", w.Economy.Wood)
+	if w.Economy.WorkerCapacity != 0 {
+		t.Errorf("WorkerCapacity should stay 0 when purchase fails; got %d", w.Economy.WorkerCapacity)
 	}
 }
 
-func TestBuyWorkerSecondCostsWood(t *testing.T) {
+func TestSpawnWorkerAtTownHall(t *testing.T) {
 	w := NewWorld()
+	if spawnWorkerAtTownHall(w) != nil {
+		t.Error("spawnWorkerAtTownHall with no Town Hall should return nil")
+	}
 	w.Buildings = append(w.Buildings, &Building{
 		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
-	w.Economy.WorkersBought = 1 // first already bought
-	w.Economy.Wood = 0          // no wood for the second
-
-	if buyWorker(w) {
-		t.Error("second buyWorker with Wood=0 should return false")
+	wk := spawnWorkerAtTownHall(w)
+	if wk == nil {
+		t.Fatal("spawnWorkerAtTownHall should succeed when Town Hall exists")
 	}
-	if len(w.Workers) != 0 {
-		t.Error("no worker should be added when purchase fails")
+	if len(w.Workers) != 1 {
+		t.Errorf("expected 1 worker, got %d", len(w.Workers))
 	}
-
-	// Give enough wood and it should succeed.
-	w.Economy.Wood = WorkerCost(w)
-	if !buyWorker(w) {
-		t.Error("second buyWorker with enough wood should succeed")
+	if wk.State != StateSettling {
+		t.Errorf("new worker state: got %v, want StateSettling", wk.State)
+	}
+	if math.Abs(wk.Timer-settleDelay) > 1e-9 {
+		t.Errorf("new worker Timer: got %v, want settleDelay", wk.Timer)
 	}
 }
 

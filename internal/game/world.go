@@ -173,14 +173,17 @@ func normAngle(a float64) float64 {
 
 // Economy tracks global resource counts and purchase history.
 type Economy struct {
-	Wood          float64
-	WorkersBought int
-	CampsBought   int
+	Wood           float64
+	WorkerCapacity int     // total worker slots unlocked (founding slot + paid capacity)
+	CapacityBought int     // paid capacity purchases; drives the cost curve
+	CampsBought    int
+	TownGrowth     float64 // accumulates gross delivery amount; clamped at TownGrowthCap
+	TownGrowthCap  float64 // spawns a worker when TownGrowth reaches this; grows each arrival
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 7
+const SaveVersion = 8
 
 // World holds all game state for a single planet.
 type World struct {
@@ -201,13 +204,27 @@ type World struct {
 
 type deliverySplit struct{ Gross, Banked, Returned float64 }
 
-// WorkerCost returns the wood cost to buy the next worker.
-// The first worker (WorkersBought==0) is free.
-func WorkerCost(w *World) float64 {
-	if w.Economy.WorkersBought == 0 {
-		return 0
+// spawnWorkerAtTownHall appends a new settling worker at the Town Hall and
+// returns it. Returns nil if no Town Hall exists.
+func spawnWorkerAtTownHall(w *World) *Worker {
+	th := townHall(w)
+	if th == nil {
+		return nil
 	}
-	return workerBaseCost * math.Pow(workerCostGrowth, float64(w.Economy.WorkersBought))
+	id := w.NextWorkerID
+	w.NextWorkerID++
+	wk := &Worker{
+		ID:            id,
+		Pos:           th.Pos,
+		Angle:         th.Angle,
+		State:         StateSettling,
+		NodeID:        -1,
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+		Timer:         settleDelay,
+	}
+	w.Workers = append(w.Workers, wk)
+	return wk
 }
 
 // CampCost returns the wood cost to place the next logging camp.
@@ -227,34 +244,6 @@ func townHall(w *World) *Building {
 	return nil
 }
 
-// buyWorker attempts to purchase a worker. The first worker (WorkersBought==0)
-// is free. Returns true if the purchase succeeded. New workers spawn at the
-// Town Hall idle area.
-func buyWorker(w *World) bool {
-	th := townHall(w)
-	if th == nil {
-		return false
-	}
-	cost := WorkerCost(w)
-	if w.Economy.Wood < cost {
-		return false
-	}
-	w.Economy.Wood -= cost
-	w.Economy.WorkersBought++
-	id := w.NextWorkerID
-	w.NextWorkerID++
-	w.Workers = append(w.Workers, &Worker{
-		ID:            id,
-		Pos:           th.Pos,
-		Angle:         th.Angle,
-		State:         StateSettling,
-		NodeID:        -1,
-		TargetNodeID:  -1,
-		PendingNodeID: -1,
-		Timer:         settleDelay,
-	})
-	return true
-}
 
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
@@ -405,7 +394,7 @@ func NewWorld() *World {
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
 		},
-		Economy: Economy{Wood: 0},
+		Economy: Economy{TownGrowthCap: townGrowthBaseCap},
 	}
 
 	// Seed starting nodes at random positions within the field arc.
