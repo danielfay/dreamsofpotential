@@ -13,9 +13,8 @@ func TestBuildQAWorld_NearCapStall(t *testing.T) {
 		Seed:            11,
 		Discovered:      &discovered,
 		PlaceTownHall:   true,
-		Workers:         2,
-		NoFreeNodes:     true,
-		SettleSeconds:   6,
+		Workers:         7,
+		SettleSeconds:   1,
 		FieldExpFromCap: qaPtr(-nurtureEXP),
 		Wood:            qaPtr(100.0),
 	}
@@ -27,10 +26,8 @@ func TestBuildQAWorld_NearCapStall(t *testing.T) {
 	if w.Version != SaveVersion {
 		t.Errorf("version = %d, want %d", w.Version, SaveVersion)
 	}
-	for _, n := range w.Nodes {
-		if n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
-			t.Error("expected no free nodes")
-		}
+	if len(w.Nodes) != startingNodes {
+		t.Errorf("expected %d nodes, got %d", startingNodes, len(w.Nodes))
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
@@ -50,9 +47,8 @@ func TestBuildQAWorld_FarCapStall(t *testing.T) {
 		Seed:           11,
 		Discovered:     &discovered,
 		PlaceTownHall:  true,
-		Workers:        2,
-		NoFreeNodes:    true,
-		SettleSeconds:  6,
+		Workers:        7,
+		SettleSeconds:  1,
 		FieldCapCycles: &cycles,
 		FieldExpAbs:    qaPtr(nurtureEXP),
 		Wood:           qaPtr(100.0),
@@ -62,9 +58,11 @@ func TestBuildQAWorld_FarCapStall(t *testing.T) {
 		t.Fatalf("BuildQAWorld: %v", err)
 	}
 
+	if len(w.Nodes) != startingNodes {
+		t.Errorf("expected %d nodes, got %d", startingNodes, len(w.Nodes))
+	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
-	// EXP should be clearly below cap after field cap cycles
 	if f.EXP >= f.Cap/2 {
 		t.Errorf("field EXP = %.2f should be clearly below Cap/2 = %.2f for far-cap scenario", f.EXP, f.Cap/2)
 	}

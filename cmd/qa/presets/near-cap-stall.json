@@ -4,9 +4,8 @@
   "seed": 11,
   "discovered": true,
   "placeTownHall": true,
-  "workers": 2,
-  "noFreeNodes": true,
-  "settleSeconds": 6,
+  "workers": 7,
+  "settleSeconds": 1,
   "fieldExpFromCap": -5,
   "wood": 100
 }

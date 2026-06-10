@@ -1,6 +1,6 @@
-# dreamsofpotential
+# Dreams of Potential
 
-A small incremental game built with Go and [Ebiten](https://ebitengine.org). Place buildings on a planet rim, send workers to harvest resource nodes, and grow the field to unlock new surface.
+A small incremental game built with Go and [Ebiten](https://ebitengine.org).
 
 ## Running
 
