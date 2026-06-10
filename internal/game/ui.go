@@ -557,7 +557,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			}),
 		),
 		widget.ButtonOpts.PressedHandler(func(_ *widget.ButtonPressedEventArgs) {
-			g.tryNurture()
+			g.activateHold(holdNurture)
 		}),
 	)
 	hud.resourceHUD.AddChild(hud.resourceSquare)

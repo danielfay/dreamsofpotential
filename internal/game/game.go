@@ -18,6 +18,7 @@ const autoSavePeriod = 10.0 // seconds between autosaves
 const (
 	holdNone      = 0
 	holdBuyWorker = 1
+	holdNurture   = 2
 )
 
 // Game is the root ebiten game object.
@@ -95,19 +96,24 @@ func (g *Game) activateHold(action int) {
 	}
 }
 
-// tryNurture attempts a single Nurture activation and shows success/fail feedback.
-func (g *Game) tryNurture() {
-	if nurtureField(g.world, KindWood) {
-		g.nurtureConfirmLeft = nurtureConfirmDuration
-	} else {
-		g.pulseTime = pulseDuration
-		g.pulseTarget = 3
-	}
-}
-
 // tryHoldAction executes the purchase action and returns true on success.
+// For hold actions that have a gate (e.g. Nurture charges), returning true
+// while gated keeps the hold alive so activation retries when the gate clears.
 func (g *Game) tryHoldAction(action int) bool {
 	switch action {
+	case holdNurture:
+		if nurtureField(g.world, KindWood) {
+			g.nurtureConfirmLeft = nurtureConfirmDuration
+			return true
+		}
+		// Charges already active: keep the hold alive so activation fires
+		// automatically once the charges drain.
+		if f := fieldForKind(g.world, KindWood); f != nil && f.NurtureCharges > 0 {
+			return true
+		}
+		// Genuinely unaffordable: show pulse and stop.
+		g.pulseTime = pulseDuration
+		g.pulseTarget = 3
 	case holdBuyWorker:
 		if buyWorker(g.world) {
 			return true
