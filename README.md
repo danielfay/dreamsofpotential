@@ -25,13 +25,20 @@ make run
 Presets stamp the local save to a specific mid-game state so you can test a scenario without playing into it manually.
 
 ```
-make qa PRESET=near-cap-stall
+make qa PRESET=town-field-fresh
 make run
 ```
 
 Available presets:
 
-- `near-cap-stall` — idle workers, no free nodes, field gauge one Nurture from completing
-- `far-cap-stall` — idle workers, no free nodes, field gauge far from completing
-- `poor-coverage` — active workers on long routes, free nodes exist, camp or Nurture affordable
 - `fresh` — clean reset for natural fresh-play confirmation
+- `poor-coverage` — active workers on long routes, free nodes exist, camp or Nurture affordable
+- `near-cap-boosted` — idle workers, no free nodes, field gauge one Nurture from completing
+- `far-cap-boosted` — idle workers, no free nodes, field gauge far from completing
+- `active-charges` — Nurture charges active
+- `town-growth-arrival` — Town Growth one delivery from spawning a new worker
+- `town-growth-cramped` — 10 workers, first planet feeling close to needing a new objective
+- `town-growth-capacity-blocked` — Town Growth full, all dwelling slots occupied, no spawn
+- `town-field-fresh` — Town Hall just placed, town field visible with one built slot
+- `town-field-growing` — several dwelling slots built, unused capacity, Town Growth partial
+- `town-field-full` — all dwelling slots built, capacity action disabled despite affordable wood

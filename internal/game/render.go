@@ -44,23 +44,26 @@ const (
 
 // palette
 var (
-	colBackground   = color.RGBA{R: 10, G: 10, B: 20, A: 255}
-	colPlanetBody   = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
-	colPlanetEdge   = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
-	colNodeFree     = color.RGBA{R: 40, G: 160, B: 60, A: 255}
-	colNodeReserved = color.RGBA{R: 32, G: 130, B: 48, A: 255}
-	colNodeClaimed  = color.RGBA{R: 20, G: 100, B: 35, A: 255}
-	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
-	colBuilding     = color.RGBA{R: 140, G: 90, B: 50, A: 255}
-	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255}
-	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}
-	colWorkerLaden  = color.RGBA{R: 255, G: 240, B: 80, A: 255}
-	colGhostOk      = color.RGBA{R: 200, G: 200, B: 255, A: 160}
-	colGhostBad     = color.RGBA{R: 200, G: 80, B: 80, A: 80}
-	colRouteFree    = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
-	colRouteClaimed = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
-	colPreviewLens  = color.RGBA{R: 125, G: 145, B: 170, A: 16}
-	colPreviewDebug = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
+	colBackground    = color.RGBA{R: 10, G: 10, B: 20, A: 255}
+	colPlanetBody    = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
+	colPlanetEdge    = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
+	colNodeFree      = color.RGBA{R: 40, G: 160, B: 60, A: 255}
+	colNodeReserved  = color.RGBA{R: 32, G: 130, B: 48, A: 255}
+	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
+	colTownHall      = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
+	colBuilding      = color.RGBA{R: 140, G: 90, B: 50, A: 255}
+	colTownFieldBase = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
+	colTownFieldEdge = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
+	colTownFieldSlot = color.RGBA{R: 200, G: 148, B: 72, A: 220} // built dwelling slot
+	colWorkerEmpty   = color.RGBA{R: 220, G: 200, B: 150, A: 255}
+	colWorkerReturn  = color.RGBA{R: 125, G: 115, B: 95, A: 255}
+	colWorkerLaden   = color.RGBA{R: 255, G: 240, B: 80, A: 255}
+	colGhostOk       = color.RGBA{R: 200, G: 200, B: 255, A: 160}
+	colGhostBad      = color.RGBA{R: 200, G: 80, B: 80, A: 80}
+	colRouteFree     = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
+	colRouteClaimed  = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
+	colPreviewLens   = color.RGBA{R: 125, G: 145, B: 170, A: 16}
+	colPreviewDebug  = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
 )
 
 // DrawWorld renders the complete world state onto the low-res scene image.
@@ -82,6 +85,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
 		drawResourceFieldPulse(scene, w, f, r-rimWidth, pv != nil)
 	}
+	// Town field: settlement wedge anchored to the Town Hall, drawn over the forest
+	// field but under nodes/buildings/workers so it transforms the planet interior.
+	drawTownField(scene, w, r-rimWidth)
 
 	// resource nodes — pine-tree shape; muted when in preview and unavailable
 	for _, n := range w.Nodes {
@@ -652,4 +658,80 @@ func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, en
 	drawOp := &vector.DrawPathOptions{}
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.FillPath(scene, &path, nil, drawOp)
+}
+
+// drawFilledAnnularSector draws a filled annular wedge (donut slice) between
+// innerR and outerR spanning startAngle..endAngle.
+func drawFilledAnnularSector(scene *ebiten.Image, cx, cy, innerR, outerR float32, startAngle, endAngle float64, col color.RGBA) {
+	if outerR <= 0 || innerR < 0 {
+		return
+	}
+	const steps = 32
+	var path vector.Path
+	// Outer arc: start → end.
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		angle := startAngle + (endAngle-startAngle)*t
+		x := cx + outerR*float32(math.Cos(angle))
+		y := cy + outerR*float32(math.Sin(angle))
+		if i == 0 {
+			path.MoveTo(x, y)
+		} else {
+			path.LineTo(x, y)
+		}
+	}
+	// Inner arc: end → start (closing the ring).
+	for i := steps; i >= 0; i-- {
+		t := float64(i) / float64(steps)
+		angle := startAngle + (endAngle-startAngle)*t
+		path.LineTo(cx+innerR*float32(math.Cos(angle)), cy+innerR*float32(math.Sin(angle)))
+	}
+	path.Close()
+	drawOp := &vector.DrawPathOptions{}
+	drawOp.ColorScale.ScaleWithColor(col)
+	vector.FillPath(scene, &path, nil, drawOp)
+}
+
+// drawTownField renders the settlement wedge inside the planet at the Town Hall
+// angle, with visible dwelling slots for built capacity. No-op until a Town
+// Hall exists.
+func drawTownField(scene *ebiten.Image, w *World, radius float32) {
+	th := townHall(w)
+	if th == nil {
+		return
+	}
+	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
+	start := th.Angle - townFieldHalfArc
+	end := th.Angle + townFieldHalfArc
+	depth := float32(townFieldDepthFrac * w.Planet.Radius)
+	innerR := radius - depth
+
+	// Warm clay wedge fill.
+	drawFilledAnnularSector(scene, cx, cy, innerR, radius, start, end, colTownFieldBase)
+	// Edge definition.
+	drawFieldSectorBand(scene, cx, cy, radius-0.5, 1.5, start, end, colTownFieldEdge)
+	drawFieldSectorBand(scene, cx, cy, innerR+0.5, 1.0, start, end, colTownFieldEdge)
+
+	// Dwelling slots — only built capacity is visible, so fresh towns start with
+	// one house and fill in one purchase at a time.
+	slots := townFieldSlots(w.Planet, th)
+	if len(slots) == 0 {
+		return
+	}
+	builtSlots := w.Economy.WorkerCapacity
+	if builtSlots < 0 {
+		builtSlots = 0
+	}
+	if builtSlots > len(slots) {
+		builtSlots = len(slots)
+	}
+	cos := float32(math.Cos(th.Angle))
+	sin := float32(math.Sin(th.Angle))
+	ix := -cos // inward
+	iy := -sin
+	tx := -sin // tangent
+	ty := cos
+	for _, pos := range slots[:builtSlots] {
+		drawOrientedRect(scene, float32(pos.X), float32(pos.Y), tx, ty, ix, iy, 1.5, 1.5, colTownFieldSlot)
+	}
 }

@@ -1,6 +1,6 @@
 {
   "name": "town-growth-capacity-blocked",
-  "description": "2 workers filling 2 capacity slots, Town Growth at cap (full). No new worker arrives until capacity is built. Enough wood to buy capacity. Expected read: growth gauge full, no spawn; click capacity button to release one worker.",
+  "description": "2 workers filling 2 built dwelling slots, Town Growth at cap (full). No new worker arrives until a new dwelling slot is built. Enough wood to buy capacity. Expected read: growth gauge full, no spawn; click capacity button to build a slot and release one worker.",
   "seed": 11,
   "placeTownHall": true,
   "workers": 2,

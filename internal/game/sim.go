@@ -545,6 +545,65 @@ func availableCapacity(w *World) int {
 	return avail
 }
 
+// townFieldSlots returns the world positions of every potential dwelling slot
+// inside the town field, anchored to th.Angle and stepping inward by rows.
+// len() of the result is the planet's max worker capacity.
+// Returns nil if th is nil.
+func townFieldSlots(p Planet, th *Building) []Vec {
+	if th == nil {
+		return nil
+	}
+	cos := math.Cos(th.Angle)
+	sin := math.Sin(th.Angle)
+	inx, iny := -cos, -sin // inward unit vector (toward planet center)
+	tx, ty := -sin, cos    // tangent unit vector (counterclockwise along rim)
+
+	rim := p.RimPoint(th.Angle)
+	maxDepth := townFieldDepthFrac * p.Radius
+
+	var slots []Vec
+	for d := townFieldRimInset; d <= maxDepth; d += townFieldSlotSpacing {
+		arcLen := 2 * (p.Radius - d) * townFieldHalfArc
+		cols := int(arcLen / townFieldSlotSpacing)
+		if cols == 0 {
+			continue
+		}
+		for order := 0; order < cols; order++ {
+			col := townFieldColumnIndex(order, cols)
+			tangOffset := (float64(col) - float64(cols-1)/2) * townFieldSlotSpacing
+			slots = append(slots, Vec{
+				X: rim.X + inx*d + tx*tangOffset,
+				Y: rim.Y + iny*d + ty*tangOffset,
+			})
+		}
+	}
+	return slots
+}
+
+func townFieldColumnIndex(order, cols int) int {
+	centerLeft := (cols - 1) / 2
+	if order == 0 {
+		return centerLeft
+	}
+	step := (order + 1) / 2
+	if order%2 == 1 {
+		return centerLeft + step
+	}
+	return centerLeft - step
+}
+
+// maxTownSlots returns the geometry-derived maximum worker capacity for the
+// current planet. Returns 0 if no Town Hall exists.
+func maxTownSlots(w *World) int {
+	return len(townFieldSlots(w.Planet, townHall(w)))
+}
+
+// townFieldFull reports whether the town field has no remaining dwelling slots
+// to build — capacity purchases are blocked when this returns true.
+func townFieldFull(w *World) bool {
+	return townHall(w) != nil && w.Economy.WorkerCapacity >= maxTownSlots(w)
+}
+
 // townCapacityCost returns the wood cost of the next paid capacity slot.
 func townCapacityCost(w *World) float64 {
 	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
@@ -554,6 +613,9 @@ func townCapacityCost(w *World) float64 {
 // tryConsumeGrowth so a worker arrives immediately if growth is already full.
 func buildTownCapacity(w *World) bool {
 	if townHall(w) == nil {
+		return false
+	}
+	if w.Economy.WorkerCapacity >= maxTownSlots(w) {
 		return false
 	}
 	cost := townCapacityCost(w)
