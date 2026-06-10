@@ -190,7 +190,7 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		f := g.world.Planet.Fields[0]
 		frac := float32(0)
 		if f.Cap > 0 {
-			frac = float32(f.Counter / f.Cap)
+			frac = float32(f.EXP / f.Cap)
 			if frac > 1 {
 				frac = 1
 			}

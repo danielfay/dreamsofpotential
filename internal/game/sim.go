@@ -98,7 +98,7 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 		}
 		wk.Timer -= dt
 		if wk.Timer <= 0 {
-			wk.Carried = loadAmount * node.Size
+			wk.Carried = baseLoadAmount * node.Size
 			wk.State = StateToBuilding
 		}
 	case StateToBuilding:
@@ -167,15 +167,19 @@ func startDeparture(w *World, wk *Worker, node *ResourceNode) {
 }
 
 func completeUnload(w *World, wk *Worker, node *ResourceNode) {
-	if wk.Carried > 0 {
+	gross := wk.Carried
+	if gross > 0 {
 		w.ResourceDiscovered = true
 	}
-	w.Economy.Wood += wk.Carried
+	banked := gross * (1 - fieldReturnRatio)
+	returned := gross * fieldReturnRatio
+	w.Economy.Wood += banked
+	w.lastDelivery = deliverySplit{Gross: gross, Banked: banked, Returned: returned}
 	if b := nearestCamp(w, node); b != nil {
-		b.DeliveredWood += wk.Carried
+		b.DeliveredWood += gross
 		b.DeliveryCount++
 	}
-	depositToField(w, node.Kind, wk.Carried)
+	depositToField(w, node.Kind, returned)
 	wk.Carried = 0
 
 	if pending := findNode(w, wk.PendingNodeID); pending != nil && pending.ReservedByWorkerID == wk.ID {
@@ -370,10 +374,10 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 		if f.Kind != kind {
 			continue
 		}
-		f.Counter += amount
-		for f.Counter >= f.Cap {
-			f.Counter -= f.Cap
-			f.Cap *= nodeCapGrowth
+		f.EXP += amount
+		for f.EXP >= f.Cap {
+			f.EXP -= f.Cap
+			f.Cap *= fieldEXPGrowth
 			activateGrowthCue(w, spawnNode(w, f))
 		}
 		return
@@ -404,7 +408,7 @@ func upgradeFirstFieldForDebug(w *World) bool {
 		return false
 	}
 	f := w.Planet.Fields[0]
-	amount := f.Cap - f.Counter
+	amount := f.Cap - f.EXP
 	if amount <= 0 {
 		amount = f.Cap
 	}
@@ -445,7 +449,7 @@ func EstimateRate(w *World) float64 {
 			continue
 		}
 		tripTime := loadTime + unloadTime + 2*dist/workerSpeed
-		rate += (loadAmount * node.Size) / tripTime
+		rate += (baseLoadAmount * node.Size * (1 - fieldReturnRatio)) / tripTime
 	}
 	return rate
 }

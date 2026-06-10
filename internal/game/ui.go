@@ -152,7 +152,9 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		h.fieldText.Label = fmt.Sprintf("field: %.1f / %.1f", f.Counter, f.Cap)
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f",
+			f.EXP, f.Cap, fieldReturnRatio*100,
+			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned)
 	}
 
 	wc := WorkerCost(w)
