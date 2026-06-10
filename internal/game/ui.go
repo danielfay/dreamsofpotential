@@ -153,10 +153,10 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %.1f EXP",
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)",
 			f.EXP, f.Cap, fieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
-			nurtureCost, nurtureEXP)
+			nurtureCost, nurtureCharges, nurtureEXPMultiplier, f.NurtureCharges)
 	}
 
 	wc := WorkerCost(w)
@@ -557,7 +557,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			}),
 		),
 		widget.ButtonOpts.PressedHandler(func(_ *widget.ButtonPressedEventArgs) {
-			g.activateHold(holdNurture)
+			g.tryNurture()
 		}),
 	)
 	hud.resourceHUD.AddChild(hud.resourceSquare)

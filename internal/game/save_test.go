@@ -17,6 +17,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	runSim(w, 5)
 
 	w.ResourceDiscovered = true // ensure the bool is tested in the round-trip
+	if len(w.Planet.Fields) > 0 {
+		w.Planet.Fields[0].NurtureCharges = 3 // ensure NurtureCharges survives round-trip
+	}
 	if err := Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -63,6 +66,12 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	if got.ResourceDiscovered != w.ResourceDiscovered {
 		t.Errorf("ResourceDiscovered: got %v, want %v", got.ResourceDiscovered, w.ResourceDiscovered)
+	}
+	if len(got.Planet.Fields) > 0 && len(w.Planet.Fields) > 0 {
+		if got.Planet.Fields[0].NurtureCharges != w.Planet.Fields[0].NurtureCharges {
+			t.Errorf("Fields[0].NurtureCharges: got %d, want %d",
+				got.Planet.Fields[0].NurtureCharges, w.Planet.Fields[0].NurtureCharges)
+		}
 	}
 
 	if len(got.Workers) != len(w.Workers) {
@@ -146,14 +155,17 @@ func TestGrowthCueStateIsTransientAndNotSaved(t *testing.T) {
 		NodeID:      w.Nodes[0].ID,
 	})
 
+	w.nurtureBoostCue = 0.25 // arm the transient boost cue
+
 	data, err := json.Marshal(w)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 	if strings.Contains(string(data), "growthCue") ||
 		strings.Contains(string(data), "GaugeRelease") ||
-		strings.Contains(string(data), "FieldPulse") {
-		t.Fatalf("transient growth cue leaked into save JSON: %s", data)
+		strings.Contains(string(data), "FieldPulse") ||
+		strings.Contains(string(data), "nurtureBoostCue") {
+		t.Fatalf("transient state leaked into save JSON: %s", data)
 	}
 
 	if err := Save(w); err != nil {
@@ -168,6 +180,9 @@ func TestGrowthCueStateIsTransientAndNotSaved(t *testing.T) {
 		got.growthCue.FieldPulse != 0 ||
 		got.growthCue.NodeCue != 0 {
 		t.Fatalf("loaded world should not restore transient growth cue: %+v", got.growthCue)
+	}
+	if got.nurtureBoostCue != 0 {
+		t.Fatalf("loaded world should not restore transient nurtureBoostCue: %v", got.nurtureBoostCue)
 	}
 }
 

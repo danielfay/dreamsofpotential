@@ -927,7 +927,7 @@ func TestFieldEXPCapTriggersCycle(t *testing.T) {
 	}
 }
 
-func TestNurtureFieldSuccess(t *testing.T) {
+func TestNurtureActivatesCharges(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
 	w.Economy.Wood = nurtureCost + 10
@@ -939,8 +939,13 @@ func TestNurtureFieldSuccess(t *testing.T) {
 	if math.Abs(w.Economy.Wood-10) > 1e-9 {
 		t.Errorf("wood got %.2f, want 10 after nurtureCost spent", w.Economy.Wood)
 	}
-	if math.Abs(w.Planet.Fields[0].EXP-(initialEXP+nurtureEXP)) > 1e-9 {
-		t.Errorf("field EXP got %.2f, want %.2f", w.Planet.Fields[0].EXP, initialEXP+nurtureEXP)
+	if w.Planet.Fields[0].NurtureCharges != nurtureCharges {
+		t.Errorf("NurtureCharges got %d, want %d", w.Planet.Fields[0].NurtureCharges, nurtureCharges)
+	}
+	// Activation must not deposit EXP directly.
+	if w.Planet.Fields[0].EXP != initialEXP {
+		t.Errorf("field EXP should be unchanged on activation, got %.2f want %.2f",
+			w.Planet.Fields[0].EXP, initialEXP)
 	}
 }
 
@@ -972,38 +977,148 @@ func TestNurtureFieldNotDiscovered(t *testing.T) {
 	}
 }
 
-func TestNurtureFieldCapCrossing(t *testing.T) {
+func TestBoostedDeliveryDoubleEXP(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	node := newNode(w, KindWood, campAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
+
+	// Arm 1 charge.
+	w.Planet.Fields[0].NurtureCharges = 1
+	gross := baseLoadAmount * node.Size
+	wk := &Worker{
+		ID:            0,
+		Carried:       gross,
+		NodeID:        node.ID,
+		Angle:         campAngle,
+		Pos:           w.Planet.RimPoint(campAngle),
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+	}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	normalReturned := gross * fieldReturnRatio
+	wantEXP := normalReturned * nurtureEXPMultiplier
+
+	completeUnload(w, wk, node)
+
+	if math.Abs(w.Planet.Fields[0].EXP-wantEXP) > 1e-9 {
+		t.Errorf("boosted field EXP got %.4f, want %.4f (2× normal)", w.Planet.Fields[0].EXP, wantEXP)
+	}
+	if w.Planet.Fields[0].NurtureCharges != 0 {
+		t.Errorf("charge should be consumed, got %d", w.Planet.Fields[0].NurtureCharges)
+	}
+}
+
+func TestBoostedDeliveryBankedWoodUnchanged(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	node := newNode(w, KindWood, campAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
+
+	gross := baseLoadAmount * node.Size
+	wk := &Worker{
+		ID:            0,
+		Carried:       gross,
+		NodeID:        node.ID,
+		Angle:         campAngle,
+		Pos:           w.Planet.RimPoint(campAngle),
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+	}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	// Normal delivery (no charges).
+	completeUnload(w, wk, node)
+	normalWood := w.Economy.Wood
+
+	// Reset and repeat with one charge active.
+	w.Economy.Wood = 0
+	w.Planet.Fields[0].EXP = 0
+	w.Planet.Fields[0].NurtureCharges = 1
+	wk.Carried = gross
+	node.OwnerID = wk.ID
+	completeUnload(w, wk, node)
+	boostedWood := w.Economy.Wood
+
+	if math.Abs(boostedWood-normalWood) > 1e-9 {
+		t.Errorf("banked wood should be the same boosted (%.4f) vs normal (%.4f)", boostedWood, normalWood)
+	}
+}
+
+func TestNurtureChargesCarryOverGrowth(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
 	w.ResourceDiscovered = true
-	w.Economy.Wood = nurtureCost * 10
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	node := newNode(w, KindWood, campAngle)
+	node.Size = 1.0
+	w.Nodes = []*ResourceNode{node}
 
 	field := w.Planet.Fields[0]
-	field.EXP = field.Cap - (nurtureEXP / 2) // just below cap
+	field.NurtureCharges = 3
+	// Set EXP so the next boosted delivery will cross the cap.
+	field.EXP = field.Cap - 0.01
 
-	nurtureField(w, KindWood)
+	gross := baseLoadAmount * node.Size
+	wk := &Worker{
+		ID:            0,
+		Carried:       gross,
+		NodeID:        node.ID,
+		Angle:         campAngle,
+		Pos:           w.Planet.RimPoint(campAngle),
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+	}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
 
+	completeUnload(w, wk, node)
+
+	// Growth cue should fire (cap was crossed).
 	if w.growthCue.Outcome == growthOutcomeNone {
-		t.Fatal("nurture crossing cap should trigger field growth cue")
+		t.Fatal("boosted delivery crossing cap should trigger growth cue")
+	}
+	// Remaining charges (3 - 1 = 2) should survive the growth cycle.
+	if field.NurtureCharges != 2 {
+		t.Errorf("charges after growth: got %d, want 2", field.NurtureCharges)
 	}
 }
 
-func TestNurtureFieldRepeatClicks(t *testing.T) {
+func TestNurtureNonStacking(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
 	w.Economy.Wood = nurtureCost * 3
 
-	for i := 0; i < 3; i++ {
-		if !nurtureField(w, KindWood) {
-			t.Fatalf("nurture %d should succeed", i+1)
-		}
+	if !nurtureField(w, KindWood) {
+		t.Fatal("first nurture should succeed")
 	}
-	if math.Abs(w.Economy.Wood) > 1e-9 {
-		t.Errorf("after 3 nurtures, wood got %.2f, want 0", w.Economy.Wood)
-	}
+	woodAfterFirst := w.Economy.Wood
 	if nurtureField(w, KindWood) {
-		t.Error("4th nurture should fail (no wood left)")
+		t.Fatal("second nurture should fail while charges are active")
+	}
+	if w.Economy.Wood != woodAfterFirst {
+		t.Errorf("wood should not change on blocked nurture, got %.2f want %.2f",
+			w.Economy.Wood, woodAfterFirst)
+	}
+	if w.Planet.Fields[0].NurtureCharges != nurtureCharges {
+		t.Errorf("charges should remain %d after blocked attempt, got %d",
+			nurtureCharges, w.Planet.Fields[0].NurtureCharges)
 	}
 }
 
@@ -1029,12 +1144,36 @@ func TestNurtureAttentionActiveCapProximity(t *testing.T) {
 	w.ResourceDiscovered = true
 	w.Economy.Wood = nurtureCost
 
-	// Set EXP so one click would cross the cap.
+	// Set EXP so the field is within one boosted average delivery of the cap.
+	// With default node sizes ~1.0: boostedAvg ≈ baseLoadAmount * 1 * fieldReturnRatio * nurtureEXPMultiplier = 2.0
 	field := w.Planet.Fields[0]
-	field.EXP = field.Cap - nurtureEXP
+	field.EXP = field.Cap - 1.0 // clearly within boosted range
 
 	if !nurtureAttentionActive(w, KindWood) {
-		t.Error("expected attention active: one click would complete the cap")
+		t.Error("expected attention active: within one boosted delivery of cap")
+	}
+}
+
+func TestNurtureAttentionSuppressedWithCharges(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost
+
+	// All nodes owned so condition 1 would otherwise trigger.
+	for _, n := range w.Nodes {
+		n.OwnerID = 99
+	}
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+
+	// Without charges: attention should be active.
+	if !nurtureAttentionActive(w, KindWood) {
+		t.Error("setup: expected attention active before charges")
+	}
+
+	// With charges active: attention must be suppressed.
+	w.Planet.Fields[0].NurtureCharges = 3
+	if nurtureAttentionActive(w, KindWood) {
+		t.Error("expected attention suppressed while charges are active")
 	}
 }
 

@@ -1,0 +1,11 @@
+{
+  "name": "active-charges",
+  "description": "Nurture already active with 5 charges: inspect badge, disabled re-purchase, charge consumption on delivery",
+  "seed": 11,
+  "discovered": true,
+  "placeTownHall": true,
+  "workers": 4,
+  "settleSeconds": 1,
+  "nurtureCharges": 5,
+  "wood": 80
+}

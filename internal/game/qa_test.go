@@ -7,7 +7,7 @@ import (
 
 func qaPtr[T any](v T) *T { return &v }
 
-func TestBuildQAWorld_NearCapStall(t *testing.T) {
+func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 	discovered := true
 	p := QAPreset{
 		Seed:            11,
@@ -15,7 +15,7 @@ func TestBuildQAWorld_NearCapStall(t *testing.T) {
 		PlaceTownHall:   true,
 		Workers:         7,
 		SettleSeconds:   1,
-		FieldExpFromCap: qaPtr(-nurtureEXP),
+		FieldExpFromCap: qaPtr(-2.0), // within one boosted average delivery of cap
 		Wood:            qaPtr(100.0),
 	}
 	w, err := BuildQAWorld(p)
@@ -31,16 +31,16 @@ func TestBuildQAWorld_NearCapStall(t *testing.T) {
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
-	wantEXP := f.Cap - nurtureEXP
+	wantEXP := f.Cap - 2.0
 	if math.Abs(f.EXP-wantEXP) > 0.01 {
-		t.Errorf("field EXP = %.2f, want %.2f (Cap - nurtureEXP)", f.EXP, wantEXP)
+		t.Errorf("field EXP = %.2f, want %.2f (Cap - 2)", f.EXP, wantEXP)
 	}
 	if w.Economy.Wood != 100 {
 		t.Errorf("wood = %.1f, want 100", w.Economy.Wood)
 	}
 }
 
-func TestBuildQAWorld_FarCapStall(t *testing.T) {
+func TestBuildQAWorld_FarCapBoosted(t *testing.T) {
 	discovered := true
 	cycles := 2
 	p := QAPreset{
@@ -50,7 +50,7 @@ func TestBuildQAWorld_FarCapStall(t *testing.T) {
 		Workers:        7,
 		SettleSeconds:  1,
 		FieldCapCycles: &cycles,
-		FieldExpAbs:    qaPtr(nurtureEXP),
+		FieldExpAbs:    qaPtr(5.0),
 		Wood:           qaPtr(100.0),
 	}
 	w, err := BuildQAWorld(p)
@@ -68,6 +68,34 @@ func TestBuildQAWorld_FarCapStall(t *testing.T) {
 	}
 	if w.Economy.Wood != 100 {
 		t.Errorf("wood = %.1f, want 100", w.Economy.Wood)
+	}
+}
+
+func TestBuildQAWorld_ActiveCharges(t *testing.T) {
+	discovered := true
+	p := QAPreset{
+		Seed:           11,
+		Discovered:     &discovered,
+		PlaceTownHall:  true,
+		Workers:        4,
+		SettleSeconds:  1,
+		NurtureCharges: qaPtr(nurtureCharges),
+		Wood:           qaPtr(80.0),
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+
+	if w.Version != SaveVersion {
+		t.Errorf("version = %d, want %d", w.Version, SaveVersion)
+	}
+	f := w.Planet.Fields[0]
+	if f.NurtureCharges != nurtureCharges {
+		t.Errorf("NurtureCharges = %d, want %d", f.NurtureCharges, nurtureCharges)
+	}
+	if w.Economy.Wood != 80 {
+		t.Errorf("wood = %.1f, want 80", w.Economy.Wood)
 	}
 }
 

@@ -1,12 +1,14 @@
 package game
 
 import (
+	"fmt"
 	"image/color"
 	"os"
 
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -15,8 +17,7 @@ const autoSavePeriod = 10.0 // seconds between autosaves
 
 const (
 	holdNone      = 0
-	holdNurture   = 1
-	holdBuyWorker = 2
+	holdBuyWorker = 1
 )
 
 // Game is the root ebiten game object.
@@ -94,16 +95,19 @@ func (g *Game) activateHold(action int) {
 	}
 }
 
+// tryNurture attempts a single Nurture activation and shows success/fail feedback.
+func (g *Game) tryNurture() {
+	if nurtureField(g.world, KindWood) {
+		g.nurtureConfirmLeft = nurtureConfirmDuration
+	} else {
+		g.pulseTime = pulseDuration
+		g.pulseTarget = 3
+	}
+}
+
 // tryHoldAction executes the purchase action and returns true on success.
 func (g *Game) tryHoldAction(action int) bool {
 	switch action {
-	case holdNurture:
-		if nurtureField(g.world, KindWood) {
-			g.nurtureConfirmLeft = nurtureConfirmDuration
-			return true
-		}
-		g.pulseTime = pulseDuration
-		g.pulseTarget = 3
 	case holdBuyWorker:
 		if buyWorker(g.world) {
 			return true
@@ -300,6 +304,23 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		sry := float32(sr.Min.Y)
 		srw := float32(sr.Max.X - sr.Min.X)
 		srh := float32(sr.Max.Y - sr.Min.Y)
+		charges := f.NurtureCharges
+		if charges > 0 {
+			// Active border: soft green stroke around the square.
+			vector.StrokeRect(screen, srx-1, sry-1, srw+2, srh+2, 2,
+				color.RGBA{R: 120, G: 255, B: 150, A: 200}, false)
+			// Boost cue: brief fill flash on a boosted delivery landing.
+			if g.world.nurtureBoostCue > 0 {
+				t := float32(g.world.nurtureBoostCue / nurtureBoostCueDur)
+				alpha := uint8(160 * t)
+				vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 120, G: 255, B: 150, A: alpha}, false)
+			}
+			// Charge badge: numeric count in top-left corner.
+			op := &text.DrawOptions{}
+			op.GeoM.Translate(float64(srx)+2, float64(sry)+1)
+			op.ColorScale.Scale(120.0/255.0, 1.0, 150.0/255.0, 1.0)
+			text.Draw(screen, fmt.Sprintf("%d", charges), g.hud.face, op)
+		}
 		if g.nurtureAttentionPulseLeft > 0 {
 			t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
 			alpha := uint8(90 * t)

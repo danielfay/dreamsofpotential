@@ -19,8 +19,9 @@ const (
 	fieldBaseEXP     = 10.0 // field EXP needed for the first growth cycle
 	fieldEXPGrowth   = 2.0  // field EXP cap multiplier after each growth cycle
 	fieldReturnRatio = 0.20 // share of gross delivered load that becomes field EXP
-	nurtureCost      = 80.0 // wood spent per Nurture click
-	nurtureEXP       = 5.0  // field EXP gained per Nurture click
+	nurtureCost          = 80.0 // wood spent to activate Nurture
+	nurtureCharges       = 5    // boosted deliveries granted per activation
+	nurtureEXPMultiplier = 2.0  // field EXP multiplier on a boosted delivery
 	forestHalfArc    = math.Pi
 	startingNodes    = 5
 )

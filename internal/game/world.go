@@ -107,11 +107,12 @@ type Building struct {
 
 // ResourceField tracks per-kind progress toward spawning a new resource node.
 type ResourceField struct {
-	Kind        ResourceKind
-	CenterAngle float64
-	HalfArc     float64
-	EXP         float64
-	Cap         float64
+	Kind           ResourceKind
+	CenterAngle    float64
+	HalfArc        float64
+	EXP            float64
+	Cap            float64
+	NurtureCharges int // boosted-delivery charges remaining (0 = inactive)
 }
 
 type growthOutcome int
@@ -179,7 +180,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 6
+const SaveVersion = 7
 
 // World holds all game state for a single planet.
 type World struct {
@@ -194,8 +195,9 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 
-	growthCue   growthCueState
-	lastDelivery deliverySplit
+	growthCue      growthCueState
+	lastDelivery   deliverySplit
+	nurtureBoostCue float64 // seconds remaining on the boosted-delivery flash; transient, not saved
 }
 
 type deliverySplit struct{ Gross, Banked, Returned float64 }
@@ -371,6 +373,16 @@ func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *Reso
 	}
 	activatePulse(w, &best.Pulse)
 	return best
+}
+
+// fieldForKind returns the first ResourceField with the given kind, or nil.
+func fieldForKind(w *World, kind ResourceKind) *ResourceField {
+	for _, f := range w.Planet.Fields {
+		if f.Kind == kind {
+			return f
+		}
+	}
+	return nil
 }
 
 // NewWorld returns a freshly initialised world ready to start the game.
