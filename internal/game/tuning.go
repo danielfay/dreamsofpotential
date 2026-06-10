@@ -4,10 +4,12 @@ import "math"
 
 const (
 	// economy / cost constants
-	workerBaseCost   = 40.0
-	workerCostGrowth = 1.15
-	campBaseCost     = 120.0
-	campCostGrowth   = 1.50
+	campBaseCost          = 120.0
+	campCostGrowth        = 1.50
+	townCapacityBaseCost  = 40.0  // cost of the first paid capacity slot (CapacityBought==0)
+	townCapacityCostGrowth = 1.15 // per paid capacity purchase
+	townGrowthBaseCap     = 10.0  // initial Town Growth threshold
+	townGrowthCapGrowth   = 1.35  // cap multiplier per worker arrival
 
 	// simulation constants
 	workerSpeed      = 40.0 // world px / second

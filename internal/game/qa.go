@@ -27,6 +27,10 @@ type QAPreset struct {
 	FieldExpAbs     *float64 `json:"fieldExpAbs"`     // EXP = abs value
 	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N boosted-delivery charges
 	Wood            *float64 `json:"wood"`
+	// Town Growth overrides — applied after workers, before final Wood stamp.
+	TownGrowth     *float64 `json:"townGrowth"`
+	TownGrowthCap  *float64 `json:"townGrowthCap"`
+	WorkerCapacity *int     `json:"workerCapacity"`
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -67,12 +71,15 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		}
 	}
 
-	// Workers — use a large temporary wood balance; the final balance is stamped last.
-	if p.Workers > 0 {
-		w.Economy.Wood = 1e9
-		for i := range p.Workers {
-			if !buyWorker(w) {
-				return nil, fmt.Errorf("failed to buy worker %d of %d", i+1, p.Workers)
+	// Workers — spawn without wood cost; Town Hall placement already created one
+	// founding worker, so start from the current count.
+	if p.Workers > len(w.Workers) {
+		if w.Economy.WorkerCapacity < p.Workers {
+			w.Economy.WorkerCapacity = p.Workers
+		}
+		for len(w.Workers) < p.Workers {
+			if spawnWorkerAtTownHall(w) == nil {
+				return nil, fmt.Errorf("failed to spawn worker %d of %d (no Town Hall)", len(w.Workers)+1, p.Workers)
 			}
 		}
 	}
@@ -108,6 +115,22 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	// Nurture charges — set directly on the field after EXP is finalised.
 	if len(w.Planet.Fields) > 0 && p.NurtureCharges != nil {
 		w.Planet.Fields[0].NurtureCharges = *p.NurtureCharges
+	}
+
+	// Town Growth overrides — applied after workers so capacity is already known.
+	if p.WorkerCapacity != nil && *p.WorkerCapacity > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = *p.WorkerCapacity
+	}
+	if p.TownGrowthCap != nil {
+		w.Economy.TownGrowthCap = *p.TownGrowthCap
+	}
+	if p.TownGrowth != nil {
+		// Clamp to the cap (possibly just updated) to honour the no-overflow rule.
+		g := math.Min(*p.TownGrowth, w.Economy.TownGrowthCap)
+		if g < 0 {
+			g = 0
+		}
+		w.Economy.TownGrowth = g
 	}
 
 	// Wood — stamped last so it reflects the intended final balance exactly.

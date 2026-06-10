@@ -181,7 +181,8 @@ func affordabilityButtonsScenario() screenshotScenario {
 	mustPlaceNearNode(w, w.Nodes[0])
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 12
-	w.Economy.WorkersBought = 3
+	w.Economy.CapacityBought = 3
+	w.Economy.WorkerCapacity = 3
 
 	return screenshotScenario{
 		name:    "08-affordability-buttons",
@@ -195,7 +196,8 @@ func wideResourceHUDScenario() screenshotScenario {
 	mustPlaceNearNode(w, w.Nodes[0])
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 1234
-	w.Economy.WorkersBought = 16
+	w.Economy.WorkerCapacity = 16
+	w.Workers = nil
 	for i := 0; i < 16; i++ {
 		state := StateIdleWaiting
 		nodeID := -1
@@ -339,8 +341,9 @@ func mustPlaceNearNode(w *World, node *ResourceNode) {
 }
 
 func mustBuyWorker(w *World) {
-	if !buyWorker(w) {
-		panic("screenshot setup failed to buy worker")
+	w.Economy.WorkerCapacity++
+	if spawnWorkerAtTownHall(w) == nil {
+		panic("screenshot setup failed to spawn worker")
 	}
 }
 

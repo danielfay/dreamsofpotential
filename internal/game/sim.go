@@ -184,6 +184,8 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 		b.DeliveryCount++
 	}
 	depositToField(w, node.Kind, returned)
+	w.Economy.TownGrowth += gross
+	tryConsumeGrowth(w)
 	wk.Carried = 0
 
 	if pending := findNode(w, wk.PendingNodeID); pending != nil && pending.ReservedByWorkerID == wk.ID {
@@ -532,24 +534,65 @@ func activeWorkerCount(w *World) int {
 	return active
 }
 
-func addFreeWorkerAtTownHall(w *World) bool {
-	th := townHall(w)
-	if th == nil {
+// availableCapacity returns the number of unused worker slots (capacity minus
+// current worker count). Clamped to 0 so debug free-spawns past capacity
+// do not yield a negative value that could trigger spurious growth spawns.
+func availableCapacity(w *World) int {
+	avail := w.Economy.WorkerCapacity - len(w.Workers)
+	if avail < 0 {
+		return 0
+	}
+	return avail
+}
+
+// townCapacityCost returns the wood cost of the next paid capacity slot.
+func townCapacityCost(w *World) float64 {
+	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
+}
+
+// buildTownCapacity spends wood to unlock one worker slot. Calls
+// tryConsumeGrowth so a worker arrives immediately if growth is already full.
+func buildTownCapacity(w *World) bool {
+	if townHall(w) == nil {
 		return false
 	}
-	id := w.NextWorkerID
-	w.NextWorkerID++
-	w.Workers = append(w.Workers, &Worker{
-		ID:            id,
-		Pos:           th.Pos,
-		Angle:         th.Angle,
-		State:         StateSettling,
-		NodeID:        -1,
-		TargetNodeID:  -1,
-		PendingNodeID: -1,
-		Timer:         settleDelay,
-	})
+	cost := townCapacityCost(w)
+	if w.Economy.Wood < cost {
+		return false
+	}
+	w.Economy.Wood -= cost
+	w.Economy.WorkerCapacity++
+	w.Economy.CapacityBought++
+	tryConsumeGrowth(w)
 	return true
+}
+
+// tryConsumeGrowth spawns at most one worker when Town Growth has reached its
+// cap and a slot is free, then resets growth to 0 and raises the cap.
+// When capacity-blocked and growth is full, clamps growth at the cap (no
+// overflow accumulation). Returns true if a worker spawned.
+func tryConsumeGrowth(w *World) bool {
+	if w.Economy.TownGrowth < w.Economy.TownGrowthCap {
+		return false
+	}
+	if availableCapacity(w) <= 0 {
+		w.Economy.TownGrowth = w.Economy.TownGrowthCap
+		return false
+	}
+	th := townHall(w)
+	if spawnWorkerAtTownHall(w) == nil {
+		return false
+	}
+	if th != nil {
+		activatePulse(w, &th.Pulse)
+	}
+	w.Economy.TownGrowth = 0
+	w.Economy.TownGrowthCap *= townGrowthCapGrowth
+	return true
+}
+
+func addFreeWorkerAtTownHall(w *World) bool {
+	return spawnWorkerAtTownHall(w) != nil
 }
 
 func activatePulse(w *World, p *PulseState) {

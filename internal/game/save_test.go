@@ -32,8 +32,17 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Economy.Wood != w.Economy.Wood {
 		t.Errorf("Economy.Wood: got %.4f, want %.4f", got.Economy.Wood, w.Economy.Wood)
 	}
-	if got.Economy.WorkersBought != w.Economy.WorkersBought {
-		t.Errorf("Economy.WorkersBought: got %d, want %d", got.Economy.WorkersBought, w.Economy.WorkersBought)
+	if got.Economy.WorkerCapacity != w.Economy.WorkerCapacity {
+		t.Errorf("Economy.WorkerCapacity: got %d, want %d", got.Economy.WorkerCapacity, w.Economy.WorkerCapacity)
+	}
+	if got.Economy.CapacityBought != w.Economy.CapacityBought {
+		t.Errorf("Economy.CapacityBought: got %d, want %d", got.Economy.CapacityBought, w.Economy.CapacityBought)
+	}
+	if got.Economy.TownGrowth != w.Economy.TownGrowth {
+		t.Errorf("Economy.TownGrowth: got %.4f, want %.4f", got.Economy.TownGrowth, w.Economy.TownGrowth)
+	}
+	if got.Economy.TownGrowthCap != w.Economy.TownGrowthCap {
+		t.Errorf("Economy.TownGrowthCap: got %.4f, want %.4f", got.Economy.TownGrowthCap, w.Economy.TownGrowthCap)
 	}
 	if got.Planet.Radius != w.Planet.Radius {
 		t.Errorf("Planet.Radius: got %v, want %v", got.Planet.Radius, w.Planet.Radius)

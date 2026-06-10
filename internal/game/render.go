@@ -114,6 +114,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 				col = brighten(col, 40)
 			}
 			drawTownHallArt(scene, w.Planet, b.Angle, col)
+			drawTownGrowthGauge(scene, w.Planet, b, w.Economy.TownGrowth, w.Economy.TownGrowthCap)
 		} else {
 			if pulseActive(w, b.Pulse) {
 				col = brighten(col, 40)
@@ -418,6 +419,38 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 	ty := float32(math.Cos(angle))
 	drawOrientedRect(scene, float32(ip.X), float32(ip.Y), tx, ty, ix, iy,
 		townHallBldHalfW, townHallBldHalfH, col)
+}
+
+// drawTownGrowthGauge draws a small progress bar below the Town Hall art,
+// aligned with the rim tangent, showing Town Growth / TownGrowthCap.
+func drawTownGrowthGauge(scene *ebiten.Image, p Planet, th *Building, growth, cap float64) {
+	if cap <= 0 {
+		return
+	}
+	frac := float32(growth / cap)
+	if frac > 1 {
+		frac = 1
+	}
+	const gaugeInset = float32(townHallBldInset) + float32(townHallBldHalfH) + 3
+	anchor := insetPoint(p, th.Angle, float64(gaugeInset))
+	ax, ay := float32(anchor.X), float32(anchor.Y)
+	ix := float32(-math.Cos(th.Angle))
+	iy := float32(-math.Sin(th.Angle))
+	tx := float32(-math.Sin(th.Angle))
+	ty := float32(math.Cos(th.Angle))
+	const halfW = float32(townHallBldHalfW) - 2
+	const halfH = float32(1)
+	// Frame
+	drawOrientedRect(scene, ax, ay, tx, ty, ix, iy, halfW, halfH,
+		color.RGBA{R: 55, G: 55, B: 65, A: 200})
+	// Fill (from one end along the tangent)
+	if frac > 0 {
+		fillHW := halfW * frac
+		fcx := ax - tx*(halfW-fillHW)
+		fcy := ay - ty*(halfW-fillHW)
+		drawOrientedRect(scene, fcx, fcy, tx, ty, ix, iy, fillHW, halfH,
+			color.RGBA{R: 220, G: 200, B: 60, A: 200})
+	}
 }
 
 // insetPoint returns a world position stepped inward from the rim at angle by

@@ -1,0 +1,12 @@
+{
+  "name": "town-growth-arrival",
+  "description": "Town Hall, 2 workers, capacity 3 (one free slot), Town Growth just below cap. Next delivery should fill growth and spawn a new worker at the Town Hall.",
+  "seed": 11,
+  "placeTownHall": true,
+  "workers": 2,
+  "settleSeconds": 1,
+  "workerCapacity": 3,
+  "townGrowthCap": 10,
+  "townGrowth": 8,
+  "wood": 60
+}

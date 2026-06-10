@@ -161,3 +161,94 @@ func assertAtLeastOneIdleWorker(t *testing.T, w *World) {
 	}
 	t.Error("expected at least one StateIdleWaiting worker")
 }
+
+func TestFoundingWorkerOnTownHallPlacement(t *testing.T) {
+	p := QAPreset{
+		Seed:          11,
+		PlaceTownHall: true,
+		SettleSeconds: 1,
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	if w.Economy.WorkerCapacity != 1 {
+		t.Errorf("WorkerCapacity: got %d, want 1 (founding slot)", w.Economy.WorkerCapacity)
+	}
+	if len(w.Workers) != 1 {
+		t.Errorf("expected exactly 1 founding worker, got %d", len(w.Workers))
+	}
+}
+
+func TestBuildQAWorld_TownGrowthArrival(t *testing.T) {
+	p := QAPreset{
+		Seed:           11,
+		PlaceTownHall:  true,
+		Workers:        2,
+		SettleSeconds:  1,
+		WorkerCapacity: qaPtr(3),
+		TownGrowthCap:  qaPtr(10.0),
+		TownGrowth:     qaPtr(8.0),
+		Wood:           qaPtr(60.0),
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	if w.Version != SaveVersion {
+		t.Errorf("version = %d, want %d", w.Version, SaveVersion)
+	}
+	if len(w.Workers) != 2 {
+		t.Errorf("expected 2 workers, got %d", len(w.Workers))
+	}
+	if w.Economy.WorkerCapacity != 3 {
+		t.Errorf("WorkerCapacity: got %d, want 3", w.Economy.WorkerCapacity)
+	}
+	if w.Economy.TownGrowthCap != 10 {
+		t.Errorf("TownGrowthCap: got %.2f, want 10", w.Economy.TownGrowthCap)
+	}
+	if w.Economy.TownGrowth != 8 {
+		t.Errorf("TownGrowth: got %.2f, want 8", w.Economy.TownGrowth)
+	}
+	if w.Economy.Wood != 60 {
+		t.Errorf("Wood: got %.1f, want 60", w.Economy.Wood)
+	}
+}
+
+func TestBuildQAWorld_TownGrowthCapacityBlocked(t *testing.T) {
+	p := QAPreset{
+		Seed:          11,
+		PlaceTownHall: true,
+		Workers:       2,
+		SettleSeconds: 1,
+		TownGrowthCap: qaPtr(10.0),
+		TownGrowth:    qaPtr(10.0), // exactly at cap
+		Wood:          qaPtr(80.0),
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	if len(w.Workers) != 2 {
+		t.Errorf("expected 2 workers (not a burst spawn), got %d", len(w.Workers))
+	}
+	if w.Economy.TownGrowth != w.Economy.TownGrowthCap {
+		t.Errorf("TownGrowth %.2f should equal TownGrowthCap %.2f", w.Economy.TownGrowth, w.Economy.TownGrowthCap)
+	}
+}
+
+func TestTownGrowthClampedToCapOnPreset(t *testing.T) {
+	p := QAPreset{
+		Seed:          11,
+		PlaceTownHall: true,
+		TownGrowthCap: qaPtr(5.0),
+		TownGrowth:    qaPtr(999.0), // over cap — should clamp
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	if w.Economy.TownGrowth != 5.0 {
+		t.Errorf("TownGrowth should be clamped to cap 5.0; got %.2f", w.Economy.TownGrowth)
+	}
+}

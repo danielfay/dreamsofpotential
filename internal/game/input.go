@@ -102,6 +102,10 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			Angle: angle,
 			Pos:   w.Planet.RimPoint(angle),
 		})
+		// Grant the founding capacity slot and spawn the first worker immediately.
+		w.Economy.WorkerCapacity = 1
+		w.Economy.TownGrowthCap = townGrowthBaseCap
+		spawnWorkerAtTownHall(w)
 		return true
 	}
 	// Paid logging camp.
