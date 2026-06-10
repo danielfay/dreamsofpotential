@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"sync/atomic"
 
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/widget"
@@ -47,7 +48,8 @@ type Game struct {
 	holdAction                int     // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                 float64 // counts down to next repeat fire
 	holdDuration              float64 // total seconds the current hold has been active
-	importCh                  chan *World // receives a validated world from an import goroutine
+	importCh                  chan *World  // receives a validated world from an import goroutine
+	dialogOpen                atomic.Bool // true while a file dialog is open; blocks UI input
 }
 
 // New constructs and returns a ready-to-run Game.
@@ -140,8 +142,15 @@ func (g *Game) Update() error {
 		g.world = imported
 		g.placing = false
 		g.freePlacing = false
+		g.showMenu = false
 		_ = Save(g.world)
 	default:
+	}
+
+	// While a native or web file dialog is open, freeze all UI interaction so
+	// the player can't open a second dialog or close the menu mid-operation.
+	if g.dialogOpen.Load() {
+		return nil
 	}
 
 	g.handleGlobalInput()

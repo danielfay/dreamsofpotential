@@ -13,9 +13,11 @@ func exportFilename() string {
 }
 
 // exportSaveDialog opens a save-file dialog and writes the world JSON to the chosen path.
-// Runs in a goroutine so the game loop is not blocked.
-func exportSaveDialog(w *World) {
+// Sets dialogOpen for the duration so the game ignores input while the dialog is up.
+func exportSaveDialog(g *Game) {
+	g.dialogOpen.Store(true)
 	go func() {
+		defer g.dialogOpen.Store(false)
 		path, err := zenity.SelectFileSave(
 			zenity.Filename(exportFilename()),
 			zenity.FileFilters{{Name: "JSON", Patterns: []string{"*.json"}}},
@@ -23,14 +25,17 @@ func exportSaveDialog(w *World) {
 		if err != nil || path == "" {
 			return
 		}
-		_ = SaveTo(w, path)
+		_ = SaveTo(g.world, path)
 	}()
 }
 
 // importSaveDialog opens a file picker, validates the chosen JSON as a compatible save,
-// and sends the loaded world to g.importCh. Runs in a goroutine.
+// and sends the loaded world to g.importCh.
+// Sets dialogOpen for the duration so the game ignores input while the dialog is up.
 func importSaveDialog(g *Game) {
+	g.dialogOpen.Store(true)
 	go func() {
+		defer g.dialogOpen.Store(false)
 		path, err := zenity.SelectFile(
 			zenity.FileFilters{{Name: "JSON", Patterns: []string{"*.json"}}},
 		)

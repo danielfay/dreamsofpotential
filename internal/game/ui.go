@@ -717,7 +717,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			exportSaveDialog(g.world)
+			exportSaveDialog(g)
 		}),
 	)
 
