@@ -495,12 +495,13 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
 		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
 		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
-		// Screen-anchored like the planet HUD, not scene-anchored; on wide
-		// windows the scene may be pillarboxed, but the HUD should stay in the
-		// actual top-left corner.
-		hudX := float32(4 * scale)
-		drawSysText(screen, woodStr, hudX, float32(10*scale), color.RGBA{R: 140, G: 220, B: 140, A: 230}, face)
-		drawSysText(screen, rateStr, hudX, float32(20*scale), color.RGBA{R: 100, G: 200, B: 100, A: 180}, face)
+		swSize := float32(8 * scale)
+		swX := float32(4 * scale)
+		swY := float32(4 * scale)
+		vector.FillRect(screen, swX, swY, swSize, swSize, color.RGBA{R: 60, G: 155, B: 75, A: 255}, false)
+		textX := swX + swSize + float32(3*scale)
+		drawSysText(screen, woodStr, textX, float32(10*scale), color.RGBA{R: 140, G: 220, B: 140, A: 230}, face)
+		drawSysText(screen, rateStr, textX, float32(20*scale), color.RGBA{R: 100, G: 200, B: 100, A: 180}, face)
 	}
 
 	// Bottom tray for selected planet.
