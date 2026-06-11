@@ -305,12 +305,18 @@ func spawnNode(w *World, f *ResourceField) growthResult {
 	return spawnNodeNear(w, f, intended)
 }
 
-// foundStartingNodes spawns the initial wood trees near the Town Hall when the
-// settlement is founded. Trees fan out from the hall angle using the existing
-// valid-surface search, so none will overlap the hall footprint.
+// foundStartingNodes spawns the initial wood trees when the settlement is
+// founded. Two trees flank the Town Hall; the rest spread around the planet
+// using a golden-angle offset from the opposite side.
 func foundStartingNodes(w *World, f *ResourceField, townHallAngle float64) {
-	for range startingNodes {
+	const flankCount = 2
+	for range flankCount {
 		spawnNodeNear(w, f, townHallAngle)
+	}
+	const phi = 2.399 // golden angle in radians
+	for i := range startingNodes - flankCount {
+		intended := normAngle(townHallAngle + math.Pi + float64(i)*phi)
+		spawnNodeNear(w, f, intended)
 	}
 }
 
