@@ -21,4 +21,8 @@ const (
 	growthFieldPulseTime     = 0.82
 	growthNodeCueDelay       = 0.22
 	growthNodeCueTime        = 0.48
+
+	// reveal animation phases (seconds)
+	revealPhaseASecs   = 1.0   // planet pulse + pull phase before system appears
+	revealWaveSpeedPxS = 200.0 // pixels/second the reveal wave expands
 )

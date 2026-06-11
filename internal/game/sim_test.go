@@ -1538,3 +1538,198 @@ func TestNurtureAttentionInactiveWhenUnavailable(t *testing.T) {
 		t.Error("expected attention inactive: cannot afford nurture")
 	}
 }
+
+// ── System unlock tests ───────────────────────────────────────────────────────
+
+// newMasteredWorld returns a world that satisfies both completion gates:
+// town capacity maxed and wood field fully saturated.
+func newMasteredWorld() *World {
+	w := NewWorld()
+	// Place Town Hall so townFieldFull logic works.
+	f := fieldForKind(w, KindWood)
+	_ = placeBuilding(w, f.CenterAngle)
+	// Max out town capacity.
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	// Saturate the wood field.
+	for fieldCanSpawnNode(w, f) {
+		spawnNode(w, f)
+	}
+	return w
+}
+
+func TestStartingPlanetComplete_RequiresBothGates(t *testing.T) {
+	w := newMasteredWorld()
+
+	// Both gates: should be complete.
+	if !startingPlanetComplete(w) {
+		t.Fatal("expected startingPlanetComplete true when both gates are met")
+	}
+
+	// Only town: reset field saturation by clearing nodes.
+	w2 := newMasteredWorld()
+	w2.Nodes = nil
+	if startingPlanetComplete(w2) {
+		t.Error("expected startingPlanetComplete false when wood field not saturated")
+	}
+
+	// Only field: reset town capacity.
+	w3 := newMasteredWorld()
+	w3.Economy.WorkerCapacity = 0
+	if startingPlanetComplete(w3) {
+		t.Error("expected startingPlanetComplete false when town capacity not maxed")
+	}
+}
+
+func TestTickTriggersUnlockExactlyOnce(t *testing.T) {
+	w := newMasteredWorld()
+	w.ResourceDiscovered = true
+	// Add a worker so EstimateRate can snapshot a non-zero value.
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	addWorker(w)
+	runSim(w, 2) // settle worker into loop
+
+	if w.System.Unlocked {
+		t.Fatal("world should not be unlocked yet before Tick")
+	}
+
+	just := Tick(w, dt)
+	if !just {
+		t.Fatal("Tick should return justUnlocked=true on the first mastered tick")
+	}
+	if !w.System.Unlocked {
+		t.Fatal("System.Unlocked should be true after first Tick on mastered world")
+	}
+	if w.System.View != ViewSystem {
+		t.Fatal("view should switch to ViewSystem on unlock")
+	}
+	if w.System.Selected != 0 {
+		t.Errorf("starting planet should be selected (index 0); got %d", w.System.Selected)
+	}
+
+	// Snapshotted rate must be > 0.
+	if w.System.Planets[0].AbstractRate <= 0 {
+		t.Errorf("snapshotted AbstractRate should be > 0; got %f", w.System.Planets[0].AbstractRate)
+	}
+
+	// Second Tick: already unlocked, should not re-fire.
+	just2 := Tick(w, dt)
+	if just2 {
+		t.Error("Tick should not return justUnlocked=true a second time")
+	}
+	rateAfter := w.System.Planets[0].AbstractRate
+	if rateAfter != w.System.Planets[0].AbstractRate {
+		t.Error("AbstractRate should not change after initial snapshot")
+	}
+}
+
+func TestAbstractIncome_PlanetView(t *testing.T) {
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	Tick(w, dt) // unlock
+	enterPlanetView(w)
+
+	inc := abstractIncome(w)
+	// In planet view: only echoes (indices 1 and 2) should contribute.
+	expected := w.System.Planets[1].AbstractRate + w.System.Planets[2].AbstractRate
+	if math.Abs(inc-expected) > 1e-9 {
+		t.Errorf("abstractIncome in planet view: got %f, want %f (echoes only)", inc, expected)
+	}
+
+	// Starting planet must NOT be included.
+	if inc >= w.System.Planets[0].AbstractRate+expected {
+		t.Error("starting planet must not contribute abstract income in planet view")
+	}
+}
+
+func TestAbstractIncome_SystemView(t *testing.T) {
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	Tick(w, dt) // unlock → ViewSystem
+
+	inc := abstractIncome(w)
+	// In system view: starting + both echoes.
+	expected := w.System.Planets[0].AbstractRate +
+		w.System.Planets[1].AbstractRate +
+		w.System.Planets[2].AbstractRate
+	if math.Abs(inc-expected) > 1e-9 {
+		t.Errorf("abstractIncome in system view: got %f, want %f", inc, expected)
+	}
+}
+
+func TestTickSystemView_FreezesSim(t *testing.T) {
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	Tick(w, dt) // unlock → ViewSystem
+
+	// Record worker positions before ticking in system view.
+	type pos struct{ x, y float64 }
+	before := make([]pos, len(w.Workers))
+	for i, wk := range w.Workers {
+		before[i] = pos{wk.Pos.X, wk.Pos.Y}
+	}
+	simTimeBefore := w.SimTime
+
+	// Several ticks in system view.
+	for range 10 {
+		Tick(w, dt)
+	}
+
+	// Workers must not have moved (sim frozen).
+	for i, wk := range w.Workers {
+		if wk.Pos.X != before[i].x || wk.Pos.Y != before[i].y {
+			t.Errorf("worker %d moved in system view (sim should be frozen)", wk.ID)
+		}
+	}
+	if w.SimTime != simTimeBefore {
+		t.Errorf("SimTime advanced in system view (want frozen at %f, got %f)", simTimeBefore, w.SimTime)
+	}
+
+	// Abstract wood should have accumulated.
+	if w.Economy.Wood <= 0 {
+		t.Error("expected abstract wood to accumulate in system view")
+	}
+}
+
+func TestTickPlanetView_ResumesSimAfterSystemView(t *testing.T) {
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	Tick(w, dt) // unlock → ViewSystem
+
+	simTimeBefore := w.SimTime
+
+	// Switch back to planet view.
+	enterPlanetView(w)
+	Tick(w, dt) // should run Step
+
+	if w.SimTime == simTimeBefore {
+		t.Error("SimTime should advance when returning to planet view via Tick")
+	}
+}
+
+func TestNurtureAttentionInactiveAtFieldSaturation(t *testing.T) {
+	w := NewWorld()
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 1000 // plenty of wood
+	_ = placeBuilding(w, w.Planet.Fields[0].CenterAngle)
+	f := fieldForKind(w, KindWood)
+	// Saturate the field.
+	for fieldCanSpawnNode(w, f) {
+		spawnNode(w, f)
+	}
+	// Ensure fieldCanSpawnNode is false.
+	if fieldCanSpawnNode(w, f) {
+		t.Fatal("setup: field should be saturated")
+	}
+	// nurtureAttentionActive must be false at saturation.
+	if nurtureAttentionActive(w, KindWood) {
+		t.Error("nurtureAttentionActive should be false when field is saturated")
+	}
+	// nurtureField must be a no-op.
+	if nurtureField(w, KindWood) {
+		t.Error("nurtureField should fail when field is saturated")
+	}
+}

@@ -278,3 +278,64 @@ func TestTownGrowthClampedToCapOnPreset(t *testing.T) {
 		t.Errorf("TownGrowth should be clamped to cap 5.0; got %.2f", w.Economy.TownGrowth)
 	}
 }
+
+func TestBuildQAWorld_SystemRevealPretrigger(t *testing.T) {
+	p := QAPreset{
+		Seed:                    11,
+		PlaceTownHall:           true,
+		Workers:                 5,
+		SettleSeconds:           2,
+		FillTownCapacity:        true,
+		NearWoodFieldSaturation: true,
+		Wood:                    qaPtr(50.0),
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	if w.System.Unlocked {
+		t.Error("System should not be unlocked yet (one spawn slot remains)")
+	}
+	f := fieldForKind(w, KindWood)
+	if f == nil {
+		t.Fatal("no wood field found")
+	}
+	if !fieldCanSpawnNode(w, f) {
+		t.Error("field should still have one spawn slot remaining")
+	}
+	if !townFieldFull(w) {
+		t.Error("town should be at max capacity")
+	}
+}
+
+func TestBuildQAWorld_SystemViewPostreveal(t *testing.T) {
+	p := QAPreset{
+		Seed:              11,
+		PlaceTownHall:     true,
+		Workers:           5,
+		SettleSeconds:     2,
+		FillTownCapacity:  true,
+		SaturateWoodField: true,
+		Reveal:            true,
+		Wood:              qaPtr(50.0),
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld: %v", err)
+	}
+	if !w.System.Unlocked {
+		t.Error("System should be unlocked after reveal preset")
+	}
+	if w.System.View != ViewSystem {
+		t.Errorf("System.View = %v, want ViewSystem", w.System.View)
+	}
+	if w.System.Selected != 0 {
+		t.Errorf("System.Selected = %d, want 0 (starting planet)", w.System.Selected)
+	}
+	if len(w.System.Planets) == 0 {
+		t.Fatal("no planets in system")
+	}
+	if w.System.Planets[0].AbstractRate <= 0 {
+		t.Errorf("starting planet AbstractRate = %.4f, want > 0", w.System.Planets[0].AbstractRate)
+	}
+}

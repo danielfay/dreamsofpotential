@@ -31,4 +31,9 @@ const (
 	nurtureCharges   = 5    // level-completing deliveries granted per activation
 	forestHalfArc    = math.Pi
 	startingNodes    = 5
+
+	// system view / abstract production
+	echoRateA      = 0.9 // wood/sec for echo forest planet A
+	echoRateB      = 0.7 // wood/sec for echo forest planet B
+	revealDuration = 3.5 // seconds for the one-time unlock reveal animation
 )

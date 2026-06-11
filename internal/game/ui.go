@@ -104,6 +104,12 @@ func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *place
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.refreshDebug(w, placing, pv)
+	} else if w.System.View == ViewSystem {
+		// In system view the EbitenUI planet HUD is hidden; the system overlay
+		// is drawn manually in drawOverlay.
+		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 	} else {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Show)
@@ -273,6 +279,12 @@ func (h *HUD) refreshNormal(w *World) {
 	if discovered {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.resourceText.Label = fmt.Sprintf("%.0f", w.Economy.Wood)
+		// Disable the Nurture square when the field is saturated (no new tree can spawn).
+		// nurtureField and nurtureAttentionActive already gate on fieldCanSpawnNode,
+		// but we also set the button Disabled so it visually reads as unavailable.
+		f := fieldForKind(w, KindWood)
+		saturated := f != nil && !fieldCanSpawnNode(w, f)
+		h.resourceSquare.GetWidget().Disabled = saturated
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}

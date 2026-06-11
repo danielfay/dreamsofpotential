@@ -32,6 +32,16 @@ type QAPreset struct {
 	TownGrowthCap    *float64 `json:"townGrowthCap"`
 	WorkerCapacity   *int     `json:"workerCapacity"`
 	FillTownCapacity bool     `json:"fillTownCapacity"` // set WorkerCapacity to the geometry max
+
+	// Wood field saturation — applied after settle and field EXP overrides.
+	// NearWoodFieldSaturation fills the field leaving exactly one spawn slot.
+	// SaturateWoodField fills the field until no new tree node can spawn.
+	NearWoodFieldSaturation bool `json:"nearWoodFieldSaturation"`
+	SaturateWoodField        bool `json:"saturateWoodField"`
+
+	// Reveal — calls triggerUnlock after all other overrides.
+	// Requires both mastery gates to be met; errors otherwise.
+	Reveal bool `json:"reveal"`
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -119,7 +129,13 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		w.Planet.Fields[0].NurtureCharges = *p.NurtureCharges
 	}
 
+	// Wood field saturation — fill nodes after settle to preserve exact saturation state.
+	if p.SaturateWoodField || p.NearWoodFieldSaturation {
+		fillWoodFieldNodes(w, p.NearWoodFieldSaturation)
+	}
+
 	// Town Growth overrides — applied after workers so capacity is already known.
+	// Must run before Reveal so townFieldFull() sees the final WorkerCapacity.
 	if p.FillTownCapacity {
 		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
 			w.Economy.WorkerCapacity = max
@@ -139,12 +155,61 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		w.Economy.TownGrowth = g
 	}
 
+	// System reveal — call triggerUnlock if both mastery gates are met.
+	if p.Reveal {
+		if !startingPlanetComplete(w) {
+			return nil, fmt.Errorf("Reveal: world not mastered (town full=%v, field saturated=%v)",
+				townFieldFull(w), func() bool {
+					f := fieldForKind(w, KindWood)
+					return f != nil && !fieldCanSpawnNode(w, f)
+				}())
+		}
+		triggerUnlock(w)
+	}
+
 	// Wood — stamped last so it reflects the intended final balance exactly.
 	if p.Wood != nil {
 		w.Economy.Wood = *p.Wood
 	}
 
 	return w, nil
+}
+
+// fillWoodFieldNodes spawns wood-field nodes until the field is saturated.
+// If leaveSpaceForOne is true, stops while exactly one valid spawn angle remains
+// so one more growth event will trigger saturation (and thus the mastery gate).
+func fillWoodFieldNodes(w *World, leaveSpaceForOne bool) {
+	f := fieldForKind(w, KindWood)
+	if f == nil {
+		return
+	}
+	startID := w.NextNodeID
+	for fieldCanSpawnNode(w, f) {
+		spawnNode(w, f)
+	}
+	if !leaveSpaceForOne {
+		return
+	}
+	// Remove the last added node to re-open exactly one spawn slot.
+	for i := len(w.Nodes) - 1; i >= 0; i-- {
+		n := w.Nodes[i]
+		if n.ID >= startID && n.Kind == KindWood {
+			nid := n.ID
+			for _, wk := range w.Workers {
+				if wk.NodeID == nid {
+					wk.NodeID = -1
+				}
+				if wk.TargetNodeID == nid {
+					wk.TargetNodeID = -1
+				}
+				if wk.PendingNodeID == nid {
+					wk.PendingNodeID = -1
+				}
+			}
+			w.Nodes = append(w.Nodes[:i], w.Nodes[i+1:]...)
+			break
+		}
+	}
 }
 
 // clearFreeNodes removes nodes that are neither owned nor reserved by a worker.

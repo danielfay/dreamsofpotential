@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"os"
 	"sync/atomic"
 
@@ -49,7 +50,18 @@ type Game struct {
 	holdDuration              float64     // total seconds the current hold has been active
 	importCh                  chan *World // receives a validated world from an import goroutine
 	dialogOpen                atomic.Bool // true while a file dialog is open; blocks UI input
+
+	// reveal state (transient — not saved)
+	revealActive  bool
+	revealElapsed float64
+
+	// system-view button rects in native screen space (set during drawOverlay; read by handleInput)
+	sysEnterRect  sysRect // enter-planet tray button
+	sysReturnRect sysRect // return-to-system button in planet view
 }
+
+// sysRect is a simple native-space hit-test rectangle.
+type sysRect struct{ x, y, w, h float32 }
 
 // New constructs and returns a ready-to-run Game.
 // It loads a saved world from disk if one exists, otherwise starts fresh.
@@ -152,53 +164,81 @@ func (g *Game) Update() error {
 		return nil
 	}
 
-	g.ui.Update()
-	g.handleInput()
-
-	if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
-		g.holdAction = holdNone
-		g.holdDuration = 0
+	// Reveal: lock out normal input and tick the animation timer.
+	if g.revealActive {
+		g.revealElapsed += dt
+		g.world.Economy.Wood += abstractIncome(g.world) * dt
+		if g.revealElapsed >= revealDuration {
+			g.revealActive = false
+		}
+		g.hud.Refresh(g.world, false, g.debug, g.debugSection, nil, g.showMenu)
+		return nil
 	}
-	if g.holdAction != holdNone {
-		g.holdDuration += dt
-		g.holdTimer -= dt
-		if g.holdTimer <= 0 {
-			if g.tryHoldAction(g.holdAction) {
-				interval := holdRepeatInterval - g.holdDuration*holdRampRate
-				if interval < holdMinInterval {
-					interval = holdMinInterval
+
+	g.ui.Update()
+
+	if g.world.System.View == ViewSystem {
+		g.handleSystemInput()
+	} else {
+		g.handleInput()
+
+		if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+			g.holdAction = holdNone
+			g.holdDuration = 0
+		}
+		if g.holdAction != holdNone {
+			g.holdDuration += dt
+			g.holdTimer -= dt
+			if g.holdTimer <= 0 {
+				if g.tryHoldAction(g.holdAction) {
+					interval := holdRepeatInterval - g.holdDuration*holdRampRate
+					if interval < holdMinInterval {
+						interval = holdMinInterval
+					}
+					g.holdTimer = interval
+				} else {
+					g.holdAction = holdNone
+					g.holdDuration = 0
 				}
-				g.holdTimer = interval
-			} else {
-				g.holdAction = holdNone
-				g.holdDuration = 0
 			}
 		}
 	}
 
-	Step(g.world, dt)
-	if g.pulseTime > 0 {
-		g.pulseTime -= dt
+	justUnlocked := Tick(g.world, dt)
+	if justUnlocked {
+		g.revealActive = true
+		g.revealElapsed = 0
+		g.placing = false
+		g.freePlacing = false
+		g.holdAction = holdNone
+		g.holdDuration = 0
 	}
-	if g.nurtureConfirmLeft > 0 {
-		g.nurtureConfirmLeft -= dt
-	}
-	if g.nurtureAttentionPulseLeft > 0 {
-		g.nurtureAttentionPulseLeft -= dt
-	}
-	g.nurtureAttentionCooldown -= dt
-	if g.nurtureAttentionCooldown <= 0 {
-		g.nurtureAttentionCooldown = nurtureAttentionInterval
-		if nurtureAttentionActive(g.world, KindWood) {
-			g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+
+	if g.world.System.View == ViewPlanet {
+		if g.pulseTime > 0 {
+			g.pulseTime -= dt
+		}
+		if g.nurtureConfirmLeft > 0 {
+			g.nurtureConfirmLeft -= dt
+		}
+		if g.nurtureAttentionPulseLeft > 0 {
+			g.nurtureAttentionPulseLeft -= dt
+		}
+		g.nurtureAttentionCooldown -= dt
+		if g.nurtureAttentionCooldown <= 0 {
+			g.nurtureAttentionCooldown = nurtureAttentionInterval
+			if nurtureAttentionActive(g.world, KindWood) {
+				g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+			}
+		}
+		if g.rejectTime > 0 {
+			g.rejectTime -= dt
+			if g.rejectTime < 0 {
+				g.rejectTime = 0
+			}
 		}
 	}
-	if g.rejectTime > 0 {
-		g.rejectTime -= dt
-		if g.rejectTime < 0 {
-			g.rejectTime = 0
-		}
-	}
+
 	g.saveTimer -= dt
 	if g.saveTimer <= 0 {
 		_ = Save(g.world)
@@ -235,7 +275,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 
-	DrawWorld(g.scene, g.world, g.preview, g.debug)
+	switch {
+	case g.revealActive:
+		drawReveal(g.scene, g.world, g.revealElapsed)
+	case g.world.System.View == ViewSystem:
+		drawSystemView(g.scene, g.world, g.debug)
+	default:
+		DrawWorld(g.scene, g.world, g.preview, g.debug)
+	}
 
 	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	op := &ebiten.DrawImageOptions{}
@@ -273,6 +320,20 @@ func (g *Game) screenToWorld(sx, sy int) Vec {
 func (g *Game) drawOverlay(screen *ebiten.Image) {
 	if g.showMenu || g.debug {
 		return
+	}
+
+	if g.revealActive {
+		return // reveal has no overlay yet (system HUD fades in after reveal)
+	}
+
+	if g.world.System.View == ViewSystem {
+		g.drawSystemOverlay(screen)
+		return
+	}
+
+	// Planet view: return-to-system button after unlock.
+	if g.world.System.Unlocked {
+		g.drawReturnToSystemButton(screen)
 	}
 
 	g.drawAffordabilityProgress(screen)
@@ -421,4 +482,126 @@ func drawButtonProgress(screen *ebiten.Image, btn *widget.Button, frac float32, 
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return outsideWidth, outsideHeight
+}
+
+// ── System-view overlay (native screen space) ─────────────────────────────────
+
+// drawSystemOverlay draws the system HUD and selected-planet tray.
+func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	toNX := func(vx float64) float32 { return float32(offX + vx*scale) }
+	toNY := func(vy float64) float32 { return float32(offY + vy*scale) }
+	sp := float32(scale)
+
+	// Global wood amount and rate at top-left.
+	if g.world.ResourceDiscovered || g.world.System.Unlocked {
+		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
+		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
+		wx, wy := toNX(6), toNY(6)
+		drawSysText(screen, woodStr, wx, wy, sp, color.RGBA{R: 140, G: 220, B: 140, A: 230}, g.hud.face)
+		drawSysText(screen, rateStr, wx, wy+float32(14*scale), sp, color.RGBA{R: 100, G: 200, B: 100, A: 180}, g.hud.face)
+	}
+
+	// Bottom tray for selected planet.
+	sel := g.world.System.Selected
+	if sel < 0 || sel >= len(g.world.System.Planets) {
+		g.sysEnterRect = sysRect{}
+		return
+	}
+	p := g.world.System.Planets[sel]
+	if p.Kind == PlanetUnknown {
+		g.sysEnterRect = sysRect{}
+		return
+	}
+
+	// Tray background.
+	const trayVH = float64(20)
+	const trayVW = float64(90)
+	trayVX := (float64(virtW) - trayVW) / 2
+	trayVY := float64(virtH) - trayVH - 4
+	tx, ty := toNX(trayVX), toNY(trayVY)
+	tw, th := float32(trayVW*scale), float32(trayVH*scale)
+	vector.FillRect(screen, tx, ty, tw, th, color.RGBA{R: 8, G: 8, B: 18, A: 210}, false)
+	vector.StrokeRect(screen, tx, ty, tw, th, 1, color.RGBA{R: 60, G: 60, B: 90, A: 200}, false)
+
+	// Planet swatch — small colored square.
+	swSize := float32(10 * scale)
+	swX := tx + float32(5*scale)
+	swY := ty + (th-swSize)/2
+	swCol := sysSwatchColor(p)
+	vector.FillRect(screen, swX, swY, swSize, swSize, swCol, false)
+
+	// Rate text.
+	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
+	rateX := swX + swSize + float32(4*scale)
+	rateY := ty + (th-float32(11*scale))/2
+	drawSysText(screen, rateStr, rateX, rateY, sp, color.RGBA{R: 80, G: 210, B: 90, A: 230}, g.hud.face)
+
+	// Enter-planet button: only for the starting planet.
+	g.sysEnterRect = sysRect{}
+	if p.Kind == PlanetStarting {
+		btnSize := float32(14 * scale)
+		btnX := tx + tw - btnSize - float32(5*scale)
+		btnY := ty + (th-btnSize)/2
+		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 30, G: 80, B: 50, A: 240}, false)
+		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 80, G: 200, B: 100, A: 200}, false)
+		// Small planet glyph inside the button.
+		bCx := btnX + btnSize/2
+		bCy := btnY + btnSize/2
+		bR := float32(4 * scale)
+		vector.FillCircle(screen, bCx, bCy, bR, color.RGBA{R: 60, G: 160, B: 80, A: 220}, false)
+		drawSystemOrbitRing(screen, bCx, bCy, bR+float32(2*scale), 1, color.RGBA{R: 200, G: 240, B: 200, A: 160})
+		g.sysEnterRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
+	}
+}
+
+func sysSwatchColor(p SystemPlanet) color.RGBA {
+	switch p.Kind {
+	case PlanetStarting:
+		return color.RGBA{R: 80, G: 200, B: 100, A: 255}
+	case PlanetEcho:
+		if p.RingColorIdx == 1 {
+			return color.RGBA{R: 35, G: 120, B: 55, A: 255}
+		}
+		return color.RGBA{R: 40, G: 140, B: 60, A: 255}
+	default:
+		return color.RGBA{R: 60, G: 60, B: 80, A: 255}
+	}
+}
+
+func drawSysText(screen *ebiten.Image, s string, x, y, scale float32, col color.RGBA, face text.Face) {
+	if face == nil {
+		return
+	}
+	op := &text.DrawOptions{}
+	op.GeoM.Scale(float64(scale/2), float64(scale/2))
+	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.ScaleWithColor(col)
+	text.Draw(screen, s, face, op)
+}
+
+// drawReturnToSystemButton draws and records the top-right return-to-system button.
+func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	sp := float32(scale)
+	btnSize := float32(16 * scale)
+	btnX := float32(offX) + float32(float64(virtW-20)*scale)
+	btnY := float32(offY) + float32(3*scale)
+
+	vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 15, G: 30, B: 40, A: 220}, false)
+	vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 60, G: 100, B: 140, A: 200}, false)
+	// Small planet with outward dots.
+	bCx := btnX + btnSize/2
+	bCy := btnY + btnSize/2
+	bR := float32(4 * sp)
+	vector.FillCircle(screen, bCx, bCy, bR, color.RGBA{R: 60, G: 140, B: 180, A: 220}, false)
+	drawSystemOrbitRing(screen, bCx, bCy, bR+float32(3*sp), 1, color.RGBA{R: 140, G: 200, B: 220, A: 150})
+	// Outward tick marks.
+	for _, a := range []float64{0, math.Pi / 2, math.Pi, 3 * math.Pi / 2} {
+		ox := bCx + (bR+float32(6*sp))*float32(math.Cos(a))
+		oy := bCy + (bR+float32(6*sp))*float32(math.Sin(a))
+		vector.FillRect(screen, ox-sp/2, oy-sp/2, sp, sp, color.RGBA{R: 140, G: 200, B: 220, A: 120}, false)
+	}
+
+	g.sysReturnRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 }

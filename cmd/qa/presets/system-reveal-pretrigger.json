@@ -1,0 +1,11 @@
+{
+  "name": "system-reveal-pretrigger",
+  "description": "Town field full and wood field one tree away from saturation. Expected read: the next growth event (Nurture or field EXP) spawns the last tree, the mastery gate flips, and the one-time reveal triggers immediately.",
+  "seed": 11,
+  "placeTownHall": true,
+  "workers": 5,
+  "settleSeconds": 2,
+  "fillTownCapacity": true,
+  "nearWoodFieldSaturation": true,
+  "wood": 50
+}

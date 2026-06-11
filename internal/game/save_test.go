@@ -249,6 +249,48 @@ func TestSaveNoMarshalCycle(t *testing.T) {
 	}
 }
 
+// TestSaveLoadRoundTripSystem verifies that the System durable state — unlock
+// flag, view mode, selected planet, and abstract rates — survives a save/load
+// cycle unchanged.
+func TestSaveLoadRoundTripSystem(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	w.System.Unlocked = true
+	w.System.View = ViewSystem
+	w.System.Selected = 0
+	if len(w.System.Planets) > 0 {
+		w.System.Planets[0].AbstractRate = 3.14
+	}
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got.System.Unlocked != w.System.Unlocked {
+		t.Errorf("System.Unlocked: got %v, want %v", got.System.Unlocked, w.System.Unlocked)
+	}
+	if got.System.View != w.System.View {
+		t.Errorf("System.View: got %v, want %v", got.System.View, w.System.View)
+	}
+	if got.System.Selected != w.System.Selected {
+		t.Errorf("System.Selected: got %v, want %v", got.System.Selected, w.System.Selected)
+	}
+	if len(got.System.Planets) != len(w.System.Planets) {
+		t.Fatalf("System.Planets len: got %d, want %d", len(got.System.Planets), len(w.System.Planets))
+	}
+	if len(got.System.Planets) > 0 {
+		if got.System.Planets[0].AbstractRate != w.System.Planets[0].AbstractRate {
+			t.Errorf("System.Planets[0].AbstractRate: got %v, want %v",
+				got.System.Planets[0].AbstractRate, w.System.Planets[0].AbstractRate)
+		}
+	}
+}
+
 // TestLoadVersionMismatch verifies that a save with a different version is
 // treated as missing (returns os.ErrNotExist) so the caller starts fresh.
 func TestLoadVersionMismatch(t *testing.T) {
