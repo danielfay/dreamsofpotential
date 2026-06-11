@@ -530,10 +530,10 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	swY := ty + (th-swSize)/2
 	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
 
-	// Rate text — x/y anchored directly to the swatch so they move together at any scale.
-	// Baseline at swY + 80% of swSize centres the cap-height with the swatch square.
+	// Rate text — baseline at 65% of tray height centres the cap-height in the tray,
+	// matching the visual vertical centre of the swatch.
 	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
-	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), swY+swSize*0.8, color.RGBA{R: 80, G: 210, B: 90, A: 230}, face)
+	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), ty+th*0.65, color.RGBA{R: 80, G: 210, B: 90, A: 230}, face)
 
 	// Enter-planet button: only for the starting planet.
 	g.sysEnterRect = sysRect{}
