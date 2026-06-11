@@ -276,8 +276,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
+	bgCol := colBackground
+	if g.world.System.View == ViewSystem || g.revealActive {
+		bgCol = colSysBackground
+	}
+	screen.Fill(bgCol)
+
 	if g.showMenu {
-		screen.Fill(colBackground)
 		g.ui.Draw(screen)
 		return
 	}
