@@ -2,7 +2,6 @@ package game
 
 import (
 	"math"
-	"math/rand"
 	"testing"
 )
 
@@ -191,6 +190,14 @@ func newTestWorld(campDist float64) *World {
 	for range startingNodes {
 		spawnNodeNear(w, f, fieldAngle)
 	}
+	// Freeze sizes and disable growth so analytic-rate tests are deterministic.
+	for _, n := range w.Nodes {
+		n.Size = 1.0
+	}
+	for _, field := range w.Planet.Fields {
+		field.EXP = 0
+		field.Cap = math.MaxFloat64
+	}
 	return w
 }
 
@@ -281,7 +288,6 @@ func TestAnalyticRateMatchesSim(t *testing.T) {
 	const dist = 100.0
 	const simSeconds = 60.0
 
-	rand.Seed(42) //nolint:staticcheck // fixed seed so this test is order-independent
 	w := newTestWorld(dist)
 	addWorker(w)
 	addWorker(w)

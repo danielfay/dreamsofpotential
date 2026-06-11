@@ -12,8 +12,8 @@ const (
 	townGrowthCapGrowth    = 1.35 // cap multiplier per worker arrival
 
 	// Town field geometry — the settlement wedge anchored to the Town Hall angle.
-	townFieldHalfArc     = 0.30 // half angular width of the town wedge (radians)
-	townFieldDepthFrac   = 0.52 // inward depth as a fraction of planet radius
+	townFieldHalfArc     = 0.34 // half angular width of the town wedge (radians)
+	townFieldDepthFrac   = 1.00 // inward depth as a fraction of planet radius (1.0 = center)
 	townFieldRimInset    = 16.0 // px inside the rim where the first slot row sits
 	townFieldSlotSpacing = 10.0 // px between dwelling slots (row + column pitch)
 

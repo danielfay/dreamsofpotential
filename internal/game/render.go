@@ -677,37 +677,6 @@ func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, en
 	vector.FillPath(scene, &path, nil, drawOp)
 }
 
-// drawFilledAnnularSector draws a filled annular wedge (donut slice) between
-// innerR and outerR spanning startAngle..endAngle.
-func drawFilledAnnularSector(scene *ebiten.Image, cx, cy, innerR, outerR float32, startAngle, endAngle float64, col color.RGBA) {
-	if outerR <= 0 || innerR < 0 {
-		return
-	}
-	const steps = 32
-	var path vector.Path
-	// Outer arc: start → end.
-	for i := 0; i <= steps; i++ {
-		t := float64(i) / float64(steps)
-		angle := startAngle + (endAngle-startAngle)*t
-		x := cx + outerR*float32(math.Cos(angle))
-		y := cy + outerR*float32(math.Sin(angle))
-		if i == 0 {
-			path.MoveTo(x, y)
-		} else {
-			path.LineTo(x, y)
-		}
-	}
-	// Inner arc: end → start (closing the ring).
-	for i := steps; i >= 0; i-- {
-		t := float64(i) / float64(steps)
-		angle := startAngle + (endAngle-startAngle)*t
-		path.LineTo(cx+innerR*float32(math.Cos(angle)), cy+innerR*float32(math.Sin(angle)))
-	}
-	path.Close()
-	drawOp := &vector.DrawPathOptions{}
-	drawOp.ColorScale.ScaleWithColor(col)
-	vector.FillPath(scene, &path, nil, drawOp)
-}
 
 // drawTownField renders the settlement wedge inside the planet at the Town Hall
 // angle, with visible dwelling slots for built capacity. No-op until a Town
@@ -720,14 +689,11 @@ func drawTownField(scene *ebiten.Image, w *World, radius float32) {
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	start := th.Angle - townFieldHalfArc
 	end := th.Angle + townFieldHalfArc
-	depth := float32(townFieldDepthFrac * w.Planet.Radius)
-	innerR := radius - depth
 
-	// Warm clay wedge fill.
-	drawFilledAnnularSector(scene, cx, cy, innerR, radius, start, end, colTownFieldBase)
-	// Edge definition.
+	// Warm clay wedge fill — full pizza slice from center to rim.
+	drawFilledSector(scene, cx, cy, radius, start, end, colTownFieldBase)
+	// Outer edge definition.
 	drawFieldSectorBand(scene, cx, cy, radius-0.5, 1.5, start, end, colTownFieldEdge)
-	drawFieldSectorBand(scene, cx, cy, innerR+0.5, 1.0, start, end, colTownFieldEdge)
 
 	// Dwelling slots — only built capacity is visible, so fresh towns start with
 	// one house and fill in one purchase at a time.
