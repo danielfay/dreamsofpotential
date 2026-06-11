@@ -1,5 +1,15 @@
 package game
 
+import "image/color"
+
+// Wood resource colours — source of truth is the planet HUD idle swatch.
+// Use these everywhere a wood swatch or label appears so all UI elements share
+// the same visual identity for the wood resource.
+var (
+	colWoodResource = color.RGBA{R: 40, G: 160, B: 60, A: 255}  // swatch fill — matches planet HUD wood button
+	colWoodLabel    = color.RGBA{R: 140, G: 210, B: 140, A: 230} // text labels for wood amounts and rates
+)
+
 const (
 	// pulseDuration is how long (seconds) the unaffordable-cost flash lasts.
 	pulseDuration    = 0.4

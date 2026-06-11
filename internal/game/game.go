@@ -102,6 +102,13 @@ func woodDigits(x float64) int {
 	return n
 }
 
+func systemRateText(rate float64) string {
+	if math.Abs(rate-math.Round(rate)) < 0.05 {
+		return fmt.Sprintf("%.0f/s", rate)
+	}
+	return fmt.Sprintf("%.1f/s", rate)
+}
+
 // activateHold fires action once immediately and, if it succeeds, starts the
 // hold-to-repeat timer. Called from button PressedHandlers.
 func (g *Game) activateHold(action int) {
@@ -493,15 +500,15 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 
 	// Global wood amount and rate — top-left, drawn on screen at native resolution.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
-		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
-		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
+		hudStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world)))
 		swSize := float32(8 * scale)
 		swX := float32(4 * scale)
 		swY := float32(4 * scale)
-		vector.FillRect(screen, swX, swY, swSize, swSize, color.RGBA{R: 60, G: 155, B: 75, A: 255}, false)
+		vector.FillRect(screen, swX, swY, swSize, swSize, colWoodResource, false)
 		textX := swX + swSize + float32(3*scale)
-		drawSysText(screen, woodStr, textX, float32(10*scale), color.RGBA{R: 140, G: 220, B: 140, A: 230}, face)
-		drawSysText(screen, rateStr, textX, float32(20*scale), color.RGBA{R: 100, G: 200, B: 100, A: 180}, face)
+		_, textH := text.Measure(hudStr, face, 0)
+		textY := swY + swSize - float32(textH)
+		drawSysText(screen, hudStr, textX, textY, colWoodLabel, face)
 	}
 
 	// Bottom tray for selected planet.
@@ -536,7 +543,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
 	_, rateH := text.Measure(rateStr, face, 0)
 	rateY := swY + swSize - float32(rateH)
-	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), rateY, color.RGBA{R: 80, G: 210, B: 90, A: 230}, face)
+	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), rateY, colWoodLabel, face)
 
 	// Enter-planet button: only for the starting planet.
 	g.sysEnterRect = sysRect{}
@@ -557,13 +564,8 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 
 func sysSwatchColor(p SystemPlanet) color.RGBA {
 	switch p.Kind {
-	case PlanetStarting:
-		return color.RGBA{R: 30, G: 105, B: 50, A: 255}
-	case PlanetEcho:
-		if p.RingColorIdx == 1 {
-			return color.RGBA{R: 35, G: 120, B: 55, A: 255}
-		}
-		return color.RGBA{R: 40, G: 140, B: 60, A: 255}
+	case PlanetStarting, PlanetEcho:
+		return colWoodResource
 	default:
 		return color.RGBA{R: 60, G: 60, B: 80, A: 255}
 	}
