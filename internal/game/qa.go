@@ -25,7 +25,7 @@ type QAPreset struct {
 	FieldExpFromCap *float64 `json:"fieldExpFromCap"` // EXP = Cap + delta (use negative to go below cap)
 	FieldExpFrac    *float64 `json:"fieldExpFrac"`    // EXP = frac * Cap
 	FieldExpAbs     *float64 `json:"fieldExpAbs"`     // EXP = abs value
-	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N boosted-delivery charges
+	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N level-completing delivery charges
 	Wood            *float64 `json:"wood"`
 	// Town Growth overrides — applied after workers, before final Wood stamp.
 	TownGrowth       *float64 `json:"townGrowth"`

@@ -31,24 +31,24 @@ type HUD struct {
 	debugSection int
 
 	// debug panel
-	debugPanel      *widget.Container
-	debugTabs       *widget.Container
-	debugCoreBtn    *widget.Button
-	debugPlaceBtn   *widget.Button
-	debugGrowthBtn  *widget.Button
-	woodText        *widget.Text
-	workerText      *widget.Text
-	nodeText        *widget.Text
-	fieldText      *widget.Text
-	previewText    *widget.Text
-	resourceSquare *widget.Button
+	debugPanel       *widget.Container
+	debugTabs        *widget.Container
+	debugCoreBtn     *widget.Button
+	debugPlaceBtn    *widget.Button
+	debugGrowthBtn   *widget.Button
+	woodText         *widget.Text
+	workerText       *widget.Text
+	nodeText         *widget.Text
+	fieldText        *widget.Text
+	previewText      *widget.Text
+	resourceSquare   *widget.Button
 	buildCapacityDbg *widget.Button
 	addWorkerDbg     *widget.Button
-	buildCampDbg    *widget.Button
-	freeCampDbg     *widget.Button
-	upgradeFieldDbg *widget.Button
-	growFullDbg     *widget.Button
-	resetBtn        *widget.Button
+	buildCampDbg     *widget.Button
+	freeCampDbg      *widget.Button
+	upgradeFieldDbg  *widget.Button
+	growFullDbg      *widget.Button
+	resetBtn         *widget.Button
 
 	// normal mode — top bar (resource info, horizontal, full-width)
 	normalTopBar *widget.Container
@@ -63,11 +63,11 @@ type HUD struct {
 	buildTownCapacityBtn *widget.Button // yellow square — hidden until Town Hall exists
 
 	// settings menu overlay (centered; shown when showMenu is true)
-	menuPanel      *widget.Container
-	menuSaveBtn    *widget.Button
-	menuExportBtn  *widget.Button
-	menuImportBtn  *widget.Button
-	menuResetBtn   *widget.Button
+	menuPanel     *widget.Container
+	menuSaveBtn   *widget.Button
+	menuExportBtn *widget.Button
+	menuImportBtn *widget.Button
+	menuResetBtn  *widget.Button
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
@@ -160,10 +160,10 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 		if townFieldFull(w) {
 			fullStr = "  FULL"
 		}
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx charges @ %.1f×  (active: %d)\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx level charges  (active: %d)\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
 			f.EXP, f.Cap, fieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
-			nurtureCost, nurtureCharges, nurtureEXPMultiplier, f.NurtureCharges,
+			nurtureCost, nurtureCharges, f.NurtureCharges,
 			w.Economy.TownGrowth, w.Economy.TownGrowthCap,
 			w.Economy.WorkerCapacity, maxTownSlots(w), w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
 			townCapacityCost(w), fullStr)
@@ -621,10 +621,10 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.buildCampBtn = widget.NewButton(
 		widget.ButtonOpts.Image(actionSquare(
-			color.NRGBA{R: 140, G: 90, B: 50, A: 255},
-			color.NRGBA{R: 170, G: 115, B: 70, A: 255},
-			color.NRGBA{R: 110, G: 70, B: 35, A: 255},
-			color.NRGBA{R: 70, G: 48, B: 30, A: 255},
+			color.NRGBA{R: 100, G: 62, B: 36, A: 255},
+			color.NRGBA{R: 130, G: 82, B: 48, A: 255},
+			color.NRGBA{R: 72, G: 44, B: 26, A: 255},
+			color.NRGBA{R: 48, G: 34, B: 24, A: 255},
 		)),
 		widget.ButtonOpts.WidgetOpts(
 			widget.WidgetOpts.MinSize(btnSz, btnSz),
@@ -649,10 +649,10 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.buildTownCapacityBtn = widget.NewButton(
 		widget.ButtonOpts.Image(actionSquare(
-			color.NRGBA{R: 220, G: 200, B: 60, A: 255},
-			color.NRGBA{R: 255, G: 240, B: 80, A: 255},
-			color.NRGBA{R: 180, G: 160, B: 40, A: 255},
-			color.NRGBA{R: 88, G: 80, B: 34, A: 255},
+			color.NRGBA{R: 205, G: 105, B: 48, A: 255},
+			color.NRGBA{R: 235, G: 132, B: 64, A: 255},
+			color.NRGBA{R: 165, G: 78, B: 36, A: 255},
+			color.NRGBA{R: 82, G: 48, B: 34, A: 255},
 		)),
 		widget.ButtonOpts.WidgetOpts(
 			widget.WidgetOpts.MinSize(btnSz, btnSz),

@@ -160,7 +160,7 @@ func TestFootprintHelpers(t *testing.T) {
 	if got, want := nodeBuildingBlockHalfArc(node, radius), (4*node.Size+2)/radius; math.Abs(got-want) > 1e-9 {
 		t.Fatalf("node building blocker footprint got %.9f, want %.9f", got, want)
 	}
-	if got, want := nodeSoftHalfArc(node, radius), (2*node.Size)/radius; math.Abs(got-want) > 1e-9 {
+	if got, want := nodeSoftHalfArc(node, radius), (2.5*node.Size)/radius; math.Abs(got-want) > 1e-9 {
 		t.Fatalf("node soft footprint got %.9f, want %.9f", got, want)
 	}
 }

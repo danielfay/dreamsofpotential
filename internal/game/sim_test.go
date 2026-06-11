@@ -531,6 +531,52 @@ func TestGrowthCueDelaysFieldAndNodeResponses(t *testing.T) {
 	}
 }
 
+func TestGrowthCueCompletionsQueueInsteadOfRestarting(t *testing.T) {
+	w := NewWorld()
+	field := w.Planet.Fields[0]
+	first := newNode(w, KindWood, field.CenterAngle)
+	second := newNode(w, KindWood, normAngle(field.CenterAngle+0.1))
+	w.Nodes = append(w.Nodes, first, second)
+
+	activateGrowthCue(w, growthResult{
+		Outcome:     growthOutcomeSpawnedNode,
+		Kind:        field.Kind,
+		CenterAngle: field.CenterAngle,
+		HalfArc:     field.HalfArc,
+		NodeID:      first.ID,
+	})
+	activateGrowthCue(w, growthResult{
+		Outcome:     growthOutcomeUpgradedNode,
+		Kind:        field.Kind,
+		CenterAngle: field.CenterAngle,
+		HalfArc:     field.HalfArc,
+		NodeID:      second.ID,
+	})
+
+	if w.growthCue.NodeID != first.ID {
+		t.Fatalf("active cue node ID got %d, want first node %d", w.growthCue.NodeID, first.ID)
+	}
+	if len(w.pendingGrowthCues) != 1 {
+		t.Fatalf("pending cue count got %d, want 1", len(w.pendingGrowthCues))
+	}
+
+	for i := 0; i < 120 && w.growthCue.NodeID == first.ID; i++ {
+		tickGrowthCue(w, dt)
+	}
+
+	if w.growthCue.NodeID != second.ID {
+		t.Fatalf("queued cue node ID got %d, want second node %d", w.growthCue.NodeID, second.ID)
+	}
+	if w.growthCue.GaugeRelease != growthGaugeReleaseTime ||
+		w.growthCue.FieldPulse != growthFieldPulseTime ||
+		w.growthCue.NodeCue != growthNodeCueTime {
+		t.Fatalf("queued cue should start with full timers: %+v", w.growthCue)
+	}
+	if len(w.pendingGrowthCues) != 0 {
+		t.Fatalf("pending cue count got %d, want 0", len(w.pendingGrowthCues))
+	}
+}
+
 func TestSpawnNodeAvoidsBuildingFootprint(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
@@ -586,10 +632,27 @@ func TestSameFieldNodesCanPartiallyOverlapUnderSoftSpacing(t *testing.T) {
 	existing.Size = 1
 	w.Nodes = []*ResourceNode{existing}
 
-	candidate := newNode(w, KindWood, 5/w.Planet.Radius)
+	candidate := newNode(w, KindWood, 6/w.Planet.Radius)
 	candidate.Size = 1
 	if !nodeSpawnAngleValid(w, field, candidate, candidate.Angle) {
 		t.Fatal("candidate outside soft spacing but inside larger visual/blocking width should be valid")
+	}
+}
+
+func TestSameFieldNodesRejectOldDenseSoftSpacing(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := w.Planet.Fields[0]
+
+	existing := newNode(w, KindWood, 0)
+	existing.Size = 1
+	w.Nodes = []*ResourceNode{existing}
+
+	candidate := newNode(w, KindWood, 5/w.Planet.Radius)
+	candidate.Size = 1
+	if nodeSpawnAngleValid(w, field, candidate, candidate.Angle) {
+		t.Fatal("candidate at the old dense spacing should now be rejected")
 	}
 }
 
@@ -1133,21 +1196,25 @@ func TestNurtureActivatesCharges(t *testing.T) {
 	}
 }
 
-func TestNurtureFieldUnaffordable(t *testing.T) {
+func TestNurtureFieldCostGate(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
-	w.Economy.Wood = nurtureCost - 1
+	w.Economy.Wood = 0
 	initialEXP := w.Planet.Fields[0].EXP
 	initialWood := w.Economy.Wood
 
-	if nurtureField(w, KindWood) {
+	if nurtureCost == 0 {
+		if !nurtureField(w, KindWood) {
+			t.Fatal("nurtureField should succeed at zero cost")
+		}
+	} else if nurtureField(w, KindWood) {
 		t.Fatal("nurtureField should fail without enough wood")
 	}
 	if w.Economy.Wood != initialWood {
-		t.Errorf("wood should not change on failed nurture")
+		t.Errorf("wood should not change, got %.2f want %.2f", w.Economy.Wood, initialWood)
 	}
 	if w.Planet.Fields[0].EXP != initialEXP {
-		t.Errorf("field EXP should not change on failed nurture")
+		t.Errorf("field EXP should not change")
 	}
 }
 
@@ -1161,7 +1228,7 @@ func TestNurtureFieldNotDiscovered(t *testing.T) {
 	}
 }
 
-func TestBoostedDeliveryDoubleEXP(t *testing.T) {
+func TestNurtureChargeCompletesFieldLevel(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -1188,19 +1255,29 @@ func TestBoostedDeliveryDoubleEXP(t *testing.T) {
 	w.Workers = []*Worker{wk}
 
 	normalReturned := gross * fieldReturnRatio
-	wantEXP := normalReturned * nurtureEXPMultiplier
+	field := w.Planet.Fields[0]
+	field.EXP = 3
+	initialCap := field.Cap
+	wantEXP := normalReturned
+	wantCap := initialCap * fieldEXPGrowth
 
 	completeUnload(w, wk, node)
 
-	if math.Abs(w.Planet.Fields[0].EXP-wantEXP) > 1e-9 {
-		t.Errorf("boosted field EXP got %.4f, want %.4f (2× normal)", w.Planet.Fields[0].EXP, wantEXP)
+	if len(w.Nodes) != 2 {
+		t.Fatalf("nurture charge should trigger one new node spawn, got %d nodes", len(w.Nodes))
 	}
-	if w.Planet.Fields[0].NurtureCharges != 0 {
-		t.Errorf("charge should be consumed, got %d", w.Planet.Fields[0].NurtureCharges)
+	if math.Abs(field.EXP-wantEXP) > 1e-9 {
+		t.Errorf("field EXP after level charge got %.4f, want normal returned carryover %.4f", field.EXP, wantEXP)
+	}
+	if math.Abs(field.Cap-wantCap) > 1e-9 {
+		t.Errorf("field cap after level charge got %.4f, want %.4f", field.Cap, wantCap)
+	}
+	if field.NurtureCharges != 0 {
+		t.Errorf("charge should be consumed, got %d", field.NurtureCharges)
 	}
 }
 
-func TestBoostedDeliveryBankedWoodUnchanged(t *testing.T) {
+func TestNurtureChargeBankedWoodUnchanged(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -1235,10 +1312,10 @@ func TestBoostedDeliveryBankedWoodUnchanged(t *testing.T) {
 	wk.Carried = gross
 	node.OwnerID = wk.ID
 	completeUnload(w, wk, node)
-	boostedWood := w.Economy.Wood
+	chargedWood := w.Economy.Wood
 
-	if math.Abs(boostedWood-normalWood) > 1e-9 {
-		t.Errorf("banked wood should be the same boosted (%.4f) vs normal (%.4f)", boostedWood, normalWood)
+	if math.Abs(chargedWood-normalWood) > 1e-9 {
+		t.Errorf("banked wood should be the same with Nurture charge (%.4f) vs normal (%.4f)", chargedWood, normalWood)
 	}
 }
 
@@ -1256,7 +1333,7 @@ func TestNurtureChargesCarryOverGrowth(t *testing.T) {
 
 	field := w.Planet.Fields[0]
 	field.NurtureCharges = 3
-	// Set EXP so the next boosted delivery will cross the cap.
+	// Set EXP so the next level charge completes the current field level.
 	field.EXP = field.Cap - 0.01
 
 	gross := baseLoadAmount * node.Size
@@ -1276,7 +1353,7 @@ func TestNurtureChargesCarryOverGrowth(t *testing.T) {
 
 	// Growth cue should fire (cap was crossed).
 	if w.growthCue.Outcome == growthOutcomeNone {
-		t.Fatal("boosted delivery crossing cap should trigger growth cue")
+		t.Fatal("level-completing delivery charge should trigger growth cue")
 	}
 	// Remaining charges (3 - 1 = 2) should survive the growth cycle.
 	if field.NurtureCharges != 2 {
@@ -1306,6 +1383,68 @@ func TestNurtureNonStacking(t *testing.T) {
 	}
 }
 
+func TestNurtureFieldBlockedWhenFieldSaturated(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	w.Planet.Fields = []*ResourceField{field}
+
+	node := newNode(w, KindWood, 0)
+	node.Size = 1
+	w.Nodes = []*ResourceNode{node}
+
+	if nurtureField(w, KindWood) {
+		t.Fatal("nurtureField should fail once field growth would only upgrade nodes")
+	}
+	if field.NurtureCharges != 0 {
+		t.Fatalf("blocked nurture should not arm charges, got %d", field.NurtureCharges)
+	}
+	if w.Economy.Wood != nurtureCost {
+		t.Fatalf("blocked nurture should not spend wood, got %.2f want %.2f", w.Economy.Wood, nurtureCost)
+	}
+}
+
+func TestNurtureChargeClearsWithoutUpgradeWhenFieldSaturated(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.ResourceDiscovered = true
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP, NurtureCharges: 1}
+	w.Planet.Fields = []*ResourceField{field}
+
+	campAngle := 0.0
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}}
+	node := newNode(w, KindWood, campAngle)
+	node.Size = 1
+	w.Nodes = []*ResourceNode{node}
+	wk := &Worker{
+		ID:            0,
+		Carried:       baseLoadAmount * node.Size,
+		NodeID:        node.ID,
+		Angle:         campAngle,
+		Pos:           w.Planet.RimPoint(campAngle),
+		TargetNodeID:  -1,
+		PendingNodeID: -1,
+	}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	completeUnload(w, wk, node)
+
+	if field.NurtureCharges != 0 {
+		t.Fatalf("saturated field should clear remaining Nurture charges, got %d", field.NurtureCharges)
+	}
+	if math.Abs(node.Size-1) > 1e-9 {
+		t.Fatalf("Nurture charge should not upgrade saturated tree, size got %.2f", node.Size)
+	}
+	if math.Abs(field.EXP-baseLoadAmount*fieldReturnRatio) > 1e-9 {
+		t.Fatalf("saturated Nurture should leave only normal returned EXP, got %.2f", field.EXP)
+	}
+}
+
 func TestNurtureAttentionActiveIdleWorkerNoFreeNode(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
@@ -1323,18 +1462,37 @@ func TestNurtureAttentionActiveIdleWorkerNoFreeNode(t *testing.T) {
 	}
 }
 
+func TestNurtureAttentionInactiveWhenFieldSaturated(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.ResourceDiscovered = true
+	w.Economy.Wood = nurtureCost
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	w.Planet.Fields = []*ResourceField{field}
+
+	node := newNode(w, KindWood, 0)
+	node.Size = 1
+	node.OwnerID = 99
+	w.Nodes = []*ResourceNode{node}
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+
+	if nurtureAttentionActive(w, KindWood) {
+		t.Fatal("Nurture attention should be inactive when field can only upgrade nodes")
+	}
+}
+
 func TestNurtureAttentionActiveCapProximity(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
 	w.Economy.Wood = nurtureCost
 
-	// Set EXP so the field is within one boosted average delivery of the cap.
-	// With default node sizes ~1.0: boostedAvg ≈ baseLoadAmount * 1 * fieldReturnRatio * nurtureEXPMultiplier = 2.0
+	// A level-completing charge is always useful once Nurture is affordable and inactive.
 	field := w.Planet.Fields[0]
-	field.EXP = field.Cap - 1.0 // clearly within boosted range
+	field.EXP = 0
 
 	if !nurtureAttentionActive(w, KindWood) {
-		t.Error("expected attention active: within one boosted delivery of cap")
+		t.Error("expected attention active: one Nurture charge would complete the current field level")
 	}
 }
 
@@ -1361,17 +1519,22 @@ func TestNurtureAttentionSuppressedWithCharges(t *testing.T) {
 	}
 }
 
-func TestNurtureAttentionInactiveWhenUnaffordable(t *testing.T) {
+func TestNurtureAttentionInactiveWhenUnavailable(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
-	w.Economy.Wood = nurtureCost - 1
+	w.Economy.Wood = 0
 
 	for _, n := range w.Nodes {
 		n.OwnerID = 99
 	}
 	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
 
-	if nurtureAttentionActive(w, KindWood) {
+	if nurtureCost == 0 {
+		w.ResourceDiscovered = false
+		if nurtureAttentionActive(w, KindWood) {
+			t.Error("expected attention inactive: resource not discovered")
+		}
+	} else if nurtureAttentionActive(w, KindWood) {
 		t.Error("expected attention inactive: cannot afford nurture")
 	}
 }

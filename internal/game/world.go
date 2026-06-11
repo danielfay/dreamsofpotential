@@ -112,7 +112,7 @@ type ResourceField struct {
 	HalfArc        float64
 	EXP            float64
 	Cap            float64
-	NurtureCharges int // boosted-delivery charges remaining (0 = inactive)
+	NurtureCharges int // level-completing delivery charges remaining (0 = inactive)
 }
 
 type growthOutcome int
@@ -174,8 +174,8 @@ func normAngle(a float64) float64 {
 // Economy tracks global resource counts and purchase history.
 type Economy struct {
 	Wood           float64
-	WorkerCapacity int     // total worker slots unlocked (founding slot + paid capacity)
-	CapacityBought int     // paid capacity purchases; drives the cost curve
+	WorkerCapacity int // total worker slots unlocked (founding slot + paid capacity)
+	CapacityBought int // paid capacity purchases; drives the cost curve
 	CampsBought    int
 	TownGrowth     float64 // accumulates gross delivery amount; clamped at TownGrowthCap
 	TownGrowthCap  float64 // spawns a worker when TownGrowth reaches this; grows each arrival
@@ -198,8 +198,9 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 
-	growthCue    growthCueState
-	lastDelivery deliverySplit
+	growthCue         growthCueState
+	pendingGrowthCues []growthCueState
+	lastDelivery      deliverySplit
 }
 
 type deliverySplit struct{ Gross, Banked, Returned float64 }
@@ -243,7 +244,6 @@ func townHall(w *World) *Building {
 	}
 	return nil
 }
-
 
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
@@ -360,6 +360,22 @@ func nodeSpawnAngleValid(w *World, f *ResourceField, candidate *ResourceNode, an
 		}
 	}
 	return true
+}
+
+func fieldCanSpawnNode(w *World, f *ResourceField) bool {
+	if f == nil {
+		return false
+	}
+	candidate := &ResourceNode{Kind: f.Kind, Size: 1}
+	step := 2 / w.Planet.Radius
+	maxSteps := int(math.Ceil((2*f.HalfArc)/step)) + 1
+	for i := 0; i <= maxSteps; i++ {
+		angle := normAngle(f.CenterAngle - f.HalfArc + float64(i)*step)
+		if nodeSpawnAngleValid(w, f, candidate, angle) {
+			return true
+		}
+	}
+	return false
 }
 
 func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *ResourceNode {

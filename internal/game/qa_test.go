@@ -7,7 +7,7 @@ import (
 
 func qaPtr[T any](v T) *T { return &v }
 
-func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
+func TestBuildQAWorld_NearCapLevelCharge(t *testing.T) {
 	discovered := true
 	p := QAPreset{
 		Seed:            11,
@@ -15,7 +15,7 @@ func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 		PlaceTownHall:   true,
 		Workers:         7,
 		SettleSeconds:   1,
-		FieldExpFromCap: qaPtr(-2.0), // within one boosted average delivery of cap
+		FieldExpFromCap: qaPtr(-2.0), // near cap for a level-completing Nurture charge
 		Wood:            qaPtr(100.0),
 	}
 	w, err := BuildQAWorld(p)
@@ -40,7 +40,7 @@ func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 	}
 }
 
-func TestBuildQAWorld_FarCapBoosted(t *testing.T) {
+func TestBuildQAWorld_FarCapLevelCharge(t *testing.T) {
 	discovered := true
 	cycles := 2
 	p := QAPreset{

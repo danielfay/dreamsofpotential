@@ -1,6 +1,6 @@
 {
-  "name": "near-cap-boosted",
-  "description": "Idle workers, no free nodes, next boosted delivery should complete field growth",
+  "name": "near-cap-level-charge",
+  "description": "Idle workers, no free nodes, next Nurture-charged delivery completes field growth",
   "seed": 11,
   "discovered": true,
   "placeTownHall": true,

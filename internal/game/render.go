@@ -51,7 +51,7 @@ var (
 	colNodeReserved  = color.RGBA{R: 32, G: 130, B: 48, A: 255}
 	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
 	colTownHall      = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
-	colBuilding      = color.RGBA{R: 140, G: 90, B: 50, A: 255}
+	colBuilding      = color.RGBA{R: 100, G: 62, B: 36, A: 255}
 	colTownFieldBase = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
 	colTownFieldEdge = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
 	colTownFieldSlot = color.RGBA{R: 200, G: 148, B: 72, A: 220} // built dwelling slot
@@ -676,7 +676,6 @@ func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, en
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.FillPath(scene, &path, nil, drawOp)
 }
-
 
 // drawTownField renders the settlement wedge inside the planet at the Town Hall
 // angle, with visible dwelling slots for built capacity. No-op until a Town
