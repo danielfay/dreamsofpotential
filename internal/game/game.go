@@ -280,7 +280,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawReveal(g.scene, g.world, g.revealElapsed)
 	case g.world.System.View == ViewSystem:
 		drawSystemView(g.scene, g.world, g.debug)
-		g.drawSystemSceneText(g.scene)
 	default:
 		DrawWorld(g.scene, g.world, g.preview, g.debug)
 	}
@@ -492,8 +491,16 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	toNX := func(vx float64) float32 { return float32(offX + vx*scale) }
 	toNY := func(vy float64) float32 { return float32(offY + vy*scale) }
-	sp := float32(scale)
-	_ = sp // shapes only; text is drawn on scene by drawSystemSceneText
+	face := g.hud.sysface
+
+	// Global wood amount and rate — top-left, drawn on screen at native resolution.
+	if g.world.ResourceDiscovered || g.world.System.Unlocked {
+		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
+		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
+		// toNY(10) places the baseline ~10 virtual px from top; cap height ≈ 6 virt px → 4 px visible margin.
+		drawSysText(screen, woodStr, toNX(4), toNY(10), color.RGBA{R: 140, G: 220, B: 140, A: 230}, face)
+		drawSysText(screen, rateStr, toNX(4), toNY(20), color.RGBA{R: 100, G: 200, B: 100, A: 180}, face)
+	}
 
 	// Bottom tray for selected planet.
 	sel := g.world.System.Selected
@@ -521,8 +528,12 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	swSize := float32(10 * scale)
 	swX := tx + float32(5*scale)
 	swY := ty + (th-swSize)/2
-	swCol := sysSwatchColor(p)
-	vector.FillRect(screen, swX, swY, swSize, swSize, swCol, false)
+	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
+
+	// Rate text — drawn after tray background so it sits on top.
+	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
+	// x: right of swatch + 4 virtual px gap; y: baseline ~14 virtual px into the 20-px tray
+	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), toNY(trayVY+14), color.RGBA{R: 80, G: 210, B: 90, A: 230}, face)
 
 	// Enter-planet button: only for the starting planet.
 	g.sysEnterRect = sysRect{}
@@ -532,7 +543,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		btnY := ty + (th-btnSize)/2
 		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 30, G: 80, B: 50, A: 240}, false)
 		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 80, G: 200, B: 100, A: 200}, false)
-		// Small planet glyph inside the button.
 		bCx := btnX + btnSize/2
 		bCy := btnY + btnSize/2
 		bR := float32(4 * scale)
@@ -564,42 +574,6 @@ func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, f
 	op.GeoM.Translate(float64(x), float64(y))
 	op.ColorScale.ScaleWithColor(col)
 	text.Draw(target, s, face, op)
-}
-
-// drawSystemSceneText draws the system overlay text onto the virtual scene canvas so it
-// scales with the window like everything else.  Called before the scene is blitted.
-func (g *Game) drawSystemSceneText(scene *ebiten.Image) {
-	if g.hud == nil {
-		return
-	}
-	face := g.hud.sysface
-	colWood := color.RGBA{R: 140, G: 220, B: 140, A: 230}
-	colRate := color.RGBA{R: 100, G: 200, B: 100, A: 180}
-	colTray := color.RGBA{R: 80, G: 210, B: 90, A: 230}
-
-	// Top-left: wood amount and global abstract rate.
-	if g.world.ResourceDiscovered || g.world.System.Unlocked {
-		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
-		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
-		drawSysText(scene, woodStr, 4, 9, colWood, face)
-		drawSysText(scene, rateStr, 4, 18, colRate, face)
-	}
-
-	// Tray: rate for selected planet.
-	sel := g.world.System.Selected
-	if sel >= 0 && sel < len(g.world.System.Planets) {
-		p := g.world.System.Planets[sel]
-		if p.Kind != PlanetUnknown {
-			const trayVH = 20.0
-			const trayVW = 90.0
-			trayVX := float32((virtW - trayVW) / 2)
-			trayVY := float32(virtH - trayVH - 4)
-			rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
-			// x: after swatch (virtual width 10) + 4px gap, starting 5px from tray left
-			// y: baseline centred in tray (ascender ≈ 6px, so baseline ≈ trayMid + 3)
-			drawSysText(scene, rateStr, trayVX+19, trayVY+trayVH*0.65, colTray, face)
-		}
-	}
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.

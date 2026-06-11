@@ -350,7 +350,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud := &HUD{}
 	hud.face = &text.GoTextFace{Source: src, Size: float64(16*s) * 0.75}
-	hud.sysface = &text.GoTextFace{Source: src, Size: 8.0}
+	hud.sysface = &text.GoTextFace{Source: src, Size: 8.0 * float64(s)}
 	face := &hud.face
 
 	// --- debug panel styling ---
