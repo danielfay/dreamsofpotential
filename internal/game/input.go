@@ -42,15 +42,15 @@ func (g *Game) handleSystemInput() {
 	}
 }
 
-// handlePlanetViewSystemReturn handles wheel-up and the return button
+// handlePlanetViewSystemReturn handles wheel-down and the return button
 // in planet view when the system is already unlocked.
 func (g *Game) handlePlanetViewSystemReturn() {
 	if !g.world.System.Unlocked {
 		return
 	}
-	// Mouse wheel up.
+	// Mouse wheel down (scroll out → system view).
 	_, wy := ebiten.Wheel()
-	if wy > 0 {
+	if wy < 0 {
 		enterSystemView(g.world)
 		g.placing = false
 		g.freePlacing = false
@@ -100,7 +100,7 @@ func (g *Game) handleInput() {
 		return
 	}
 
-	// Post-unlock: wheel-up and return button navigate to system view.
+	// Post-unlock: wheel-down and return button navigate to system view.
 	g.handlePlanetViewSystemReturn()
 
 	if !g.placing {
