@@ -488,18 +488,19 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 // drawSystemOverlay draws the system HUD and selected-planet tray.
 func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
-	scale, offX, offY := viewGeom(g.screenW, g.screenH)
-	toNX := func(vx float64) float32 { return float32(offX + vx*scale) }
-	toNY := func(vy float64) float32 { return float32(offY + vy*scale) }
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
 
 	// Global wood amount and rate — top-left, drawn on screen at native resolution.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
 		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
 		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
-		// toNY(10) places the baseline ~10 virtual px from top; cap height ≈ 6 virt px → 4 px visible margin.
-		drawSysText(screen, woodStr, toNX(4), toNY(10), color.RGBA{R: 140, G: 220, B: 140, A: 230}, face)
-		drawSysText(screen, rateStr, toNX(4), toNY(20), color.RGBA{R: 100, G: 200, B: 100, A: 180}, face)
+		// Screen-anchored like the planet HUD, not scene-anchored; on wide
+		// windows the scene may be pillarboxed, but the HUD should stay in the
+		// actual top-left corner.
+		hudX := float32(4 * scale)
+		drawSysText(screen, woodStr, hudX, float32(10*scale), color.RGBA{R: 140, G: 220, B: 140, A: 230}, face)
+		drawSysText(screen, rateStr, hudX, float32(20*scale), color.RGBA{R: 100, G: 200, B: 100, A: 180}, face)
 	}
 
 	// Bottom tray for selected planet.
@@ -517,10 +518,9 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	// Tray background.
 	const trayVH = float64(20)
 	const trayVW = float64(90)
-	trayVX := (float64(virtW) - trayVW) / 2
-	trayVY := float64(virtH) - trayVH - 4
-	tx, ty := toNX(trayVX), toNY(trayVY)
 	tw, th := float32(trayVW*scale), float32(trayVH*scale)
+	tx := float32(g.screenW)/2 - tw/2
+	ty := float32(g.screenH) - th - float32(4*scale)
 	vector.FillRect(screen, tx, ty, tw, th, color.RGBA{R: 8, G: 8, B: 18, A: 210}, false)
 	vector.StrokeRect(screen, tx, ty, tw, th, 1, color.RGBA{R: 60, G: 60, B: 90, A: 200}, false)
 
@@ -580,11 +580,11 @@ func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, f
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
 func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
-	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	sp := float32(scale)
 	btnSize := float32(16 * scale)
-	btnX := float32(offX) + float32(float64(virtW-20)*scale)
-	btnY := float32(offY) + float32(3*scale)
+	btnX := float32(g.screenW) - btnSize - float32(4*scale)
+	btnY := float32(3 * scale)
 
 	vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 15, G: 30, B: 40, A: 220}, false)
 	vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 60, G: 100, B: 140, A: 200}, false)
