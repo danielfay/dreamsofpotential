@@ -8,6 +8,16 @@ import "image/color"
 var (
 	colWoodResource = color.RGBA{R: 40, G: 160, B: 60, A: 255}  // swatch fill — matches planet HUD wood button
 	colWoodLabel    = color.RGBA{R: 140, G: 210, B: 140, A: 230} // text labels for wood amounts and rates
+
+	// Worker colours.
+	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
+	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty
+	colWorkerLaden  = color.RGBA{R: 255, G: 240, B: 80, A: 255}  // carrying wood (worker yellow)
+
+	// Building / UI button colours.
+	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // town hall — warm terracotta
+	colBuilding     = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // camp — dark brown
+	colTownCapacity = color.RGBA{R: 205, G: 105, B: 48, A: 255} // town capacity button — lighter orange
 )
 
 const (

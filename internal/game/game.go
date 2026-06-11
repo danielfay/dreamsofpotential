@@ -453,7 +453,7 @@ func (g *Game) drawAffordabilityProgress(screen *ebiten.Image) {
 	discovered := g.world.ResourceDiscovered
 	if hasTownHall && discovered {
 		drawButtonProgress(screen, g.hud.buildCampBtn, affordabilityFrac(g.world.Economy.Wood, CampCost(g.world)),
-			color.RGBA{R: 100, G: 62, B: 36, A: 230})
+			color.RGBA{R: 100, G: 62, B: 36, A: 230}) // colBuilding, A:230
 	}
 	if hasTownHall && !townFieldFull(g.world) {
 		drawButtonProgress(screen, g.hud.buildTownCapacityBtn,
