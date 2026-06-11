@@ -167,10 +167,10 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 		if townFieldFull(w) {
 			fullStr = "  FULL"
 		}
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %.0fw → %dx level charges  (active: %d)\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
+		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %d trees/press  cue pending: %v\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
 			f.EXP, f.Cap, fieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
-			nurtureCost, nurtureCharges, f.NurtureCharges,
+			nurtureTreesPerPress, nurtureGrowthCuePending(w),
 			w.Economy.TownGrowth, w.Economy.TownGrowthCap,
 			w.Economy.WorkerCapacity, maxTownSlots(w), w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
 			townCapacityCost(w), fullStr)
@@ -266,10 +266,10 @@ func (h *HUD) refreshNormal(w *World) {
 	campLocked := hasTownHall && !discovered
 	h.buildCampBtn.GetWidget().Disabled = campLocked || (hasTownHall && w.Economy.Wood < CampCost(w))
 
-	// Capacity button: hidden until Town Hall exists; disabled when unaffordable.
-	if hasTownHall {
+	// Capacity button: visible only while Town Hall exists and town is not yet full.
+	if hasTownHall && !townFieldFull(w) {
 		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Show)
-		h.buildTownCapacityBtn.GetWidget().Disabled = w.Economy.Wood < townCapacityCost(w) || townFieldFull(w)
+		h.buildTownCapacityBtn.GetWidget().Disabled = w.Economy.Wood < townCapacityCost(w)
 	} else {
 		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
@@ -280,12 +280,11 @@ func (h *HUD) refreshNormal(w *World) {
 	if discovered {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.resourceText.Label = fmt.Sprintf("%.0f", w.Economy.Wood)
-		// Disable the Nurture square when the field is saturated (no new tree can spawn).
-		// nurtureField and nurtureAttentionActive already gate on fieldCanSpawnNode,
-		// but we also set the button Disabled so it visually reads as unavailable.
+		// Disable the Nurture square when the field is saturated or a growth cue
+		// is playing — the button has nothing to do in either state.
 		f := fieldForKind(w, KindWood)
 		saturated := f != nil && !fieldCanSpawnNode(w, f)
-		h.resourceSquare.GetWidget().Disabled = saturated
+		h.resourceSquare.GetWidget().Disabled = saturated || nurtureGrowthCuePending(w)
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}

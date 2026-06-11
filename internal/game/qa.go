@@ -25,7 +25,6 @@ type QAPreset struct {
 	FieldExpFromCap *float64 `json:"fieldExpFromCap"` // EXP = Cap + delta (use negative to go below cap)
 	FieldExpFrac    *float64 `json:"fieldExpFrac"`    // EXP = frac * Cap
 	FieldExpAbs     *float64 `json:"fieldExpAbs"`     // EXP = abs value
-	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N level-completing delivery charges
 	Wood            *float64 `json:"wood"`
 	// Town Growth overrides — applied after workers, before final Wood stamp.
 	TownGrowth       *float64 `json:"townGrowth"`
@@ -122,11 +121,6 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		case p.FieldExpAbs != nil:
 			f.EXP = math.Max(0, math.Min(f.Cap, *p.FieldExpAbs))
 		}
-	}
-
-	// Nurture charges — set directly on the field after EXP is finalised.
-	if len(w.Planet.Fields) > 0 && p.NurtureCharges != nil {
-		w.Planet.Fields[0].NurtureCharges = *p.NurtureCharges
 	}
 
 	// Wood field saturation — fill nodes after settle to preserve exact saturation state.

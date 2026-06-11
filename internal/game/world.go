@@ -150,7 +150,6 @@ type ResourceField struct {
 	HalfArc        float64
 	EXP            float64
 	Cap            float64
-	NurtureCharges int // level-completing delivery charges remaining (0 = inactive)
 }
 
 type growthOutcome int

@@ -71,16 +71,15 @@ func TestBuildQAWorld_FarCapLevelCharge(t *testing.T) {
 	}
 }
 
-func TestBuildQAWorld_ActiveCharges(t *testing.T) {
+func TestBuildQAWorld_WoodOverride(t *testing.T) {
 	discovered := true
 	p := QAPreset{
-		Seed:           11,
-		Discovered:     &discovered,
-		PlaceTownHall:  true,
-		Workers:        4,
-		SettleSeconds:  1,
-		NurtureCharges: qaPtr(nurtureCharges),
-		Wood:           qaPtr(80.0),
+		Seed:          11,
+		Discovered:    &discovered,
+		PlaceTownHall: true,
+		Workers:       4,
+		SettleSeconds: 1,
+		Wood:          qaPtr(80.0),
 	}
 	w, err := BuildQAWorld(p)
 	if err != nil {
@@ -89,10 +88,6 @@ func TestBuildQAWorld_ActiveCharges(t *testing.T) {
 
 	if w.Version != SaveVersion {
 		t.Errorf("version = %d, want %d", w.Version, SaveVersion)
-	}
-	f := w.Planet.Fields[0]
-	if f.NurtureCharges != nurtureCharges {
-		t.Errorf("NurtureCharges = %d, want %d", f.NurtureCharges, nurtureCharges)
 	}
 	if w.Economy.Wood != 80 {
 		t.Errorf("wood = %.1f, want 80", w.Economy.Wood)

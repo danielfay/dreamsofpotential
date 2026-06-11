@@ -27,8 +27,7 @@ const (
 	fieldBaseEXP     = 10.0 // field EXP needed for the first growth cycle
 	fieldEXPGrowth   = 2.0  // field EXP cap multiplier after each growth cycle
 	fieldReturnRatio = 0.20 // share of gross delivered load that becomes field EXP
-	nurtureCost      = 0.0  // wood spent to activate Nurture; retained as a tuning lever
-	nurtureCharges   = 5    // level-completing deliveries granted per activation
+	nurtureTreesPerPress = 3 // trees spawned directly per Nurture button press
 	forestHalfArc    = math.Pi
 	startingNodes    = 5
 

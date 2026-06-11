@@ -173,14 +173,6 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 	}
 	banked := gross * (1 - fieldReturnRatio)
 	returned := gross * fieldReturnRatio
-	if f := fieldForKind(w, node.Kind); f != nil && f.NurtureCharges > 0 {
-		if fieldCanSpawnNode(w, f) {
-			f.NurtureCharges--
-			returned += fieldEXPToNextLevel(f)
-		} else {
-			f.NurtureCharges = 0
-		}
-	}
 	w.Economy.Wood += banked
 	w.lastDelivery = deliverySplit{Gross: gross, Banked: banked, Returned: returned}
 	if b := nearestCamp(w, node); b != nil {
@@ -459,55 +451,43 @@ func growFirstFieldUntilBlockedForDebug(w *World) bool {
 	return true
 }
 
-// nurtureField spends nurtureCost wood to arm the matching field with
-// nurtureCharges level-completing delivery charges. Returns false if the
-// resource is not yet discovered, the field is missing, charges are already
-// active, the field cannot place more nodes, or the player cannot afford the
-// cost.
+// nurtureGrowthCuePending reports whether a growth cue is currently playing or
+// queued. Nurture is blocked while cues are pending so each press has
+// unambiguous visual feedback before the next can fire.
+func nurtureGrowthCuePending(w *World) bool {
+	return growthCueActive(w.growthCue) || len(w.pendingGrowthCues) > 0
+}
+
+// nurtureField directly spawns up to nurtureTreesPerPress new trees on the
+// matching field. Returns false if the resource is not yet discovered, the
+// field is missing or saturated, or a growth cue is already playing.
 func nurtureField(w *World, kind ResourceKind) bool {
 	f := fieldForKind(w, kind)
-	if !w.ResourceDiscovered || f == nil || f.NurtureCharges > 0 ||
-		!fieldCanSpawnNode(w, f) || w.Economy.Wood < nurtureCost {
+	if !w.ResourceDiscovered || f == nil || !fieldCanSpawnNode(w, f) ||
+		nurtureGrowthCuePending(w) {
 		return false
 	}
-	w.Economy.Wood -= nurtureCost
-	f.NurtureCharges = nurtureCharges
+	for range nurtureTreesPerPress {
+		if !fieldCanSpawnNode(w, f) {
+			break
+		}
+		activateGrowthCue(w, spawnNode(w, f))
+	}
 	return true
 }
 
-// nurtureAttentionActive reports whether the resource square should show its
-// attention pulse. True when Nurture is affordable, no charges are active, and
-// either an idle worker has no free node to claim, or one Nurture charge would
-// complete the current field level.
+// nurtureAttentionActive reports whether the Nurture button should show its
+// attention pulse. Fires once the player has filled the town to max capacity,
+// the planet can still accept more trees, and no growth cue is pending.
 func nurtureAttentionActive(w *World, kind ResourceKind) bool {
-	if !w.ResourceDiscovered || w.Economy.Wood < nurtureCost {
+	if !w.ResourceDiscovered {
 		return false
 	}
 	f := fieldForKind(w, kind)
-	if f == nil || f.NurtureCharges > 0 || !fieldCanSpawnNode(w, f) {
+	if f == nil || !fieldCanSpawnNode(w, f) || nurtureGrowthCuePending(w) {
 		return false
 	}
-	// Condition 1: idle worker with no free (unclaimed, unreserved) node.
-	hasIdle := false
-	for _, wk := range w.Workers {
-		if wk.State == StateIdleWaiting {
-			hasIdle = true
-			break
-		}
-	}
-	if hasIdle {
-		hasFreeNode := false
-		for _, n := range w.Nodes {
-			if n.Kind == kind && n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
-				hasFreeNode = true
-				break
-			}
-		}
-		if !hasFreeNode {
-			return true
-		}
-	}
-	return fieldEXPToNextLevel(f) > 0
+	return townFieldFull(w)
 }
 
 // EstimateRate returns the analytic resource/sec for all active workers.
