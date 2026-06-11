@@ -83,6 +83,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// Resource field interior fill: stable composition, not node-spawn progress.
 	for _, f := range w.Planet.Fields {
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
+		if len(w.Buildings) == 0 {
+			drawPreFoundingPulse(scene, w.Planet, f, r, w.SimTime)
+		}
 		drawResourceFieldPulse(scene, w, f, r-rimWidth, pv != nil)
 	}
 	// Town field: settlement wedge anchored to the Town Hall, drawn over the forest
@@ -563,6 +566,20 @@ func drawResourceFieldPulse(scene *ebiten.Image, w *World, f *ResourceField, rad
 		drawFieldSectorBand(scene, cx, cy, inner, 1, start, end, color.RGBA{R: 95, G: 210, B: 108, A: uint8(float32(ringAlpha) * 0.55)})
 	}
 	drawFieldSectorBand(scene, cx, cy, outer, 2, start, end, color.RGBA{R: 118, G: 235, B: 124, A: ringAlpha})
+}
+
+// drawPreFoundingPulse draws a slow breathing ring on the field rim to signal
+// wood potential before the Town Hall is placed. Fades in/out on a ~3 s cycle.
+func drawPreFoundingPulse(scene *ebiten.Image, planet Planet, f *ResourceField, radius float32, simTime float64) {
+	intensity := float32(0.4 + 0.6*math.Cos(simTime*1.5))
+	alpha := uint8(38 * intensity)
+	if alpha == 0 {
+		return
+	}
+	cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
+	start := f.CenterAngle - f.HalfArc
+	end := f.CenterAngle + f.HalfArc
+	drawFieldSectorBand(scene, cx, cy, radius-1, 3, start, end, color.RGBA{R: 95, G: 210, B: 108, A: alpha})
 }
 
 // drawForestFieldFill layers low-alpha greens so the forest reads as a filled
