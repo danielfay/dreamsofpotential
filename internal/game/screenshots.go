@@ -68,7 +68,7 @@ func freshPlanetScenario() screenshotScenario {
 
 func townHallPreviewScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	angle := normAngle(w.Nodes[0].Angle + buildingHardHalfArc(KindTownHall, w.Planet.Radius) + nodeBuildingBlockHalfArc(w.Nodes[0], w.Planet.Radius) + 0.01)
+	angle := normAngle(w.Planet.Fields[0].CenterAngle + 0.3)
 	pv := buildPreview(w, angle)
 	return screenshotScenario{
 		name:    "02-town-hall-preview",
@@ -79,7 +79,7 @@ func townHallPreviewScenario() screenshotScenario {
 
 func townHallIdleScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.Economy.Wood = 1000
 	for range 7 {
 		mustBuyWorker(w)
@@ -92,7 +92,7 @@ func townHallIdleScenario() screenshotScenario {
 
 func townFieldFreshScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	return screenshotScenario{
 		name:  "04-town-field-fresh",
 		world: w,
@@ -101,7 +101,7 @@ func townFieldFreshScenario() screenshotScenario {
 
 func townFieldFullScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.Economy.WorkerCapacity = maxTownSlots(w)
 	w.Economy.Wood = 200
 	return screenshotScenario{
@@ -112,7 +112,7 @@ func townFieldFullScenario() screenshotScenario {
 
 func workingLoopScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.Economy.Wood = 1000
 	for range 3 {
 		mustBuyWorker(w)
@@ -200,7 +200,7 @@ func debugPlacementDiagnosticsScenario() screenshotScenario {
 
 func affordabilityButtonsScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 12
 	w.Economy.CapacityBought = 3
@@ -215,7 +215,7 @@ func affordabilityButtonsScenario() screenshotScenario {
 
 func wideResourceHUDScenario() screenshotScenario {
 	w := screenshotWorld(11)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 1234
 	w.Economy.WorkerCapacity = 16
@@ -276,8 +276,9 @@ func fieldGrowthUpgradeCueScenario() screenshotScenario {
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 42
 	field := w.Planet.Fields[0]
-	node := w.Nodes[0]
+	node := newNode(w, KindWood, field.CenterAngle)
 	node.Size = 1.45
+	w.Nodes = append(w.Nodes, node)
 	activateGrowthCue(w, growthResult{
 		Outcome:     growthOutcomeUpgradedNode,
 		Kind:        field.Kind,
@@ -303,7 +304,7 @@ func fieldGrowthPlacementCueScenario() screenshotScenario {
 	w := screenshotWorld(11)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = CampCost(w)
-	mustPlaceNearNode(w, w.Nodes[0])
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	field := w.Planet.Fields[0]
 	node := w.Nodes[1]
 	activateGrowthCue(w, growthResult{
@@ -342,25 +343,6 @@ func mustPlace(w *World, angle float64) {
 	}
 }
 
-func mustPlaceNearNode(w *World, node *ResourceNode) {
-	kind := KindTownHall
-	if len(w.Buildings) > 0 {
-		kind = KindLoggingCamp
-	}
-	clearance := buildingHardHalfArc(kind, w.Planet.Radius) + nodeBuildingBlockHalfArc(node, w.Planet.Radius) + 0.01
-	step := 2 / w.Planet.Radius
-	for i := 0; i < 120; i++ {
-		offset := clearance + float64(i)*step
-		for _, sign := range []float64{1, -1} {
-			angle := normAngle(node.Angle + sign*offset)
-			if buildPreview(w, angle).Valid {
-				mustPlace(w, angle)
-				return
-			}
-		}
-	}
-	panic(fmt.Sprintf("screenshot setup failed to find valid placement near node %d", node.ID))
-}
 
 func mustBuyWorker(w *World) {
 	w.Economy.WorkerCapacity++

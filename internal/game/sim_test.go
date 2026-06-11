@@ -178,9 +178,8 @@ func TestNoMultiWorkerBurst(t *testing.T) {
 }
 
 // newTestWorld builds a minimal world with one camp placed campDist arc-units
-// away from the resource field's center angle. campDist values above the field's
-// half-arc width (54 world units for the default wood field) put the camp clearly
-// outside the node cluster, which keeps the near/far comparison tests reliable.
+// away from the resource field's center angle, with starting nodes seeded near
+// the field for worker tests.
 func newTestWorld(campDist float64) *World {
 	w := NewWorld()
 	fieldAngle := w.Planet.Fields[0].CenterAngle
@@ -188,6 +187,10 @@ func newTestWorld(campDist float64) *World {
 	campAngle := normAngle(fieldAngle + dTheta)
 	camp := &Building{Kind: KindTownHall, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}
 	w.Buildings = append(w.Buildings, camp)
+	f := w.Planet.Fields[0]
+	for range startingNodes {
+		spawnNodeNear(w, f, fieldAngle)
+	}
 	return w
 }
 
@@ -488,12 +491,14 @@ func TestFieldGrowthCueRecordsSpawnedNode(t *testing.T) {
 func TestGrowthCueDelaysFieldAndNodeResponses(t *testing.T) {
 	w := NewWorld()
 	field := w.Planet.Fields[0]
+	node := newNode(w, KindWood, field.CenterAngle)
+	w.Nodes = append(w.Nodes, node)
 	activateGrowthCue(w, growthResult{
 		Outcome:     growthOutcomeSpawnedNode,
 		Kind:        field.Kind,
 		CenterAngle: field.CenterAngle,
 		HalfArc:     field.HalfArc,
-		NodeID:      w.Nodes[0].ID,
+		NodeID:      node.ID,
 	})
 
 	tickGrowthCue(w, growthFieldPulseDelay/2)

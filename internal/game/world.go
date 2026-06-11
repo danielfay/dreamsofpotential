@@ -261,10 +261,10 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 	}
 }
 
-// spawnNode places a new node within the field's arc, distributing it among
-// existing nodes using a golden-ratio spacing to avoid clustering. If the field
-// has no valid free surface left, the nearest same-field node grows instead.
-func spawnNode(w *World, f *ResourceField) growthResult {
+// spawnNodeNear places a new node near intended angle within the field's arc,
+// searching outward if that exact angle is blocked. Falls back to upgrading the
+// nearest field node if no free surface is found.
+func spawnNodeNear(w *World, f *ResourceField, intended float64) growthResult {
 	result := growthResult{
 		Outcome:     growthOutcomeNone,
 		Kind:        f.Kind,
@@ -272,15 +272,6 @@ func spawnNode(w *World, f *ResourceField) growthResult {
 		HalfArc:     f.HalfArc,
 		NodeID:      -1,
 	}
-	count := 0
-	for _, n := range w.Nodes {
-		if n.Kind == f.Kind {
-			count++
-		}
-	}
-	const phi = 2.399 // ≈ golden angle in radians
-	frac := math.Mod(float64(count)*phi, math.Pi*2) / (math.Pi * 2)
-	intended := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*frac)
 	candidate := newNode(w, f.Kind, intended)
 	if angle, ok := findValidNodeSpawnAngle(w, f, candidate, intended); ok {
 		candidate.Angle = angle
@@ -296,6 +287,31 @@ func spawnNode(w *World, f *ResourceField) growthResult {
 		result.NodeID = upgraded.ID
 	}
 	return result
+}
+
+// spawnNode places a new node within the field's arc, distributing it among
+// existing nodes using a golden-ratio spacing to avoid clustering. If the field
+// has no valid free surface left, the nearest same-field node grows instead.
+func spawnNode(w *World, f *ResourceField) growthResult {
+	count := 0
+	for _, n := range w.Nodes {
+		if n.Kind == f.Kind {
+			count++
+		}
+	}
+	const phi = 2.399 // ≈ golden angle in radians
+	frac := math.Mod(float64(count)*phi, math.Pi*2) / (math.Pi * 2)
+	intended := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*frac)
+	return spawnNodeNear(w, f, intended)
+}
+
+// foundStartingNodes spawns the initial wood trees near the Town Hall when the
+// settlement is founded. Trees fan out from the hall angle using the existing
+// valid-surface search, so none will overlap the hall footprint.
+func foundStartingNodes(w *World, f *ResourceField, townHallAngle float64) {
+	for range startingNodes {
+		spawnNodeNear(w, f, townHallAngle)
+	}
 }
 
 func findValidNodeSpawnAngle(w *World, f *ResourceField, candidate *ResourceNode, intended float64) (float64, bool) {
@@ -376,7 +392,7 @@ func fieldForKind(w *World, kind ResourceKind) *ResourceField {
 // NewWorld returns a freshly initialised world ready to start the game.
 func NewWorld() *World {
 	center := Vec{X: 160, Y: 120}
-	radius := 90.0
+	radius := 72.0
 	forestAngle := -math.Pi / 2 // top of the rim
 
 	field := &ResourceField{
@@ -386,7 +402,7 @@ func NewWorld() *World {
 		Cap:         fieldBaseEXP,
 	}
 
-	w := &World{
+	return &World{
 		Version: SaveVersion,
 		Planet: Planet{
 			Center:      center,
@@ -396,12 +412,4 @@ func NewWorld() *World {
 		},
 		Economy: Economy{TownGrowthCap: townGrowthBaseCap},
 	}
-
-	// Seed starting nodes at random positions within the field arc.
-	for i := 0; i < startingNodes; i++ {
-		angle := normAngle(field.CenterAngle - field.HalfArc + 2*field.HalfArc*rand.Float64())
-		w.Nodes = append(w.Nodes, newNode(w, KindWood, angle))
-	}
-
-	return w
 }

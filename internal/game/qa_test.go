@@ -26,8 +26,8 @@ func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 	if w.Version != SaveVersion {
 		t.Errorf("version = %d, want %d", w.Version, SaveVersion)
 	}
-	if len(w.Nodes) != startingNodes {
-		t.Errorf("expected %d nodes, got %d", startingNodes, len(w.Nodes))
+	if len(w.Nodes) < startingNodes {
+		t.Errorf("expected at least %d nodes after founding, got %d", startingNodes, len(w.Nodes))
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
@@ -58,8 +58,8 @@ func TestBuildQAWorld_FarCapBoosted(t *testing.T) {
 		t.Fatalf("BuildQAWorld: %v", err)
 	}
 
-	if len(w.Nodes) != startingNodes {
-		t.Errorf("expected %d nodes, got %d", startingNodes, len(w.Nodes))
+	if len(w.Nodes) < startingNodes {
+		t.Errorf("expected at least %d nodes after founding, got %d", startingNodes, len(w.Nodes))
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
@@ -177,6 +177,9 @@ func TestFoundingWorkerOnTownHallPlacement(t *testing.T) {
 	}
 	if len(w.Workers) != 1 {
 		t.Errorf("expected exactly 1 founding worker, got %d", len(w.Workers))
+	}
+	if len(w.Nodes) != startingNodes {
+		t.Errorf("expected %d founded nodes, got %d", startingNodes, len(w.Nodes))
 	}
 }
 

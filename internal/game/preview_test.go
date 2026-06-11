@@ -78,37 +78,16 @@ func TestLocalNodesWraparound(t *testing.T) {
 	}
 }
 
-func TestBuildPreviewFirstCampNeedsFreeNode(t *testing.T) {
+func TestBuildPreviewTownHallValidOnEmptyPlanet(t *testing.T) {
 	w := NewWorld()
-	w.Nodes = nil
-	w.NextNodeID = 0
 
-	// No nodes anywhere.
+	// Town Hall is valid on an empty planet — no nearby trees required.
 	pv := buildPreview(w, 0)
-	if pv.Valid {
-		t.Error("first camp with no nodes should be invalid")
-	}
-
-	// Add a claimed node only.
-	cl := newNode(w, KindWood, 0)
-	cl.OwnerID = 5
-	w.Nodes = []*ResourceNode{cl}
-	pv = buildPreview(w, 0)
-	if pv.Valid {
-		t.Error("first camp with only claimed nodes should be invalid")
-	}
-
-	// Add a free node within preview range but outside the Town Hall footprint.
-	free := newNode(w, KindWood, buildingHardHalfArc(KindTownHall, w.Planet.Radius)+nodeBuildingBlockHalfArc(&ResourceNode{Size: 1}, w.Planet.Radius)+0.01)
-	free.Size = 1
-	free.OwnerID = -1
-	w.Nodes = []*ResourceNode{free}
-	pv = buildPreview(w, 0)
 	if !pv.Valid {
-		t.Error("first camp with a free local node should be valid")
+		t.Error("Town Hall preview on empty planet should be valid")
 	}
 	if pv.Kind != KindTownHall {
-		t.Errorf("first valid preview Kind: got %v, want KindTownHall", pv.Kind)
+		t.Errorf("first preview Kind: got %v, want KindTownHall", pv.Kind)
 	}
 }
 
@@ -130,23 +109,6 @@ func TestBuildPreviewTownHallBlockedByNodeFootprint(t *testing.T) {
 	}
 }
 
-func TestBuildPreviewTownHallNeedsFreeNodeEvenWhenFootprintClear(t *testing.T) {
-	w := NewWorld()
-	w.Nodes = nil
-	w.NextNodeID = 0
-
-	n := newNode(w, KindWood, previewArc+0.2)
-	n.Size = 1
-	w.Nodes = []*ResourceNode{n}
-
-	pv := buildPreview(w, 0)
-	if pv.Valid {
-		t.Error("Town Hall preview should remain invalid without a free local node")
-	}
-	if len(pv.Blocked) != 0 {
-		t.Fatalf("far node should not block Town Hall footprint")
-	}
-}
 
 func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	w := NewWorld()

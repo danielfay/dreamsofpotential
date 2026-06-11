@@ -1,6 +1,6 @@
 {
   "name": "fresh",
-  "description": "Clean reset for natural fresh-play confirmation",
+  "description": "Pre-founding state: empty planet showing wood field potential, no Town Hall or trees yet. Expected read: bare forest biome cue, ready to found.",
   "seed": 11,
   "discovered": false
 }

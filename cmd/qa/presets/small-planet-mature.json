@@ -1,0 +1,11 @@
+{
+  "name": "small-planet-mature",
+  "description": "~10 trees, 12 workers on the smaller tutorial planet. Expected read: productive but cramped first planet near its natural ceiling.",
+  "seed": 11,
+  "placeTownHall": true,
+  "workers": 12,
+  "settleSeconds": 60,
+  "townGrowthCap": 60,
+  "townGrowth": 50,
+  "wood": 40
+}

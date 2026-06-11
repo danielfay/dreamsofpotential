@@ -58,10 +58,11 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			if !placeBuilding(w, *p.TownHallAngle) {
 				return nil, fmt.Errorf("failed to place Town Hall at angle %.3f", *p.TownHallAngle)
 			}
-		} else if len(w.Nodes) > 0 {
-			mustPlaceNearNode(w, w.Nodes[0])
 		} else {
-			return nil, fmt.Errorf("placeTownHall: no nodes to place near and townHallAngle not set")
+			f := fieldForKind(w, KindWood)
+			if f == nil || !placeBuilding(w, f.CenterAngle) {
+				return nil, fmt.Errorf("placeTownHall: could not place Town Hall at wood field center")
+			}
 		}
 	}
 

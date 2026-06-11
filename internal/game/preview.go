@@ -33,11 +33,9 @@ type placementPreview struct {
 	Kind             BuildingKind
 	Angle            float64
 	Pos              Vec
-	Valid            bool
-	Affordable       bool
-	NeedsLocalTree   bool
-	MissingLocalTree bool
-	Free             []previewRoute  // capped free nodes within previewArc
+	Valid      bool
+	Affordable bool
+	Free       []previewRoute  // capped free nodes within previewArc
 	FreeTotal        int             // all free nodes within previewArc
 	Claimed          []*ResourceNode // capped claimed nodes within previewArc
 	ClaimedTotal     int             // all claimed nodes within previewArc
@@ -133,17 +131,13 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 	}
 	blocked := placementBlockedNodes(w, kind, angle)
 	blockedBuildings := placementBlockedBuildings(w, kind, angle)
-	needsLocalTree := !hasTownHall
-	missingLocalTree := needsLocalTree && freeTotal == 0
-	valid := !missingLocalTree && affordable && len(blocked) == 0 && len(blockedBuildings) == 0
+	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0
 	return placementPreview{
 		Kind:             kind,
 		Angle:            angle,
 		Pos:              w.Planet.RimPoint(angle),
 		Valid:            valid,
 		Affordable:       affordable,
-		NeedsLocalTree:   needsLocalTree,
-		MissingLocalTree: missingLocalTree,
 		Free:             free,
 		FreeTotal:        freeTotal,
 		Claimed:          claimed,

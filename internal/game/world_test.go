@@ -176,28 +176,10 @@ func TestAnglesOverlapWraparound(t *testing.T) {
 
 func TestPlaceBuildingFirstIsTownHall(t *testing.T) {
 	w := NewWorld()
-	w.Nodes = nil
-	w.NextNodeID = 0
 
-	// Single node at a known angle.
-	nodeAngle := 0.0
-	n := newNode(w, KindWood, nodeAngle)
-	n.Size = 1
-	w.Nodes = []*ResourceNode{n}
-
-	// Far from the node — should fail (Town Hall needs a local free node).
-	farAngle := normAngle(nodeAngle + math.Pi)
-	if placeBuilding(w, farAngle) {
-		t.Error("first placeBuilding far from all nodes should return false")
-	}
-	if len(w.Buildings) != 0 {
-		t.Error("no building should be added when first placeBuilding fails local check")
-	}
-
-	// Near the node but outside its footprint — should succeed and place a free Town Hall.
-	clearAngle := buildingHardHalfArc(KindTownHall, w.Planet.Radius) + nodeBuildingBlockHalfArc(n, w.Planet.Radius) + 0.01
-	if !placeBuilding(w, clearAngle) {
-		t.Error("first placeBuilding near a node should succeed")
+	// First placement is valid on bare ground — no nearby tree required.
+	if !placeBuilding(w, 0) {
+		t.Error("first placeBuilding on empty planet should succeed")
 	}
 	if len(w.Buildings) != 1 {
 		t.Fatalf("expected 1 building, got %d", len(w.Buildings))
@@ -302,8 +284,8 @@ func TestMaxTownSlotsFromGeometry(t *testing.T) {
 		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	slots := maxTownSlots(w)
-	if slots != 12 {
-		t.Errorf("expected 12 slots at radius 90, got %d", slots)
+	if slots != 7 {
+		t.Errorf("expected 7 slots at radius 72, got %d", slots)
 	}
 	// Smaller planet should yield fewer slots.
 	w2 := NewWorld()
@@ -313,7 +295,7 @@ func TestMaxTownSlotsFromGeometry(t *testing.T) {
 	})
 	slots2 := maxTownSlots(w2)
 	if slots2 >= slots {
-		t.Errorf("smaller planet (radius 50, slots %d) should yield fewer slots than radius 90 (%d)", slots2, slots)
+		t.Errorf("smaller planet (radius 50, slots %d) should yield fewer slots than radius 72 (%d)", slots2, slots)
 	}
 }
 
@@ -396,5 +378,41 @@ func TestDiscoveryFlag(t *testing.T) {
 
 	if !w.ResourceDiscovered {
 		t.Error("ResourceDiscovered should be true after a delivery")
+	}
+}
+
+func TestNewWorldStartsEmpty(t *testing.T) {
+	w := NewWorld()
+	if len(w.Nodes) != 0 {
+		t.Errorf("NewWorld: expected 0 nodes before founding, got %d", len(w.Nodes))
+	}
+	if w.Planet.Radius != 72.0 {
+		t.Errorf("NewWorld: expected radius 72, got %.1f", w.Planet.Radius)
+	}
+}
+
+func TestFoundingSpawnsStartingNodes(t *testing.T) {
+	w := NewWorld()
+	if !placeBuilding(w, 0) {
+		t.Fatal("failed to place Town Hall on empty planet")
+	}
+	if len(w.Nodes) != startingNodes {
+		t.Errorf("after founding: expected %d nodes, got %d", startingNodes, len(w.Nodes))
+	}
+}
+
+func TestFoundingNodesDontOverlapTownHall(t *testing.T) {
+	w := NewWorld()
+	thAngle := 0.0
+	if !placeBuilding(w, thAngle) {
+		t.Fatal("failed to place Town Hall on empty planet")
+	}
+	th := w.Buildings[0]
+	thHalf := buildingHardHalfArc(KindTownHall, w.Planet.Radius)
+	for _, n := range w.Nodes {
+		nodeHalf := nodeBuildingBlockHalfArc(n, w.Planet.Radius)
+		if anglesOverlap(n.Angle, nodeHalf, th.Angle, thHalf) {
+			t.Errorf("founded node at %.3f overlaps Town Hall at %.3f", n.Angle, thAngle)
+		}
 	}
 }

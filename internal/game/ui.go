@@ -208,9 +208,9 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 			afford = "yes"
 		}
 		zeroValid := zeroValidPlacementPositions(w)
-		h.previewText.Label = fmt.Sprintf("preview: %s  afford %s\nnearby: %d free  %d res  %d claimed\nroutes: %d/%d free  %d/%d unavailable\nblocked: %d  zero valid: %t\nmissing local: %t  d: %s",
+		h.previewText.Label = fmt.Sprintf("preview: %s  afford %s\nnearby: %d free  %d res  %d claimed\nroutes: %d/%d free  %d/%d unavailable\nblocked: %d  zero valid: %t  d: %s",
 			validity, afford, pv.FreeTotal, pv.ReservedTotal, pv.ClaimedTotal,
-			len(pv.Free), pv.FreeTotal, len(pv.Reserved)+len(pv.Claimed), pv.ReservedTotal+pv.ClaimedTotal, blocked, zeroValid, pv.MissingLocalTree, distStr)
+			len(pv.Free), pv.FreeTotal, len(pv.Reserved)+len(pv.Claimed), pv.ReservedTotal+pv.ClaimedTotal, blocked, zeroValid, distStr)
 	} else {
 		h.previewText.Label = "preview: —"
 	}
