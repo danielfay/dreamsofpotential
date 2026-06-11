@@ -683,11 +683,11 @@ func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, en
 var (
 	colSysBackground = color.RGBA{R: 4, G: 4, B: 12, A: 255}
 	colSysStar       = color.RGBA{R: 140, G: 140, B: 160, A: 200}
-	colSysStarting   = color.RGBA{R: 80, G: 200, B: 100, A: 255}  // bright green — completed planet
-	colSysStartRim   = color.RGBA{R: 220, G: 210, B: 80, A: 255}  // warm gold rim
-	colSysEchoA      = color.RGBA{R: 40, G: 140, B: 60, A: 255}   // dim green echo A
-	colSysEchoB      = color.RGBA{R: 35, G: 120, B: 55, A: 255}   // dim green echo B (slightly darker)
-	colSysEchoRim    = color.RGBA{R: 100, G: 160, B: 80, A: 200}  // warm awakened rim highlight
+	colSysStarting   = color.RGBA{R: 30, G: 105, B: 50, A: 255}   // deep forest green — awakened planet
+	colSysStartRim   = color.RGBA{R: 100, G: 215, B: 115, A: 255} // bright active green rim
+	colSysEchoA      = color.RGBA{R: 40, G: 140, B: 60, A: 255}   // dim green — dormant echo A
+	colSysEchoB      = color.RGBA{R: 35, G: 120, B: 55, A: 255}   // dim green — dormant echo B
+	colSysEchoRim    = color.RGBA{R: 100, G: 160, B: 80, A: 200}  // muted green rim — dormant
 	colSysUnknown    = color.RGBA{R: 28, G: 28, B: 38, A: 255}    // dark silhouette
 	colSysUnknownRim = color.RGBA{R: 50, G: 50, B: 70, A: 180}    // faint orbit tint
 	colSysOrbit      = color.RGBA{R: 40, G: 40, B: 60, A: 80}     // faint orbit ellipse
@@ -750,9 +750,9 @@ func drawSystemPlanet(scene *ebiten.Image, p SystemPlanet, selected bool, simTim
 		vector.FillCircle(scene, cx, cy, r, body, false)
 		rimCol := scaleColor(colSysStartRim, brightness)
 		drawSystemOrbitRing(scene, cx, cy, r, 2.5, rimCol)
-		// Subtle afterglow on the completed planet.
+		// Subtle afterglow on the awakened planet.
 		glowAlpha := uint8(float32(18) * brightness)
-		vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: 220, G: 200, B: 80, A: glowAlpha}, false)
+		vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: 50, G: 180, B: 70, A: glowAlpha}, false)
 
 	case PlanetEcho:
 		col := colSysEchoA

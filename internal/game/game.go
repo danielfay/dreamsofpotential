@@ -558,7 +558,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 func sysSwatchColor(p SystemPlanet) color.RGBA {
 	switch p.Kind {
 	case PlanetStarting:
-		return color.RGBA{R: 80, G: 200, B: 100, A: 255}
+		return color.RGBA{R: 30, G: 105, B: 50, A: 255}
 	case PlanetEcho:
 		if p.RingColorIdx == 1 {
 			return color.RGBA{R: 35, G: 120, B: 55, A: 255}
