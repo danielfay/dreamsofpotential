@@ -71,14 +71,14 @@ type HUD struct {
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
-// visible HUD area. Called after ui.Update() so Rects are current.
+// visible HUD area. Called after ui.Update() so Rects are current. Does NOT
+// check menuPanel: handleInput already returns early when g.showMenu is true,
+// and checking menuPanel here would block clicks using its stale Rect after the
+// menu is closed (EbitenUI's AnchorLayout preserves the last-visible Rect).
 func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 	inRect := func(c *widget.Container) bool {
 		r := c.GetWidget().Rect
 		return r.Min.X <= sx && sx < r.Max.X && r.Min.Y <= sy && sy < r.Max.Y
-	}
-	if inRect(h.menuPanel) {
-		return true
 	}
 	if debug {
 		return inRect(h.debugPanel)
