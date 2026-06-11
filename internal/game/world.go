@@ -479,9 +479,9 @@ func NewWorld() *World {
 			Planets: []SystemPlanet{
 				// Index 0: starting planet (rate set at unlock; Pos is system-view canvas position)
 				{Kind: PlanetStarting, Pos: Vec{X: 118, Y: 92}, Radius: 18},
-				// Index 1 & 2: echo forest producers — fixed rates, slight visual variation
-				{Kind: PlanetEcho, Pos: Vec{X: 160, Y: 72}, Radius: 12, AbstractRate: echoRateA, RingColorIdx: 0, Seed: 42},
-				{Kind: PlanetEcho, Pos: Vec{X: 148, Y: 128}, Radius: 12, AbstractRate: echoRateB, RingColorIdx: 1, Seed: 43},
+				// Index 1 & 2: echo forest producers — rates snapshotted at unlock, zero until then
+				{Kind: PlanetEcho, Pos: Vec{X: 160, Y: 72}, Radius: 12, RingColorIdx: 0, Seed: 42},
+				{Kind: PlanetEcho, Pos: Vec{X: 148, Y: 128}, Radius: 12, RingColorIdx: 1, Seed: 43},
 				// Index 3: unknown frontier silhouette — non-interactive, no rate
 				{Kind: PlanetUnknown, Pos: Vec{X: 242, Y: 162}, Radius: 10},
 			},

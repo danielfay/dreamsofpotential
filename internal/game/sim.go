@@ -798,9 +798,20 @@ func abstractIncome(w *World) float64 {
 
 // triggerUnlock snapshots the starting planet's analytic rate once, marks the
 // system as unlocked, switches to system view, and selects the starting planet.
+// Echo planet rates are also snapshotted as fractions of the starting rate with
+// slight per-planet variance so they feel related but distinct.
 // Must only be called when startingPlanetComplete is true.
 func triggerUnlock(w *World) {
-	w.System.Planets[0].AbstractRate = EstimateRate(w)
+	base := EstimateRate(w)
+	w.System.Planets[0].AbstractRate = base
+	// Echoes are dormant — produce at a fraction of the completed planet's rate.
+	// The two seeds give stable but different offsets: +5% and -5%.
+	if len(w.System.Planets) > 1 {
+		w.System.Planets[1].AbstractRate = base * echoRateFracA
+	}
+	if len(w.System.Planets) > 2 {
+		w.System.Planets[2].AbstractRate = base * echoRateFracB
+	}
 	w.System.Unlocked = true
 	w.System.View = ViewSystem
 	w.System.Selected = 0
