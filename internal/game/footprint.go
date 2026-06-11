@@ -14,7 +14,7 @@ func nodeBuildingBlockHalfArc(node *ResourceNode, radius float64) float64 {
 }
 
 func nodeSoftHalfArc(node *ResourceNode, radius float64) float64 {
-	return (2 * node.Size) / radius
+	return (2.5 * node.Size) / radius
 }
 
 func anglesOverlap(a, halfA, b, halfB float64) bool {

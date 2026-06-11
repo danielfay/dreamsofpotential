@@ -7,7 +7,7 @@ import (
 
 func qaPtr[T any](v T) *T { return &v }
 
-func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
+func TestBuildQAWorld_NearCapLevelCharge(t *testing.T) {
 	discovered := true
 	p := QAPreset{
 		Seed:            11,
@@ -15,7 +15,7 @@ func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 		PlaceTownHall:   true,
 		Workers:         7,
 		SettleSeconds:   1,
-		FieldExpFromCap: qaPtr(-2.0), // within one boosted average delivery of cap
+		FieldExpFromCap: qaPtr(-2.0), // near cap for a level-completing Nurture charge
 		Wood:            qaPtr(100.0),
 	}
 	w, err := BuildQAWorld(p)
@@ -26,8 +26,8 @@ func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 	if w.Version != SaveVersion {
 		t.Errorf("version = %d, want %d", w.Version, SaveVersion)
 	}
-	if len(w.Nodes) != startingNodes {
-		t.Errorf("expected %d nodes, got %d", startingNodes, len(w.Nodes))
+	if len(w.Nodes) < startingNodes {
+		t.Errorf("expected at least %d nodes after founding, got %d", startingNodes, len(w.Nodes))
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
@@ -40,7 +40,7 @@ func TestBuildQAWorld_NearCapBoosted(t *testing.T) {
 	}
 }
 
-func TestBuildQAWorld_FarCapBoosted(t *testing.T) {
+func TestBuildQAWorld_FarCapLevelCharge(t *testing.T) {
 	discovered := true
 	cycles := 2
 	p := QAPreset{
@@ -58,8 +58,8 @@ func TestBuildQAWorld_FarCapBoosted(t *testing.T) {
 		t.Fatalf("BuildQAWorld: %v", err)
 	}
 
-	if len(w.Nodes) != startingNodes {
-		t.Errorf("expected %d nodes, got %d", startingNodes, len(w.Nodes))
+	if len(w.Nodes) < startingNodes {
+		t.Errorf("expected at least %d nodes after founding, got %d", startingNodes, len(w.Nodes))
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
@@ -177,6 +177,9 @@ func TestFoundingWorkerOnTownHallPlacement(t *testing.T) {
 	}
 	if len(w.Workers) != 1 {
 		t.Errorf("expected exactly 1 founding worker, got %d", len(w.Workers))
+	}
+	if len(w.Nodes) != startingNodes {
+		t.Errorf("expected %d founded nodes, got %d", startingNodes, len(w.Nodes))
 	}
 }
 

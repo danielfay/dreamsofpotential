@@ -25,7 +25,7 @@ type QAPreset struct {
 	FieldExpFromCap *float64 `json:"fieldExpFromCap"` // EXP = Cap + delta (use negative to go below cap)
 	FieldExpFrac    *float64 `json:"fieldExpFrac"`    // EXP = frac * Cap
 	FieldExpAbs     *float64 `json:"fieldExpAbs"`     // EXP = abs value
-	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N boosted-delivery charges
+	NurtureCharges  *int     `json:"nurtureCharges"`  // pre-arm the field with N level-completing delivery charges
 	Wood            *float64 `json:"wood"`
 	// Town Growth overrides — applied after workers, before final Wood stamp.
 	TownGrowth       *float64 `json:"townGrowth"`
@@ -58,10 +58,11 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			if !placeBuilding(w, *p.TownHallAngle) {
 				return nil, fmt.Errorf("failed to place Town Hall at angle %.3f", *p.TownHallAngle)
 			}
-		} else if len(w.Nodes) > 0 {
-			mustPlaceNearNode(w, w.Nodes[0])
 		} else {
-			return nil, fmt.Errorf("placeTownHall: no nodes to place near and townHallAngle not set")
+			f := fieldForKind(w, KindWood)
+			if f == nil || !placeBuilding(w, f.CenterAngle) {
+				return nil, fmt.Errorf("placeTownHall: could not place Town Hall at wood field center")
+			}
 		}
 	}
 

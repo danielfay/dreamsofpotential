@@ -1,6 +1,6 @@
 {
-  "name": "far-cap-boosted",
-  "description": "Active workers, high-cap field far from completion, boosted deliveries show visible gauge progress",
+  "name": "far-cap-level-charge",
+  "description": "Active workers, high-cap field far from completion, Nurture-charged delivery completes field growth",
   "seed": 11,
   "discovered": true,
   "placeTownHall": true,

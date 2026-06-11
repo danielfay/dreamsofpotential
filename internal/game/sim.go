@@ -174,8 +174,12 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 	banked := gross * (1 - fieldReturnRatio)
 	returned := gross * fieldReturnRatio
 	if f := fieldForKind(w, node.Kind); f != nil && f.NurtureCharges > 0 {
-		f.NurtureCharges--
-		returned *= nurtureEXPMultiplier
+		if fieldCanSpawnNode(w, f) {
+			f.NurtureCharges--
+			returned += fieldEXPToNextLevel(f)
+		} else {
+			f.NurtureCharges = 0
+		}
 	}
 	w.Economy.Wood += banked
 	w.lastDelivery = deliverySplit{Gross: gross, Banked: banked, Returned: returned}
@@ -203,6 +207,17 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 		return
 	}
 	startReturnHome(w, wk)
+}
+
+func fieldEXPToNextLevel(f *ResourceField) float64 {
+	if f == nil || f.Cap <= 0 {
+		return 0
+	}
+	needed := f.Cap - f.EXP
+	if needed <= 0 {
+		return f.Cap
+	}
+	return needed
 }
 
 func startReturnHome(w *World, wk *Worker) {
@@ -394,7 +409,7 @@ func activateGrowthCue(w *World, result growthResult) {
 	if result.Outcome == growthOutcomeNone {
 		return
 	}
-	w.growthCue = growthCueState{
+	cue := growthCueState{
 		Outcome:        result.Outcome,
 		Kind:           result.Kind,
 		CenterAngle:    result.CenterAngle,
@@ -407,6 +422,11 @@ func activateGrowthCue(w *World, result growthResult) {
 		NodeDelay:      growthNodeCueDelay,
 		NodeCue:        growthNodeCueTime,
 	}
+	if growthCueActive(w.growthCue) {
+		w.pendingGrowthCues = append(w.pendingGrowthCues, cue)
+		return
+	}
+	w.growthCue = cue
 }
 
 func upgradeFirstFieldForDebug(w *World) bool {
@@ -440,13 +460,14 @@ func growFirstFieldUntilBlockedForDebug(w *World) bool {
 }
 
 // nurtureField spends nurtureCost wood to arm the matching field with
-// nurtureCharges boosted-delivery charges. Returns false if the resource is
-// not yet discovered, the field is missing, charges are already active, or
-// the player cannot afford the cost.
+// nurtureCharges level-completing delivery charges. Returns false if the
+// resource is not yet discovered, the field is missing, charges are already
+// active, the field cannot place more nodes, or the player cannot afford the
+// cost.
 func nurtureField(w *World, kind ResourceKind) bool {
 	f := fieldForKind(w, kind)
 	if !w.ResourceDiscovered || f == nil || f.NurtureCharges > 0 ||
-		w.Economy.Wood < nurtureCost {
+		!fieldCanSpawnNode(w, f) || w.Economy.Wood < nurtureCost {
 		return false
 	}
 	w.Economy.Wood -= nurtureCost
@@ -456,14 +477,14 @@ func nurtureField(w *World, kind ResourceKind) bool {
 
 // nurtureAttentionActive reports whether the resource square should show its
 // attention pulse. True when Nurture is affordable, no charges are active, and
-// either an idle worker has no free node to claim, or the field is within one
-// boosted average delivery of the cap.
+// either an idle worker has no free node to claim, or one Nurture charge would
+// complete the current field level.
 func nurtureAttentionActive(w *World, kind ResourceKind) bool {
 	if !w.ResourceDiscovered || w.Economy.Wood < nurtureCost {
 		return false
 	}
 	f := fieldForKind(w, kind)
-	if f == nil || f.NurtureCharges > 0 {
+	if f == nil || f.NurtureCharges > 0 || !fieldCanSpawnNode(w, f) {
 		return false
 	}
 	// Condition 1: idle worker with no free (unclaimed, unreserved) node.
@@ -486,21 +507,7 @@ func nurtureAttentionActive(w *World, kind ResourceKind) bool {
 			return true
 		}
 	}
-	// Condition 2: within one boosted average delivery of the cap.
-	var sizeSum float64
-	var nodeCount int
-	for _, n := range w.Nodes {
-		if n.Kind == kind {
-			sizeSum += n.Size
-			nodeCount++
-		}
-	}
-	avgSize := 1.0
-	if nodeCount > 0 {
-		avgSize = sizeSum / float64(nodeCount)
-	}
-	boostedAvg := baseLoadAmount * avgSize * fieldReturnRatio * nurtureEXPMultiplier
-	return f.EXP+boostedAvg >= f.Cap
+	return fieldEXPToNextLevel(f) > 0
 }
 
 // EstimateRate returns the analytic resource/sec for all active workers.
@@ -680,6 +687,9 @@ func tickPulses(w *World, dt float64) {
 }
 
 func tickGrowthCue(w *World, dt float64) {
+	if !growthCueActive(w.growthCue) {
+		startNextGrowthCue(w)
+	}
 	tickTimer(&w.growthCue.GaugeRelease, dt)
 	tickTimer(&w.growthCue.GaugeAfterglow, dt)
 	if w.growthCue.FieldDelay > 0 {
@@ -692,14 +702,32 @@ func tickGrowthCue(w *World, dt float64) {
 	} else {
 		tickTimer(&w.growthCue.NodeCue, dt)
 	}
-	if w.growthCue.GaugeRelease == 0 &&
-		w.growthCue.GaugeAfterglow == 0 &&
-		w.growthCue.FieldDelay == 0 &&
-		w.growthCue.FieldPulse == 0 &&
-		w.growthCue.NodeDelay == 0 &&
-		w.growthCue.NodeCue == 0 {
+	if growthCueTimersDone(w.growthCue) {
 		w.growthCue = growthCueState{NodeID: -1}
+		startNextGrowthCue(w)
 	}
+}
+
+func growthCueActive(c growthCueState) bool {
+	return c.Outcome != growthOutcomeNone || !growthCueTimersDone(c)
+}
+
+func growthCueTimersDone(c growthCueState) bool {
+	return c.GaugeRelease == 0 &&
+		c.GaugeAfterglow == 0 &&
+		c.FieldDelay == 0 &&
+		c.FieldPulse == 0 &&
+		c.NodeDelay == 0 &&
+		c.NodeCue == 0
+}
+
+func startNextGrowthCue(w *World) {
+	if len(w.pendingGrowthCues) == 0 {
+		return
+	}
+	w.growthCue = w.pendingGrowthCues[0]
+	copy(w.pendingGrowthCues, w.pendingGrowthCues[1:])
+	w.pendingGrowthCues = w.pendingGrowthCues[:len(w.pendingGrowthCues)-1]
 }
 
 func tickPulse(p *PulseState, dt float64) {

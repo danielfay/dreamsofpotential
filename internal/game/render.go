@@ -51,7 +51,7 @@ var (
 	colNodeReserved  = color.RGBA{R: 32, G: 130, B: 48, A: 255}
 	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
 	colTownHall      = color.RGBA{R: 215, G: 120, B: 45, A: 255} // warm terracotta
-	colBuilding      = color.RGBA{R: 140, G: 90, B: 50, A: 255}
+	colBuilding      = color.RGBA{R: 100, G: 62, B: 36, A: 255}
 	colTownFieldBase = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
 	colTownFieldEdge = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
 	colTownFieldSlot = color.RGBA{R: 200, G: 148, B: 72, A: 220} // built dwelling slot
@@ -83,6 +83,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// Resource field interior fill: stable composition, not node-spawn progress.
 	for _, f := range w.Planet.Fields {
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
+		if len(w.Buildings) == 0 {
+			drawPreFoundingPulse(scene, w.Planet, f, r, w.SimTime)
+		}
 		drawResourceFieldPulse(scene, w, f, r-rimWidth, pv != nil)
 	}
 	// Town field: settlement wedge anchored to the Town Hall, drawn over the forest
@@ -565,6 +568,20 @@ func drawResourceFieldPulse(scene *ebiten.Image, w *World, f *ResourceField, rad
 	drawFieldSectorBand(scene, cx, cy, outer, 2, start, end, color.RGBA{R: 118, G: 235, B: 124, A: ringAlpha})
 }
 
+// drawPreFoundingPulse draws a slow breathing ring on the field rim to signal
+// wood potential before the Town Hall is placed. Fades in/out on a ~3 s cycle.
+func drawPreFoundingPulse(scene *ebiten.Image, planet Planet, f *ResourceField, radius float32, simTime float64) {
+	intensity := float32(0.4 + 0.6*math.Cos(simTime*1.5))
+	alpha := uint8(38 * intensity)
+	if alpha == 0 {
+		return
+	}
+	cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
+	start := f.CenterAngle - f.HalfArc
+	end := f.CenterAngle + f.HalfArc
+	drawFieldSectorBand(scene, cx, cy, radius-1, 3, start, end, color.RGBA{R: 95, G: 210, B: 108, A: alpha})
+}
+
 // drawForestFieldFill layers low-alpha greens so the forest reads as a filled
 // biome with subtle canopy texture instead of a flat progress disk.
 func drawForestFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
@@ -660,38 +677,6 @@ func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, en
 	vector.FillPath(scene, &path, nil, drawOp)
 }
 
-// drawFilledAnnularSector draws a filled annular wedge (donut slice) between
-// innerR and outerR spanning startAngle..endAngle.
-func drawFilledAnnularSector(scene *ebiten.Image, cx, cy, innerR, outerR float32, startAngle, endAngle float64, col color.RGBA) {
-	if outerR <= 0 || innerR < 0 {
-		return
-	}
-	const steps = 32
-	var path vector.Path
-	// Outer arc: start → end.
-	for i := 0; i <= steps; i++ {
-		t := float64(i) / float64(steps)
-		angle := startAngle + (endAngle-startAngle)*t
-		x := cx + outerR*float32(math.Cos(angle))
-		y := cy + outerR*float32(math.Sin(angle))
-		if i == 0 {
-			path.MoveTo(x, y)
-		} else {
-			path.LineTo(x, y)
-		}
-	}
-	// Inner arc: end → start (closing the ring).
-	for i := steps; i >= 0; i-- {
-		t := float64(i) / float64(steps)
-		angle := startAngle + (endAngle-startAngle)*t
-		path.LineTo(cx+innerR*float32(math.Cos(angle)), cy+innerR*float32(math.Sin(angle)))
-	}
-	path.Close()
-	drawOp := &vector.DrawPathOptions{}
-	drawOp.ColorScale.ScaleWithColor(col)
-	vector.FillPath(scene, &path, nil, drawOp)
-}
-
 // drawTownField renders the settlement wedge inside the planet at the Town Hall
 // angle, with visible dwelling slots for built capacity. No-op until a Town
 // Hall exists.
@@ -703,14 +688,11 @@ func drawTownField(scene *ebiten.Image, w *World, radius float32) {
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	start := th.Angle - townFieldHalfArc
 	end := th.Angle + townFieldHalfArc
-	depth := float32(townFieldDepthFrac * w.Planet.Radius)
-	innerR := radius - depth
 
-	// Warm clay wedge fill.
-	drawFilledAnnularSector(scene, cx, cy, innerR, radius, start, end, colTownFieldBase)
-	// Edge definition.
+	// Warm clay wedge fill — full pizza slice from center to rim.
+	drawFilledSector(scene, cx, cy, radius, start, end, colTownFieldBase)
+	// Outer edge definition.
 	drawFieldSectorBand(scene, cx, cy, radius-0.5, 1.5, start, end, colTownFieldEdge)
-	drawFieldSectorBand(scene, cx, cy, innerR+0.5, 1.0, start, end, colTownFieldEdge)
 
 	// Dwelling slots — only built capacity is visible, so fresh towns start with
 	// one house and fill in one purchase at a time.

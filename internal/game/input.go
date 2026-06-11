@@ -49,10 +49,10 @@ func (g *Game) handleInput() {
 	}
 
 	// Confirm placement on left-click outside the HUD.
-	// Any direction snaps to the rim. Town Hall requires a local free node; if
-	// invalid we stay in placement mode so the player can retry at a better angle.
-	// After a Town Hall is placed, the Camp tool is sticky — placement mode stays
-	// on so the player can keep placing camps until they cancel.
+	// Any direction snaps to the rim. If invalid we stay in placement mode so the
+	// player can retry at a better angle. After a Town Hall is placed, the Camp
+	// tool is sticky — placement mode stays on so the player can keep placing
+	// camps until they cancel.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
 		if g.hud.pointInHUD(mx, my, g.debug) {
@@ -106,6 +106,10 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		w.Economy.WorkerCapacity = 1
 		w.Economy.TownGrowthCap = townGrowthBaseCap
 		spawnWorkerAtTownHall(w)
+		// Awaken the wood field: spawn starting trees near the founded hall.
+		if f := fieldForKind(w, KindWood); f != nil {
+			foundStartingNodes(w, f, angle)
+		}
 		return true
 	}
 	// Paid logging camp.

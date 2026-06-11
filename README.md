@@ -33,8 +33,8 @@ Available presets:
 
 - `fresh` — clean reset for natural fresh-play confirmation
 - `poor-coverage` — active workers on long routes, free nodes exist, camp or Nurture affordable
-- `near-cap-boosted` — idle workers, no free nodes, field gauge one Nurture from completing
-- `far-cap-boosted` — idle workers, no free nodes, field gauge far from completing
+- `near-cap-level-charge` — idle workers, no free nodes, field gauge one Nurture from completing
+- `far-cap-level-charge` — active workers, high-cap field far from completion, Nurture charge completes growth
 - `active-charges` — Nurture charges active
 - `town-growth-arrival` — Town Growth one delivery from spawning a new worker
 - `town-growth-cramped` — 10 workers, first planet feeling close to needing a new objective
