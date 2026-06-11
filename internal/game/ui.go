@@ -27,7 +27,8 @@ const (
 //
 // Debug mode (F3) replaces both with a single verbose debugPanel.
 type HUD struct {
-	face         text.Face
+	face    text.Face
+	sysface text.Face // fixed 8 px face for system overlay; drawn on scene so it scales naturally
 	debugSection int
 
 	// debug panel
@@ -349,6 +350,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud := &HUD{}
 	hud.face = &text.GoTextFace{Source: src, Size: float64(16*s) * 0.75}
+	hud.sysface = &text.GoTextFace{Source: src, Size: 8.0}
 	face := &hud.face
 
 	// --- debug panel styling ---

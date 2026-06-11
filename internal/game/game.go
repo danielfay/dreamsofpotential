@@ -280,6 +280,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawReveal(g.scene, g.world, g.revealElapsed)
 	case g.world.System.View == ViewSystem:
 		drawSystemView(g.scene, g.world, g.debug)
+		g.drawSystemSceneText(g.scene)
 	default:
 		DrawWorld(g.scene, g.world, g.preview, g.debug)
 	}
@@ -492,15 +493,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	toNX := func(vx float64) float32 { return float32(offX + vx*scale) }
 	toNY := func(vy float64) float32 { return float32(offY + vy*scale) }
 	sp := float32(scale)
-
-	// Global wood amount and rate at top-left.
-	if g.world.ResourceDiscovered || g.world.System.Unlocked {
-		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
-		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
-		wx, wy := toNX(6), toNY(6)
-		drawSysText(screen, woodStr, wx, wy, sp, color.RGBA{R: 140, G: 220, B: 140, A: 230}, g.hud.face)
-		drawSysText(screen, rateStr, wx, wy+float32(14*scale), sp, color.RGBA{R: 100, G: 200, B: 100, A: 180}, g.hud.face)
-	}
+	_ = sp // shapes only; text is drawn on scene by drawSystemSceneText
 
 	// Bottom tray for selected planet.
 	sel := g.world.System.Selected
@@ -530,12 +523,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	swY := ty + (th-swSize)/2
 	swCol := sysSwatchColor(p)
 	vector.FillRect(screen, swX, swY, swSize, swSize, swCol, false)
-
-	// Rate text.
-	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
-	rateX := swX + swSize + float32(4*scale)
-	rateY := ty + (th-float32(11*scale))/2
-	drawSysText(screen, rateStr, rateX, rateY, sp, color.RGBA{R: 80, G: 210, B: 90, A: 230}, g.hud.face)
 
 	// Enter-planet button: only for the starting planet.
 	g.sysEnterRect = sysRect{}
@@ -569,15 +556,50 @@ func sysSwatchColor(p SystemPlanet) color.RGBA {
 	}
 }
 
-func drawSysText(screen *ebiten.Image, s string, x, y, scale float32, col color.RGBA, face text.Face) {
+func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, face text.Face) {
 	if face == nil {
 		return
 	}
 	op := &text.DrawOptions{}
-	op.GeoM.Scale(float64(scale/2), float64(scale/2))
 	op.GeoM.Translate(float64(x), float64(y))
 	op.ColorScale.ScaleWithColor(col)
-	text.Draw(screen, s, face, op)
+	text.Draw(target, s, face, op)
+}
+
+// drawSystemSceneText draws the system overlay text onto the virtual scene canvas so it
+// scales with the window like everything else.  Called before the scene is blitted.
+func (g *Game) drawSystemSceneText(scene *ebiten.Image) {
+	if g.hud == nil {
+		return
+	}
+	face := g.hud.sysface
+	colWood := color.RGBA{R: 140, G: 220, B: 140, A: 230}
+	colRate := color.RGBA{R: 100, G: 200, B: 100, A: 180}
+	colTray := color.RGBA{R: 80, G: 210, B: 90, A: 230}
+
+	// Top-left: wood amount and global abstract rate.
+	if g.world.ResourceDiscovered || g.world.System.Unlocked {
+		woodStr := fmt.Sprintf("%.0f", g.world.Economy.Wood)
+		rateStr := fmt.Sprintf("+%.1f/s", abstractIncome(g.world))
+		drawSysText(scene, woodStr, 4, 9, colWood, face)
+		drawSysText(scene, rateStr, 4, 18, colRate, face)
+	}
+
+	// Tray: rate for selected planet.
+	sel := g.world.System.Selected
+	if sel >= 0 && sel < len(g.world.System.Planets) {
+		p := g.world.System.Planets[sel]
+		if p.Kind != PlanetUnknown {
+			const trayVH = 20.0
+			const trayVW = 90.0
+			trayVX := float32((virtW - trayVW) / 2)
+			trayVY := float32(virtH - trayVH - 4)
+			rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
+			// x: after swatch (virtual width 10) + 4px gap, starting 5px from tray left
+			// y: baseline centred in tray (ascender ≈ 6px, so baseline ≈ trayMid + 3)
+			drawSysText(scene, rateStr, trayVX+19, trayVY+trayVH*0.65, colTray, face)
+		}
+	}
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
