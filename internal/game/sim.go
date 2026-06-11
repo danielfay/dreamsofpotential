@@ -768,6 +768,89 @@ func updateWorkerPos(w *World, wk *Worker) {
 	wk.Pos = w.Planet.RimPoint(wk.Angle)
 }
 
+// ── System-view / unlock helpers ─────────────────────────────────────────────
+
+// startingPlanetComplete reports the mastery gate: town capacity is maxed AND
+// the wood field can no longer place a new tree node.
+func startingPlanetComplete(w *World) bool {
+	f := fieldForKind(w, KindWood)
+	return townFieldFull(w) && f != nil && !fieldCanSpawnNode(w, f)
+}
+
+// abstractIncome returns total abstract wood/sec for the current view mode.
+// In planet view only the echo planets produce abstractly (the starting planet
+// runs its live sim). In system view all producers including the starting
+// planet produce abstractly. The unknown silhouette never produces.
+func abstractIncome(w *World) float64 {
+	var total float64
+	for i, p := range w.System.Planets {
+		switch p.Kind {
+		case PlanetStarting:
+			if w.System.View == ViewSystem {
+				total += w.System.Planets[i].AbstractRate
+			}
+		case PlanetEcho:
+			total += p.AbstractRate
+		}
+	}
+	return total
+}
+
+// triggerUnlock snapshots the starting planet's analytic rate once, marks the
+// system as unlocked, switches to system view, and selects the starting planet.
+// Echo planet rates are also snapshotted as fractions of the starting rate with
+// slight per-planet variance so they feel related but distinct.
+// Must only be called when startingPlanetComplete is true.
+func triggerUnlock(w *World) {
+	base := EstimateRate(w)
+	w.System.Planets[0].AbstractRate = base
+	// Echoes are dormant — produce at a fraction of the completed planet's rate.
+	// The two seeds give stable but different offsets: +5% and -5%.
+	if len(w.System.Planets) > 1 {
+		w.System.Planets[1].AbstractRate = base * echoRateFracA
+	}
+	if len(w.System.Planets) > 2 {
+		w.System.Planets[2].AbstractRate = base * echoRateFracB
+	}
+	w.System.Unlocked = true
+	w.System.View = ViewSystem
+	w.System.Selected = 0
+}
+
+// enterSystemView switches to system view (freezes the live sim).
+func enterSystemView(w *World) {
+	w.System.View = ViewSystem
+}
+
+// enterPlanetView switches to planet view (resumes the live sim on next Tick).
+func enterPlanetView(w *World) {
+	w.System.View = ViewPlanet
+}
+
+// Tick is the per-frame world advance called by Game.Update instead of Step.
+// It gates the live sim by view mode and detects first-planet completion.
+// Returns true exactly once: on the tick that triggers the unlock reveal.
+func Tick(w *World, dt float64) (justUnlocked bool) {
+	if w.System.Unlocked && w.System.View == ViewSystem {
+		// System view: live sim is frozen; abstract producers add wood.
+		w.Economy.Wood += abstractIncome(w) * dt
+		return false
+	}
+	// Planet view (or pre-unlock): run the live sim.
+	Step(w, dt)
+	if w.System.Unlocked {
+		// Post-unlock planet view: echo planets continue producing abstractly.
+		w.Economy.Wood += abstractIncome(w) * dt
+		return false
+	}
+	// Pre-unlock: check mastery gate exactly once.
+	if startingPlanetComplete(w) {
+		triggerUnlock(w)
+		return true
+	}
+	return false
+}
+
 // moveAlongArc advances *angle toward targetAngle along the rim by at most
 // step world-units of arc length. Returns true and snaps when within reach.
 func moveAlongArc(angle *float64, targetAngle, radius, step float64) bool {

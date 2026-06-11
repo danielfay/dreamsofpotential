@@ -38,6 +38,8 @@ type screenshotScenario struct {
 	debug        bool
 	debugSection int
 	placing      bool
+	revealActive  bool
+	revealElapsed float64
 }
 
 func screenshotScenarios() []screenshotScenario {
@@ -56,6 +58,10 @@ func screenshotScenarios() []screenshotScenario {
 		fieldGrowthSpawnCueScenario(),
 		fieldGrowthUpgradeCueScenario(),
 		fieldGrowthPlacementCueScenario(),
+		systemViewScenario(),
+		systemViewEchoSelectedScenario(),
+		revealMidpointScenario(),
+		planetViewReturnButtonScenario(),
 	}
 }
 
@@ -332,6 +338,48 @@ func fieldGrowthPlacementCueScenario() screenshotScenario {
 	}
 }
 
+func buildSystemWorld() *World {
+	wood := 50.0
+	p := QAPreset{
+		Seed: 11, PlaceTownHall: true, Workers: 5, SettleSeconds: 2,
+		FillTownCapacity: true, SaturateWoodField: true, Reveal: true,
+		Wood: &wood,
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		panic(fmt.Sprintf("buildSystemWorld: %v", err))
+	}
+	return w
+}
+
+func systemViewScenario() screenshotScenario {
+	return screenshotScenario{name: "15-system-view", world: buildSystemWorld(), fullHUD: true}
+}
+
+func systemViewEchoSelectedScenario() screenshotScenario {
+	w := buildSystemWorld()
+	w.System.Selected = 1
+	return screenshotScenario{name: "16-system-view-echo-selected", world: w, fullHUD: true}
+}
+
+func revealMidpointScenario() screenshotScenario {
+	w := buildSystemWorld()
+	w.System.View = ViewPlanet
+	return screenshotScenario{
+		name:          "17-reveal-midpoint",
+		world:         w,
+		fullHUD:       true,
+		revealActive:  true,
+		revealElapsed: revealPhaseASecs * 0.5,
+	}
+}
+
+func planetViewReturnButtonScenario() screenshotScenario {
+	w := buildSystemWorld()
+	w.System.View = ViewPlanet
+	return screenshotScenario{name: "18-planet-view-return-button", world: w, fullHUD: true}
+}
+
 func screenshotWorld(seed int64) *World {
 	rand.Seed(seed)
 	return NewWorld()
@@ -403,14 +451,16 @@ func (g *screenshotGame) Layout(outsideWidth, outsideHeight int) (int, int) {
 func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 	const scale = 2
 	game := &Game{
-		world:        shot.world,
-		scene:        ebiten.NewImage(virtW, virtH),
-		hudScale:     scale,
-		hudDigits:    woodDigits(shot.world.Economy.Wood),
-		preview:      shot.preview,
-		placing:      shot.placing,
-		debug:        shot.debug,
-		debugSection: shot.debugSection,
+		world:         shot.world,
+		scene:         ebiten.NewImage(virtW, virtH),
+		hudScale:      scale,
+		hudDigits:     woodDigits(shot.world.Economy.Wood),
+		preview:       shot.preview,
+		placing:       shot.placing,
+		debug:         shot.debug,
+		debugSection:  shot.debugSection,
+		revealActive:  shot.revealActive,
+		revealElapsed: shot.revealElapsed,
 	}
 	hud, ui, err := buildHUD(game, scale)
 	if err != nil {

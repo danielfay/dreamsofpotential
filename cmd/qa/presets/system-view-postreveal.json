@@ -1,0 +1,12 @@
+{
+  "name": "system-view-postreveal",
+  "description": "Post-reveal state in system view with the starting planet selected, two echo producers active, and abstract production ticking. Expected read: global wood/sec is visible, wood increases over time, echo summaries are selectable, starting planet can be entered from the bottom tray.",
+  "seed": 11,
+  "placeTownHall": true,
+  "workers": 5,
+  "settleSeconds": 2,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "wood": 50
+}

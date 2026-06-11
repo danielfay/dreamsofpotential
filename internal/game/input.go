@@ -5,6 +5,69 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
+// handleSystemInput processes clicks and wheel in system view and,
+// when in post-unlock planet view, the return-to-system affordances.
+func (g *Game) handleSystemInput() {
+	if g.showMenu {
+		return
+	}
+
+	// Mouse wheel up: not applicable in system view (already here).
+
+	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		return
+	}
+	mx, my := ebiten.CursorPosition()
+
+	// Check enter-planet tray button (sysEnterRect set in drawOverlay previous frame).
+	if g.sysEnterRect.w > 0 {
+		if float32(mx) >= g.sysEnterRect.x && float32(mx) < g.sysEnterRect.x+g.sysEnterRect.w &&
+			float32(my) >= g.sysEnterRect.y && float32(my) < g.sysEnterRect.y+g.sysEnterRect.h {
+			enterPlanetView(g.world)
+			g.world.System.Selected = 0
+			return
+		}
+	}
+
+	// Planet selection: convert to virtual world coords and check disks.
+	wp := g.screenToWorld(mx, my)
+	for i, p := range g.world.System.Planets {
+		if p.Kind == PlanetUnknown {
+			continue // non-interactive
+		}
+		if wp.Dist(p.Pos) <= p.Radius+3 {
+			g.world.System.Selected = i
+			return
+		}
+	}
+}
+
+// handlePlanetViewSystemReturn handles wheel-down and the return button
+// in planet view when the system is already unlocked.
+func (g *Game) handlePlanetViewSystemReturn() {
+	if !g.world.System.Unlocked {
+		return
+	}
+	// Mouse wheel down (scroll out → system view).
+	_, wy := ebiten.Wheel()
+	if wy < 0 {
+		enterSystemView(g.world)
+		g.placing = false
+		g.freePlacing = false
+		return
+	}
+	// Return button click (sysReturnRect set in drawOverlay previous frame).
+	if g.sysReturnRect.w > 0 && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		mx, my := ebiten.CursorPosition()
+		if float32(mx) >= g.sysReturnRect.x && float32(mx) < g.sysReturnRect.x+g.sysReturnRect.w &&
+			float32(my) >= g.sysReturnRect.y && float32(my) < g.sysReturnRect.y+g.sysReturnRect.h {
+			enterSystemView(g.world)
+			g.placing = false
+			g.freePlacing = false
+		}
+	}
+}
+
 // handleGlobalInput processes keyboard-only commands that must take effect
 // before EbitenUI lays out widgets for the frame.
 func (g *Game) handleGlobalInput() {
@@ -36,6 +99,9 @@ func (g *Game) handleInput() {
 	if g.showMenu {
 		return
 	}
+
+	// Post-unlock: wheel-down and return button navigate to system view.
+	g.handlePlanetViewSystemReturn()
 
 	if !g.placing {
 		return

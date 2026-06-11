@@ -27,7 +27,8 @@ const (
 //
 // Debug mode (F3) replaces both with a single verbose debugPanel.
 type HUD struct {
-	face         text.Face
+	face    text.Face
+	sysface text.Face // fixed 8 px face for system overlay; drawn on scene so it scales naturally
 	debugSection int
 
 	// debug panel
@@ -104,6 +105,12 @@ func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *place
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.refreshDebug(w, placing, pv)
+	} else if w.System.View == ViewSystem {
+		// In system view the EbitenUI planet HUD is hidden; the system overlay
+		// is drawn manually in drawOverlay.
+		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 	} else {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Show)
@@ -273,6 +280,12 @@ func (h *HUD) refreshNormal(w *World) {
 	if discovered {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.resourceText.Label = fmt.Sprintf("%.0f", w.Economy.Wood)
+		// Disable the Nurture square when the field is saturated (no new tree can spawn).
+		// nurtureField and nurtureAttentionActive already gate on fieldCanSpawnNode,
+		// but we also set the button Disabled so it visually reads as unavailable.
+		f := fieldForKind(w, KindWood)
+		saturated := f != nil && !fieldCanSpawnNode(w, f)
+		h.resourceSquare.GetWidget().Disabled = saturated
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
@@ -337,6 +350,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud := &HUD{}
 	hud.face = &text.GoTextFace{Source: src, Size: float64(16*s) * 0.75}
+	hud.sysface = &text.GoTextFace{Source: src, Size: 8.0 * float64(s)}
 	face := &hud.face
 
 	// --- debug panel styling ---
@@ -512,7 +526,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	// Both MinSize AND RowLayoutData.MaxWidth/MaxHeight are required: MinSize
 	// prevents the button from being smaller, MaxWidth/MaxHeight caps the
 	// preferred size (which otherwise defaults to 50×50 for empty buttons).
-	smallSquare := func(col color.NRGBA, size int) *widget.Button {
+	smallSquare := func(col color.Color, size int) *widget.Button {
 		return widget.NewButton(
 			widget.ButtonOpts.Image(&widget.ButtonImage{
 				Idle:     eimage.NewNineSliceColor(col),
@@ -553,10 +567,10 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	)
 	hud.resourceSquare = widget.NewButton(
 		widget.ButtonOpts.Image(&widget.ButtonImage{
-			Idle:     eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 160, B: 60, A: 255}),
+			Idle:     eimage.NewNineSliceColor(colWoodResource),
 			Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 185, B: 80, A: 255}),
 			Pressed:  eimage.NewNineSliceColor(color.NRGBA{R: 30, G: 130, B: 50, A: 255}),
-			Disabled: eimage.NewNineSliceColor(color.NRGBA{R: 40, G: 160, B: 60, A: 255}),
+			Disabled: eimage.NewNineSliceColor(colWoodResource),
 		}),
 		widget.ButtonOpts.WidgetOpts(
 			widget.WidgetOpts.MinSize(iconSz, iconSz),
@@ -583,7 +597,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			widget.RowLayoutOpts.Spacing(sz(4)),
 		)),
 	)
-	hud.workerHUD.AddChild(smallSquare(color.NRGBA{R: 220, G: 200, B: 60, A: 255}, iconSz))
+	hud.workerHUD.AddChild(smallSquare(colWorkerLaden, iconSz))
 	hud.workerHUD.AddChild(hud.workerRatio)
 	hud.workerHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 
@@ -610,7 +624,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	btnSz := sz(28)
 
 	// actionSquare creates an interactive button for the sidebar.
-	actionSquare := func(idle, hover, pressed, disabled color.NRGBA) *widget.ButtonImage {
+	actionSquare := func(idle, hover, pressed, disabled color.Color) *widget.ButtonImage {
 		return &widget.ButtonImage{
 			Idle:     eimage.NewNineSliceColor(idle),
 			Hover:    eimage.NewNineSliceColor(hover),
@@ -621,7 +635,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.buildCampBtn = widget.NewButton(
 		widget.ButtonOpts.Image(actionSquare(
-			color.NRGBA{R: 100, G: 62, B: 36, A: 255},
+			colBuilding,
 			color.NRGBA{R: 130, G: 82, B: 48, A: 255},
 			color.NRGBA{R: 72, G: 44, B: 26, A: 255},
 			color.NRGBA{R: 48, G: 34, B: 24, A: 255},
@@ -649,7 +663,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.buildTownCapacityBtn = widget.NewButton(
 		widget.ButtonOpts.Image(actionSquare(
-			color.NRGBA{R: 205, G: 105, B: 48, A: 255},
+			colTownCapacity,
 			color.NRGBA{R: 235, G: 132, B: 64, A: 255},
 			color.NRGBA{R: 165, G: 78, B: 36, A: 255},
 			color.NRGBA{R: 82, G: 48, B: 34, A: 255},

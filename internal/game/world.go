@@ -94,6 +94,44 @@ const (
 	KindLoggingCamp                     // 1 — resource harvesting camp
 )
 
+// ViewMode distinguishes the system-level view from the planet-level view.
+type ViewMode int
+
+const (
+	ViewPlanet ViewMode = iota // player is operating on the starting planet
+	ViewSystem                  // player is looking at the planetary system
+)
+
+// PlanetKind categorises a system-view planet record.
+type PlanetKind int
+
+const (
+	PlanetStarting PlanetKind = iota // the live-simulated starting planet
+	PlanetEcho                        // an awakened forest producer (abstract only for now)
+	PlanetUnknown                     // distant locked frontier silhouette
+)
+
+// SystemPlanet is a persistent record for one planet in the system view.
+// AbstractRate is the wood/sec this planet contributes to the global bank;
+// set at first completion for the starting planet, fixed at boot for echoes.
+// Seed is reserved for future world generation. Pos/Radius are in 320×240 virtual space.
+type SystemPlanet struct {
+	Kind         PlanetKind
+	Pos          Vec
+	Radius       float64
+	AbstractRate float64
+	RingColorIdx int   // 0 or 1 — slight visual variation between the two echoes
+	Seed         int64 // future world-generation hook
+}
+
+// System holds all persistent state for the planetary system layer.
+type System struct {
+	Unlocked bool           // true once the first reveal has completed
+	View     ViewMode       // current view mode; persisted across save/load
+	Selected int            // index into Planets; -1 = none selected
+	Planets  []SystemPlanet // always 4 entries: starting, echo A, echo B, unknown
+}
+
 // Building is a player-placed structure on the planet rim.
 // Pos is the rim point at Angle; Kind distinguishes the Town Hall from camps.
 type Building struct {
@@ -183,9 +221,9 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 8
+const SaveVersion = 9
 
-// World holds all game state for a single planet.
+// World holds all game state for a single planet plus the system layer.
 type World struct {
 	Version            int
 	Planet             Planet
@@ -197,6 +235,7 @@ type World struct {
 	NextWorkerID       int
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
+	System             System // system-view unlock state; persisted
 
 	growthCue         growthCueState
 	pendingGrowthCues []growthCueState
@@ -433,5 +472,19 @@ func NewWorld() *World {
 			Fields:      []*ResourceField{field},
 		},
 		Economy: Economy{TownGrowthCap: townGrowthBaseCap},
+		System: System{
+			Unlocked: false,
+			View:     ViewPlanet,
+			Selected: -1,
+			Planets: []SystemPlanet{
+				// Index 0: starting planet (rate set at unlock; Pos is system-view canvas position)
+				{Kind: PlanetStarting, Pos: Vec{X: 118, Y: 92}, Radius: 18},
+				// Index 1 & 2: echo forest producers — rates snapshotted at unlock, zero until then
+				{Kind: PlanetEcho, Pos: Vec{X: 160, Y: 72}, Radius: 12, RingColorIdx: 0, Seed: 42},
+				{Kind: PlanetEcho, Pos: Vec{X: 148, Y: 128}, Radius: 12, RingColorIdx: 1, Seed: 43},
+				// Index 3: unknown frontier silhouette — non-interactive, no rate
+				{Kind: PlanetUnknown, Pos: Vec{X: 242, Y: 162}, Radius: 10},
+			},
+		},
 	}
 }

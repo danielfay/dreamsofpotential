@@ -31,4 +31,9 @@ const (
 	nurtureCharges   = 5    // level-completing deliveries granted per activation
 	forestHalfArc    = math.Pi
 	startingNodes    = 5
+
+	// system view / abstract production
+	echoRateFracA  = 0.55 // echo A rate as fraction of starting planet's snapshotted rate
+	echoRateFracB  = 0.45 // echo B rate — slightly lower for variance
+	revealDuration = 3.5 // seconds for the one-time unlock reveal animation
 )
