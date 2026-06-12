@@ -272,9 +272,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	bgCol := colBackground
-	if g.world.System.View == ViewSystem || g.revealActive {
+	var bgCol color.RGBA
+	switch {
+	case g.world.System.View == ViewSystem || g.revealActive:
 		bgCol = colSysBackground
+	default:
+		bgCol = activePlanetPalette(g.world).background
 	}
 	screen.Fill(bgCol)
 
