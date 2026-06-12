@@ -281,6 +281,58 @@ func TestSaveLoadRoundTripSystem(t *testing.T) {
 	}
 }
 
+// TestSaveLoadRoundTripPlanetStates verifies that PlanetStates and Active
+// survive a save/load cycle, and that Economy.Wood is not corrupted by
+// the park/load helpers.
+func TestSaveLoadRoundTripPlanetStates(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	// Manually park the starting planet so PlanetStates[0] is populated.
+	parkActive(w)
+
+	wantWood := 42.5
+	w.Economy.Wood = wantWood
+	wantCenter := w.Planet.Center
+	wantBuildings := len(w.Buildings)
+	wantWorkers := len(w.Workers)
+	wantTownGrowthCap := w.Economy.TownGrowthCap
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got.Active != w.Active {
+		t.Errorf("Active: got %d, want %d", got.Active, w.Active)
+	}
+	if len(got.PlanetStates) != len(w.PlanetStates) {
+		t.Fatalf("PlanetStates len: got %d, want %d", len(got.PlanetStates), len(w.PlanetStates))
+	}
+	ps := got.PlanetStates[0]
+	if ps == nil {
+		t.Fatal("PlanetStates[0] is nil after load")
+	}
+	if ps.Planet.Center != wantCenter {
+		t.Errorf("PlanetStates[0].Planet.Center: got %v, want %v", ps.Planet.Center, wantCenter)
+	}
+	if len(ps.Buildings) != wantBuildings {
+		t.Errorf("PlanetStates[0].Buildings len: got %d, want %d", len(ps.Buildings), wantBuildings)
+	}
+	if len(ps.Workers) != wantWorkers {
+		t.Errorf("PlanetStates[0].Workers len: got %d, want %d", len(ps.Workers), wantWorkers)
+	}
+	if ps.TownGrowthCap != wantTownGrowthCap {
+		t.Errorf("PlanetStates[0].TownGrowthCap: got %v, want %v", ps.TownGrowthCap, wantTownGrowthCap)
+	}
+	if got.Economy.Wood != wantWood {
+		t.Errorf("Economy.Wood: got %v, want %v", got.Economy.Wood, wantWood)
+	}
+}
+
 // TestLoadVersionMismatch verifies that a save with a different version is
 // treated as missing (returns os.ErrNotExist) so the caller starts fresh.
 func TestLoadVersionMismatch(t *testing.T) {
