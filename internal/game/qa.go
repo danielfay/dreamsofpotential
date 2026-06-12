@@ -19,7 +19,7 @@ type QAPreset struct {
 	Workers       int       `json:"workers"`
 	NoFreeNodes   bool      `json:"noFreeNodes"`
 	SettleSeconds float64   `json:"settleSeconds"`
-	// FieldCapCycles multiplies the field cap by fieldEXPGrowth N times before
+	// FieldCapCycles multiplies the field cap by woodFieldEXPGrowth N times before
 	// setting EXP, simulating N completed growth cycles.
 	FieldCapCycles  *int     `json:"fieldCapCycles"`
 	FieldExpFromCap *float64 `json:"fieldExpFromCap"` // EXP = Cap + delta (use negative to go below cap)
@@ -110,7 +110,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		f := w.Planet.Fields[0]
 		if p.FieldCapCycles != nil {
 			for range *p.FieldCapCycles {
-				f.Cap *= fieldEXPGrowth
+				f.Cap *= woodFieldEXPGrowth
 			}
 		}
 		switch {

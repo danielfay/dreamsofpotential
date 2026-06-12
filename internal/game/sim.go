@@ -171,8 +171,8 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 	if gross > 0 {
 		w.ResourceDiscovered = true
 	}
-	banked := gross * (1 - fieldReturnRatio)
-	returned := gross * fieldReturnRatio
+	banked := gross * (1 - woodFieldReturnRatio)
+	returned := gross * woodFieldReturnRatio
 	w.Economy.Wood += banked
 	w.lastDelivery = deliverySplit{Gross: gross, Banked: banked, Returned: returned}
 	if b := nearestCamp(w, node); b != nil {
@@ -390,7 +390,13 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 		f.EXP += amount
 		for f.EXP >= f.Cap {
 			f.EXP -= f.Cap
-			f.Cap *= fieldEXPGrowth
+			// Capped geometric: grow the threshold exponentially while the step is
+			// small, then switch to additive so late-game trees stay naturally reachable.
+			if step := f.Cap * (woodFieldEXPGrowth - 1); step < woodFieldEXPMaxStep {
+				f.Cap *= woodFieldEXPGrowth
+			} else {
+				f.Cap += woodFieldEXPMaxStep
+			}
 			activateGrowthCue(w, spawnNode(w, f))
 		}
 		return
@@ -508,7 +514,7 @@ func EstimateRate(w *World) float64 {
 			continue
 		}
 		tripTime := loadTime + unloadTime + 2*dist/workerSpeed
-		rate += (baseLoadAmount * node.Size * (1 - fieldReturnRatio)) / tripTime
+		rate += (baseLoadAmount * node.Size * (1 - woodFieldReturnRatio)) / tripTime
 	}
 	return rate
 }

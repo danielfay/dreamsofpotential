@@ -449,7 +449,7 @@ func TestOneWorkerPerNode(t *testing.T) {
 func TestNodeSpawning(t *testing.T) {
 	// Use a fully deterministic setup: one camp and one node at the same angle
 	// so trip time is ~0.8 s and Size=1.0 gives baseLoadAmount per delivery.
-	// fieldBaseEXP (10) is well below what 30 s of deliveries produces.
+	// woodFieldBaseEXP (10) is well below what 30 s of deliveries produces.
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -684,7 +684,7 @@ func TestSpawnNodeSaturatedFieldUpgradesNearestNode(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
 	w.Planet.Fields = []*ResourceField{field}
 
 	near := newNode(w, KindWood, 0.009)
@@ -713,7 +713,7 @@ func TestUpgradeNodeSizeClamped(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
 	w.Planet.Fields = []*ResourceField{field}
 
 	n := newNode(w, KindWood, 0)
@@ -762,8 +762,10 @@ func TestFieldEXPAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 	if math.Abs(field.EXP-1) > 1e-9 {
 		t.Fatalf("field EXP got %.2f, want 1", field.EXP)
 	}
-	if math.Abs(field.Cap-40) > 1e-9 {
-		t.Fatalf("cap got %.2f, want 40", field.Cap)
+	// With woodFieldEXPMaxStep=10 the step from cap 20 (=20) exceeds max, so additive: 20+10=30.
+	wantCap := math.Min(20*woodFieldEXPGrowth, 20+woodFieldEXPMaxStep)
+	if math.Abs(field.Cap-wantCap) > 1e-9 {
+		t.Fatalf("cap got %.2f, want %.2f", field.Cap, wantCap)
 	}
 	if math.Abs(n.Size-1.15) > 1e-9 {
 		t.Fatalf("node size got %.2f, want 1.15", n.Size)
@@ -796,8 +798,9 @@ func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
 	if field.EXP != 0 {
 		t.Fatalf("field EXP got %.2f, want 0", field.EXP)
 	}
-	if math.Abs(field.Cap-40) > 1e-9 {
-		t.Fatalf("field cap got %.2f, want 40", field.Cap)
+	wantCap := math.Min(20*woodFieldEXPGrowth, 20+woodFieldEXPMaxStep)
+	if math.Abs(field.Cap-wantCap) > 1e-9 {
+		t.Fatalf("field cap got %.2f, want %.2f", field.Cap, wantCap)
 	}
 }
 
@@ -805,7 +808,7 @@ func TestGrowFirstFieldUntilBlockedForDebugStopsOnUpgrade(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
 	w.Planet.Fields = []*ResourceField{field}
 
 	n := newNode(w, KindWood, 0)
@@ -1157,8 +1160,8 @@ func TestCompleteUnloadSplitsDelivery(t *testing.T) {
 
 	completeUnload(w, wk, node)
 
-	wantBanked := gross * (1 - fieldReturnRatio)
-	wantReturned := gross * fieldReturnRatio
+	wantBanked := gross * (1 - woodFieldReturnRatio)
+	wantReturned := gross * woodFieldReturnRatio
 
 	if math.Abs(w.Economy.Wood-wantBanked) > 1e-9 {
 		t.Errorf("Economy.Wood got %.4f, want %.4f (80%% of gross)", w.Economy.Wood, wantBanked)
@@ -1182,16 +1185,16 @@ func TestFieldEXPCapTriggersCycle(t *testing.T) {
 	w.NextNodeID = 0
 
 	field := w.Planet.Fields[0]
-	initialCap := fieldBaseEXP
+	initialCap := woodFieldBaseEXP
 
-	depositToField(w, KindWood, fieldBaseEXP)
+	depositToField(w, KindWood, woodFieldBaseEXP)
 
 	if len(w.Nodes) != 1 {
-		t.Fatalf("expected one spawned node after crossing fieldBaseEXP, got %d", len(w.Nodes))
+		t.Fatalf("expected one spawned node after crossing woodFieldBaseEXP, got %d", len(w.Nodes))
 	}
-	wantCap := initialCap * fieldEXPGrowth
+	wantCap := initialCap * woodFieldEXPGrowth
 	if math.Abs(field.Cap-wantCap) > 1e-9 {
-		t.Fatalf("cap after first cycle got %.2f, want %.2f (×fieldEXPGrowth)", field.Cap, wantCap)
+		t.Fatalf("cap after first cycle got %.2f, want %.2f (×woodFieldEXPGrowth)", field.Cap, wantCap)
 	}
 	if field.EXP != 0 {
 		t.Fatalf("field EXP after exact cap deposit got %.2f, want 0", field.EXP)
@@ -1235,7 +1238,7 @@ func TestNurtureFieldBlockedWhenFieldSaturated(t *testing.T) {
 	w.Nodes = nil
 	w.NextNodeID = 0
 	w.ResourceDiscovered = true
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
 	w.Planet.Fields = []*ResourceField{field}
 
 	node := newNode(w, KindWood, 0)
@@ -1269,7 +1272,7 @@ func TestNurtureSpawnsUpToCapacity(t *testing.T) {
 	w.Nodes = nil
 	w.NextNodeID = 0
 	w.ResourceDiscovered = true
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.25, Cap: fieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.25, Cap: woodFieldBaseEXP}
 	w.Planet.Fields = []*ResourceField{field}
 
 	// Fill the field until exactly 1 slot remains.
@@ -1342,7 +1345,7 @@ func TestNurtureAttentionInactiveWhenFieldSaturated(t *testing.T) {
 	w.ResourceDiscovered = true
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
 	w.Economy.WorkerCapacity = maxTownSlots(w)
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: fieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
 	w.Planet.Fields = []*ResourceField{field}
 
 	node := newNode(w, KindWood, 0)

@@ -464,7 +464,7 @@ func NewWorld() *World {
 		Kind:        KindWood,
 		CenterAngle: forestAngle,
 		HalfArc:     forestHalfArc,
-		Cap:         fieldBaseEXP,
+		Cap:         woodFieldBaseEXP,
 	}
 
 	return &World{
