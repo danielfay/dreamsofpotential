@@ -1,9 +1,13 @@
 package game
 
 import (
+	"time"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
+
+const sysDoubleClickWindow = 350 * time.Millisecond
 
 // handleSystemInput processes clicks and wheel in system view and,
 // when in post-unlock planet view, the return-to-system affordances.
@@ -36,7 +40,18 @@ func (g *Game) handleSystemInput() {
 			continue // non-interactive
 		}
 		if wp.Dist(p.Pos) <= p.Radius+3 {
+			if p.zoomable() &&
+				i == g.sysDoubleClickPlanet &&
+				time.Since(g.sysDoubleClickTime) < sysDoubleClickWindow {
+				// Double-click on the starting planet — zoom in.
+				enterPlanetView(g.world)
+				g.world.System.Selected = i
+				g.sysDoubleClickPlanet = -1
+				return
+			}
 			g.world.System.Selected = i
+			g.sysDoubleClickPlanet = i
+			g.sysDoubleClickTime = time.Now()
 			return
 		}
 	}
@@ -170,7 +185,7 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		})
 		// Grant the founding capacity slot and spawn the first worker immediately.
 		w.Economy.WorkerCapacity = 1
-		w.Economy.TownGrowthCap = townGrowthBaseCap
+		w.Economy.TownGrowthCap = townGrowthInitialCap
 		spawnWorkerAtTownHall(w)
 		// Awaken the wood field: spawn starting trees near the founded hall.
 		if f := fieldForKind(w, KindWood); f != nil {

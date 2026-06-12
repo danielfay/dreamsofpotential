@@ -255,7 +255,7 @@ func fieldGrowthSpawnCueScenario() screenshotScenario {
 	w.Economy.Wood = 42
 	field := w.Planet.Fields[0]
 	field.EXP = 0
-	field.Cap = fieldBaseEXP * fieldEXPGrowth
+	field.Cap = woodFieldBaseEXP * woodFieldEXPGrowth
 
 	before := len(w.Nodes)
 	result := spawnNode(w, field)

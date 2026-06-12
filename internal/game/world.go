@@ -124,6 +124,11 @@ type SystemPlanet struct {
 	Seed         int64 // future world-generation hook
 }
 
+// zoomable reports whether this planet has a live sim the player can zoom into.
+func (p SystemPlanet) zoomable() bool {
+	return p.Kind == PlanetStarting
+}
+
 // System holds all persistent state for the planetary system layer.
 type System struct {
 	Unlocked bool           // true once the first reveal has completed
@@ -150,7 +155,6 @@ type ResourceField struct {
 	HalfArc        float64
 	EXP            float64
 	Cap            float64
-	NurtureCharges int // level-completing delivery charges remaining (0 = inactive)
 }
 
 type growthOutcome int
@@ -460,7 +464,7 @@ func NewWorld() *World {
 		Kind:        KindWood,
 		CenterAngle: forestAngle,
 		HalfArc:     forestHalfArc,
-		Cap:         fieldBaseEXP,
+		Cap:         woodFieldBaseEXP,
 	}
 
 	return &World{

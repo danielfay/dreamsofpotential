@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/widget"
@@ -58,6 +59,10 @@ type Game struct {
 	// system-view button rects in native screen space (set during drawOverlay; read by handleInput)
 	sysEnterRect  sysRect // enter-planet tray button
 	sysReturnRect sysRect // return-to-system button in planet view
+
+	// double-click tracking for system-view planet zoom
+	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
+	sysDoubleClickTime   time.Time // time of that click
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -79,6 +84,7 @@ func New() (*Game, error) {
 		saveTimer:                autoSavePeriod,
 		nurtureAttentionCooldown: nurtureAttentionInterval,
 		importCh:                 make(chan *World, 1),
+		sysDoubleClickPlanet:     -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -119,8 +125,6 @@ func (g *Game) activateHold(action int) {
 }
 
 // tryHoldAction executes the purchase action and returns true on success.
-// For hold actions that have a gate (e.g. Nurture charges), returning true
-// while gated keeps the hold alive so activation retries when the gate clears.
 func (g *Game) tryHoldAction(action int) bool {
 	switch action {
 	case holdNurture:
@@ -128,12 +132,6 @@ func (g *Game) tryHoldAction(action int) bool {
 			g.nurtureConfirmLeft = nurtureConfirmDuration
 			return true
 		}
-		// Charges already active: keep the hold alive so activation fires
-		// automatically once the charges drain.
-		if f := fieldForKind(g.world, KindWood); f != nil && f.NurtureCharges > 0 {
-			return true
-		}
-		// Genuinely unaffordable: show pulse and stop.
 		g.pulseTime = pulseDuration
 		g.pulseTarget = 3
 	}
@@ -396,31 +394,25 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		sry := float32(sr.Min.Y)
 		srw := float32(sr.Max.X - sr.Min.X)
 		srh := float32(sr.Max.Y - sr.Min.Y)
-		charges := f.NurtureCharges
-		if charges > 0 {
-			// Active border: soft green stroke around the square.
-			vector.StrokeRect(screen, srx-1, sry-1, srw+2, srh+2, 2,
-				color.RGBA{R: 120, G: 255, B: 150, A: 200}, false)
-			// Charge badge: count centered on the square.
-			chargeStr := fmt.Sprintf("%d", charges)
-			tw, th := text.Measure(chargeStr, g.hud.face, 0)
-			op := &text.DrawOptions{}
-			op.GeoM.Translate(float64(srx)+float64(srw)/2-tw/2, float64(sry)+float64(srh)/2-th/2)
-			op.ColorScale.Scale(120.0/255.0, 1.0, 150.0/255.0, 1.0)
-			text.Draw(screen, chargeStr, g.hud.face, op)
-		} else {
-			// Attention and confirm flashes only render when no charges are active
-			// so they don't obscure the charge badge.
-			if g.nurtureAttentionPulseLeft > 0 {
-				t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
-				alpha := uint8(90 * t)
-				vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 120, G: 255, B: 150, A: alpha}, false)
+		if g.nurtureAttentionPulseLeft > 0 {
+			// Square pulse: a rect expands from the button centre outward, fading as it grows.
+			// t=1 at fire, t=0 at end; expand is the inverse so the rect starts small.
+			t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
+			expand := 1 - t
+			cx := srx + srw/2
+			cy := sry + srh/2
+			halfW := srw / 2 * expand * 1.35
+			halfH := srh / 2 * expand * 1.35
+			if halfW > 0.5 {
+				alpha := uint8(220 * t)
+				col := color.RGBA{R: 120, G: 255, B: 150, A: alpha}
+				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
 			}
-			if g.nurtureConfirmLeft > 0 {
-				t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
-				alpha := uint8(210 * t)
-				vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 200, G: 255, B: 210, A: alpha}, false)
-			}
+		}
+		if g.nurtureConfirmLeft > 0 {
+			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
+			alpha := uint8(210 * t)
+			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 200, G: 255, B: 210, A: alpha}, false)
 		}
 	}
 

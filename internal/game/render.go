@@ -52,7 +52,8 @@ var (
 	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
 	colTownFieldBase = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
 	colTownFieldEdge = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
-	colTownFieldSlot = color.RGBA{R: 200, G: 148, B: 72, A: 220} // built dwelling slot
+	colTownFieldSlot         = color.RGBA{R: 200, G: 148, B: 72, A: 220} // available dwelling slot
+	colTownFieldSlotOccupied = color.RGBA{R: 150, G: 80, B: 8, A: 255}  // occupied — darker richer amber, clearly distinct
 	colGhostOk       = color.RGBA{R: 200, G: 200, B: 255, A: 160}
 	colGhostBad      = color.RGBA{R: 200, G: 80, B: 80, A: 80}
 	colRouteFree     = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
@@ -961,13 +962,21 @@ func drawTownField(scene *ebiten.Image, w *World, radius float32) {
 	if builtSlots > len(slots) {
 		builtSlots = len(slots)
 	}
+	occupiedSlots := len(w.Workers)
+	if occupiedSlots > builtSlots {
+		occupiedSlots = builtSlots
+	}
 	cos := float32(math.Cos(th.Angle))
 	sin := float32(math.Sin(th.Angle))
 	ix := -cos // inward
 	iy := -sin
 	tx := -sin // tangent
 	ty := cos
-	for _, pos := range slots[:builtSlots] {
-		drawOrientedRect(scene, float32(pos.X), float32(pos.Y), tx, ty, ix, iy, 1.5, 1.5, colTownFieldSlot)
+	for i, pos := range slots[:builtSlots] {
+		col := colTownFieldSlot
+		if i < occupiedSlots {
+			col = colTownFieldSlotOccupied
+		}
+		drawOrientedRect(scene, float32(pos.X), float32(pos.Y), tx, ty, ix, iy, 1.5, 1.5, col)
 	}
 }

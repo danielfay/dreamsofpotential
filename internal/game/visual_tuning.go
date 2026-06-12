@@ -33,7 +33,7 @@ const (
 	holdMinInterval    = 0.03  // fastest repeat interval (reached after ~4 s of holding)
 	holdRampRate       = 0.03  // interval reduction per second of hold duration
 	nurtureAttentionInterval = 7.0  // seconds between attention pulse fires
-	nurtureAttentionPulseDur = 0.35 // duration of each attention flash
+	nurtureAttentionPulseDur = 0.70 // duration of each attention pulse (expanding rect needs more time)
 
 	growthGaugeReleaseTime   = 0.36
 	growthGaugeAfterglowTime = 0.72
