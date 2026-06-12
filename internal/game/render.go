@@ -53,7 +53,7 @@ var (
 	colTownFieldBase = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
 	colTownFieldEdge = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
 	colTownFieldSlot         = color.RGBA{R: 200, G: 148, B: 72, A: 220} // available dwelling slot
-	colTownFieldSlotOccupied = color.RGBA{R: 75, G: 55, B: 27, A: 160}  // occupied — same hue, ~37% brightness
+	colTownFieldSlotOccupied = color.RGBA{R: 150, G: 80, B: 8, A: 255}  // occupied — darker richer amber, clearly distinct
 	colGhostOk       = color.RGBA{R: 200, G: 200, B: 255, A: 160}
 	colGhostBad      = color.RGBA{R: 200, G: 80, B: 80, A: 80}
 	colRouteFree     = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
