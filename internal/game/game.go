@@ -395,9 +395,19 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		srw := float32(sr.Max.X - sr.Min.X)
 		srh := float32(sr.Max.Y - sr.Min.Y)
 		if g.nurtureAttentionPulseLeft > 0 {
+			// Square pulse: a rect expands from the button centre outward, fading as it grows.
+			// t=1 at fire, t=0 at end; expand is the inverse so the rect starts small.
 			t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
-			alpha := uint8(90 * t)
-			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 120, G: 255, B: 150, A: alpha}, false)
+			expand := 1 - t
+			cx := srx + srw/2
+			cy := sry + srh/2
+			halfW := srw / 2 * expand * 1.35
+			halfH := srh / 2 * expand * 1.35
+			if halfW > 0.5 {
+				alpha := uint8(220 * t)
+				col := color.RGBA{R: 120, G: 255, B: 150, A: alpha}
+				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
+			}
 		}
 		if g.nurtureConfirmLeft > 0 {
 			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
