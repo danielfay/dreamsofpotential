@@ -477,8 +477,9 @@ func nurtureField(w *World, kind ResourceKind) bool {
 }
 
 // nurtureAttentionActive reports whether the Nurture button should show its
-// attention pulse. Fires once the player has filled the town to max capacity,
-// the planet can still accept more trees, and no growth cue is pending.
+// attention pulse. Fires once all worker slots are both purchased AND filled
+// with physical workers, the planet can still accept more trees, and no
+// growth cue is pending.
 func nurtureAttentionActive(w *World, kind ResourceKind) bool {
 	if !w.ResourceDiscovered {
 		return false
@@ -487,7 +488,8 @@ func nurtureAttentionActive(w *World, kind ResourceKind) bool {
 	if f == nil || !fieldCanSpawnNode(w, f) || nurtureGrowthCuePending(w) {
 		return false
 	}
-	return townFieldFull(w)
+	slots := maxTownSlots(w)
+	return slots > 0 && townFieldFull(w) && len(w.Workers) >= slots
 }
 
 // EstimateRate returns the analytic resource/sec for all active workers.
@@ -636,7 +638,13 @@ func tryConsumeGrowth(w *World) bool {
 		activatePulse(w, &th.Pulse)
 	}
 	w.Economy.TownGrowth = 0
-	w.Economy.TownGrowthCap *= townGrowthCapGrowth
+	// Transition from the scripted first-lesson cap to the normal-play ramp.
+	// After that, grow geometrically like every other fill.
+	if w.Economy.TownGrowthCap < townGrowthBaseCap {
+		w.Economy.TownGrowthCap = townGrowthBaseCap
+	} else {
+		w.Economy.TownGrowthCap *= townGrowthCapGrowth
+	}
 	return true
 }
 

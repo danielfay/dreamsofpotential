@@ -43,15 +43,15 @@ func TestDeliveryFeedsGrowth(t *testing.T) {
 func TestWorkerArrivalOnDelivery(t *testing.T) {
 	w, node := newDeliveryWorld()
 	gross := baseLoadAmount * node.Size
-	w.Economy.TownGrowthCap = gross * 0.5 // cap below one delivery so growth triggers
-	w.Economy.TownGrowth = 0
+	// Use a cap in the normal-play range so the geometric ramp applies.
+	w.Economy.TownGrowthCap = townGrowthBaseCap
+	w.Economy.TownGrowth = townGrowthBaseCap // already full
 
 	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
 		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
 	node.OwnerID = wk.ID
 	w.Workers = []*Worker{wk}
 
-	prevCap := w.Economy.TownGrowthCap
 	completeUnload(w, wk, node)
 
 	if len(w.Workers) != 2 {
@@ -60,9 +60,33 @@ func TestWorkerArrivalOnDelivery(t *testing.T) {
 	if w.Economy.TownGrowth != 0 {
 		t.Errorf("TownGrowth should reset to 0 after spawn; got %.4f", w.Economy.TownGrowth)
 	}
-	wantCap := prevCap * townGrowthCapGrowth
+	wantCap := townGrowthBaseCap * townGrowthCapGrowth
 	if math.Abs(w.Economy.TownGrowthCap-wantCap) > 1e-9 {
 		t.Errorf("TownGrowthCap got %.4f, want %.4f (×townGrowthCapGrowth)", w.Economy.TownGrowthCap, wantCap)
+	}
+}
+
+func TestWorkerArrivalInitialCapTransition(t *testing.T) {
+	w, node := newDeliveryWorld()
+	gross := baseLoadAmount * node.Size
+	// Simulate the first fill: cap is in the initial (scripted) range.
+	w.Economy.TownGrowthCap = townGrowthInitialCap
+	w.Economy.TownGrowth = townGrowthInitialCap // already full
+
+	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
+		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
+	node.OwnerID = wk.ID
+	w.Workers = []*Worker{wk}
+
+	completeUnload(w, wk, node)
+
+	if len(w.Workers) != 2 {
+		t.Errorf("expected 1 original + 1 spawned worker; got %d", len(w.Workers))
+	}
+	// After the initial fill the cap must jump to townGrowthBaseCap, not multiply.
+	if math.Abs(w.Economy.TownGrowthCap-townGrowthBaseCap) > 1e-9 {
+		t.Errorf("TownGrowthCap after initial fill = %.4f, want townGrowthBaseCap %.4f",
+			w.Economy.TownGrowthCap, townGrowthBaseCap)
 	}
 }
 
@@ -1300,8 +1324,12 @@ func TestNurtureAttentionRequiresTownFull(t *testing.T) {
 		t.Error("attention should be inactive before town capacity is maxed")
 	}
 
-	// Force town to max capacity.
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	// Force town to max capacity with physical workers present.
+	slots := maxTownSlots(w)
+	w.Economy.WorkerCapacity = slots
+	for i := range slots {
+		w.Workers = append(w.Workers, &Worker{ID: i + 1})
+	}
 	if !nurtureAttentionActive(w, KindWood) {
 		t.Error("attention should be active once town capacity is maxed")
 	}
@@ -1330,7 +1358,11 @@ func TestNurtureAttentionSuppressedWhenCuePending(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	slots := maxTownSlots(w)
+	w.Economy.WorkerCapacity = slots
+	for i := range slots {
+		w.Workers = append(w.Workers, &Worker{ID: i + 1})
+	}
 
 	// Town full and field has room — attention should be active.
 	if !nurtureAttentionActive(w, KindWood) {
