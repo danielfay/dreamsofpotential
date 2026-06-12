@@ -1,9 +1,13 @@
 package game
 
 import (
+	"time"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
+
+const sysDoubleClickWindow = 350 * time.Millisecond
 
 // handleSystemInput processes clicks and wheel in system view and,
 // when in post-unlock planet view, the return-to-system affordances.
@@ -36,7 +40,18 @@ func (g *Game) handleSystemInput() {
 			continue // non-interactive
 		}
 		if wp.Dist(p.Pos) <= p.Radius+3 {
+			if p.zoomable() &&
+				i == g.sysDoubleClickPlanet &&
+				time.Since(g.sysDoubleClickTime) < sysDoubleClickWindow {
+				// Double-click on the starting planet — zoom in.
+				enterPlanetView(g.world)
+				g.world.System.Selected = i
+				g.sysDoubleClickPlanet = -1
+				return
+			}
 			g.world.System.Selected = i
+			g.sysDoubleClickPlanet = i
+			g.sysDoubleClickTime = time.Now()
 			return
 		}
 	}

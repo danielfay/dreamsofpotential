@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/widget"
@@ -58,6 +59,10 @@ type Game struct {
 	// system-view button rects in native screen space (set during drawOverlay; read by handleInput)
 	sysEnterRect  sysRect // enter-planet tray button
 	sysReturnRect sysRect // return-to-system button in planet view
+
+	// double-click tracking for system-view planet zoom
+	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
+	sysDoubleClickTime   time.Time // time of that click
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -79,6 +84,7 @@ func New() (*Game, error) {
 		saveTimer:                autoSavePeriod,
 		nurtureAttentionCooldown: nurtureAttentionInterval,
 		importCh:                 make(chan *World, 1),
+		sysDoubleClickPlanet:     -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {

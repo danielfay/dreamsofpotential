@@ -124,6 +124,11 @@ type SystemPlanet struct {
 	Seed         int64 // future world-generation hook
 }
 
+// zoomable reports whether this planet has a live sim the player can zoom into.
+func (p SystemPlanet) zoomable() bool {
+	return p.Kind == PlanetStarting
+}
+
 // System holds all persistent state for the planetary system layer.
 type System struct {
 	Unlocked bool           // true once the first reveal has completed
