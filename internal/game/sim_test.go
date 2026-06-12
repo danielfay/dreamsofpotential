@@ -1722,3 +1722,129 @@ func TestAllEchoesComplete(t *testing.T) {
 		t.Error("allEchoesComplete should be true when both echoes are completed")
 	}
 }
+
+// runTick advances the simulation for the given duration using Tick (view-aware path).
+func runTick(w *World, seconds float64) {
+	ticks := int(math.Round(seconds / dt))
+	for i := 0; i < ticks; i++ {
+		Tick(w, dt)
+	}
+}
+
+// unlockedPlanetViewWorld returns a revealed world with workers settled in planet view,
+// ensuring EstimateRate > AbstractRate so the rolling window has something to ratchet.
+func unlockedPlanetViewWorld() *World {
+	w := newRevealedWorld()
+	enterPlanetView(w)
+	addWorker(w)
+	addWorker(w)
+	addWorker(w)
+	runSim(w, 5) // settle extra workers into routes via Step (doesn't touch window)
+	return w
+}
+
+func TestAbstractRateWindow_NoUpdateBeforeFullWindow(t *testing.T) {
+	w := unlockedPlanetViewWorld()
+
+	initialRate := w.System.Planets[w.Active].AbstractRate
+	if EstimateRate(w) <= initialRate {
+		t.Skip("EstimateRate not > AbstractRate; worker settlement incomplete")
+	}
+
+	// Run for 90% of the window — not enough for an update.
+	runTick(w, abstractRateWindowSec*0.9)
+
+	if w.System.Planets[w.Active].AbstractRate != initialRate {
+		t.Errorf("AbstractRate changed before full window: got %f, want %f",
+			w.System.Planets[w.Active].AbstractRate, initialRate)
+	}
+}
+
+func TestAbstractRateWindow_UpdateAfterFullWindow(t *testing.T) {
+	w := unlockedPlanetViewWorld()
+
+	initialRate := w.System.Planets[w.Active].AbstractRate
+	if EstimateRate(w) <= initialRate {
+		t.Skip("EstimateRate not > AbstractRate; worker settlement incomplete")
+	}
+
+	// Run for longer than a full window — AbstractRate must rise.
+	runTick(w, abstractRateWindowSec*1.1)
+
+	if w.System.Planets[w.Active].AbstractRate <= initialRate {
+		t.Errorf("AbstractRate did not rise after full window: got %f, want > %f",
+			w.System.Planets[w.Active].AbstractRate, initialRate)
+	}
+}
+
+func TestAbstractRateWindow_MonotonicRaiseOnly(t *testing.T) {
+	w := unlockedPlanetViewWorld()
+
+	if EstimateRate(w) <= w.System.Planets[w.Active].AbstractRate {
+		t.Skip("EstimateRate not > AbstractRate; worker settlement incomplete")
+	}
+
+	// Raise the rate by filling one full window.
+	runTick(w, abstractRateWindowSec*1.1)
+	raisedRate := w.System.Planets[w.Active].AbstractRate
+
+	// Remove all workers so EstimateRate drops to zero.
+	w.Workers = nil
+
+	// Run another full window with zero production.
+	runTick(w, abstractRateWindowSec*1.1)
+
+	if w.System.Planets[w.Active].AbstractRate < raisedRate {
+		t.Errorf("AbstractRate decreased (not monotonic): got %f, want >= %f",
+			w.System.Planets[w.Active].AbstractRate, raisedRate)
+	}
+}
+
+func TestAbstractRateWindow_ResetsOnPlanetSwitch(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Wood = awakenCost
+	awakenPlanet(w, 1)
+
+	enterPlanetView(w)
+	addWorker(w)
+	addWorker(w)
+	addWorker(w)
+	runSim(w, 5)
+
+	initialRate0 := w.System.Planets[0].AbstractRate
+
+	// Fill 90% of the window on the starting planet — not enough to update.
+	runTick(w, abstractRateWindowSec*0.9)
+	if w.System.Planets[0].AbstractRate != initialRate0 {
+		t.Error("starting planet rate changed before full window")
+	}
+
+	// Switch to echo 1; the window must reset.
+	switchToPlanet(w, 1)
+	enterPlanetView(w)
+	echo1Rate := w.System.Planets[1].AbstractRate
+
+	// Run 90% of a window on the echo. Combined elapsed (180% total) must not trigger
+	// an update because each planet requires its own independent full window.
+	runTick(w, abstractRateWindowSec*0.9)
+
+	if w.System.Planets[1].AbstractRate != echo1Rate {
+		t.Errorf("echo1 AbstractRate changed without a full window: got %f, want %f",
+			w.System.Planets[1].AbstractRate, echo1Rate)
+	}
+}
+
+func TestAbstractRateWindow_SystemViewDoesNotUpdate(t *testing.T) {
+	w := newRevealedWorld()
+	// newRevealedWorld leaves the world in ViewSystem.
+
+	initialRate := w.System.Planets[0].AbstractRate
+
+	// Run a full window's worth of Ticks while in system view.
+	runTick(w, abstractRateWindowSec*1.1)
+
+	if w.System.Planets[0].AbstractRate != initialRate {
+		t.Errorf("AbstractRate changed during system view: got %f, want %f",
+			w.System.Planets[0].AbstractRate, initialRate)
+	}
+}

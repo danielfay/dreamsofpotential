@@ -48,4 +48,10 @@ const (
 	revealDuration = 3.5   // seconds for the one-time unlock reveal animation
 	awakenCost          = 500.0 // global wood to awaken a dormant echo planet
 	completionAmplifier = 1.25  // echo AbstractRate multiplier on completion
+
+	// Rolling window that ratchets AbstractRate upward at runtime (monotonic, raise-only).
+	// The window prevents enter/exit fishing: the sustained floor must exceed the stored rate
+	// for a full window before it sticks. Revisit if planets gain damage/decay mechanics.
+	abstractRateWindowSec = 60.0 // rolling window length in seconds
+	abstractRateBuckets   = 12   // sub-buckets (each spans abstractRateWindowSec/abstractRateBuckets s)
 )

@@ -772,6 +772,64 @@ func forestPlanetComplete(w *World) bool {
 	return townFieldFull(w) && f != nil && !fieldCanSpawnNode(w, f)
 }
 
+// updateActiveAbstractRate samples EstimateRate into a rolling bucket-min window and
+// ratchets AbstractRate upward (raise-only) when the sustained floor exceeds the stored
+// value. The window resets on planet change so pre-filled samples can't carry across
+// enter/exit cycles (anti-fishing). Call only from the post-unlock planet-view branch of Tick.
+func updateActiveAbstractRate(w *World, dt float64) {
+	win := &w.abstractRateWin
+	bucketSpan := abstractRateWindowSec / abstractRateBuckets
+
+	// Reset when the active planet has changed (or on first call).
+	if win.planet != w.Active || len(win.buckets) == 0 {
+		win.buckets = make([]float64, abstractRateBuckets)
+		for i := range win.buckets {
+			win.buckets[i] = 1e18 // sentinel: unwritten bucket never constrains min
+		}
+		win.idx = 0
+		win.filled = 0
+		win.elapsed = 0
+		win.planet = w.Active
+	}
+
+	rate := EstimateRate(w)
+
+	// Advance the bucket pointer when the current bucket's span has elapsed.
+	win.elapsed += dt
+	for win.elapsed >= bucketSpan {
+		win.elapsed -= bucketSpan
+		win.idx = (win.idx + 1) % abstractRateBuckets
+		// Overwrite the oldest bucket with a fresh sentinel before accumulating.
+		win.buckets[win.idx] = 1e18
+		if win.filled < abstractRateBuckets {
+			win.filled++
+		}
+	}
+
+	// Fold the current rate into the active bucket's running minimum.
+	if rate < win.buckets[win.idx] {
+		win.buckets[win.idx] = rate
+	}
+
+	// Only update AbstractRate once every bucket has been written at least once.
+	if win.filled < abstractRateBuckets {
+		return
+	}
+
+	// Window minimum = sustained floor over the full window.
+	windowMin := win.buckets[0]
+	for _, b := range win.buckets[1:] {
+		if b < windowMin {
+			windowMin = b
+		}
+	}
+
+	p := &w.System.Planets[w.Active]
+	if windowMin > p.AbstractRate {
+		p.AbstractRate = windowMin
+	}
+}
+
 // abstractIncome returns total abstract wood/sec from all non-active producing
 // planets. The active planet runs live (or is frozen in system view), so it is
 // excluded when in planet view to avoid double-counting. Unknown never produces.
@@ -882,9 +940,10 @@ func Tick(w *World, dt float64) (justUnlocked bool) {
 	// Planet view (or pre-unlock): run the live sim.
 	Step(w, dt)
 	if w.System.Unlocked {
-		// Post-unlock planet view: abstract income + check for echo completion.
+		// Post-unlock planet view: abstract income + check for echo completion + rate ratchet.
 		w.Economy.Wood += abstractIncome(w) * dt
 		checkActivePlanetCompletion(w)
+		updateActiveAbstractRate(w, dt)
 		return false
 	}
 	// Pre-unlock: check mastery gate exactly once.

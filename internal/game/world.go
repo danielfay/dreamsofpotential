@@ -273,6 +273,15 @@ type World struct {
 	growthCue         growthCueState
 	pendingGrowthCues []growthCueState
 	lastDelivery      deliverySplit
+	abstractRateWin   abstractRateWindow
+}
+
+type abstractRateWindow struct {
+	buckets []float64 // running min per bucket; len == abstractRateBuckets
+	idx     int       // current bucket index
+	filled  int       // how many buckets have been written at least once
+	elapsed float64   // seconds accumulated in the current bucket
+	planet  int       // w.Active value this window belongs to; -1 means uninitialised
 }
 
 type deliverySplit struct{ Gross, Banked, Returned float64 }
