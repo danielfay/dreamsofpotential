@@ -41,6 +41,22 @@ type QAPreset struct {
 	// Reveal — calls triggerUnlock after all other overrides.
 	// Requires both mastery gates to be met; errors otherwise.
 	Reveal bool `json:"reveal"`
+
+	// Echo lifecycle — applied after Reveal in order: Awaken, Complete, Enter.
+	AwakenEchoes []int `json:"awakenEchoes"` // planet indices to awaken (bypasses wood cost)
+	CompleteEchoes []int `json:"completeEchoes"` // planet indices to fully complete (awaken + build + saturate)
+
+	// SelectPlanet sets System.Selected after echo lifecycle processing.
+	SelectPlanet *int `json:"selectPlanet"`
+
+	// EnterPlanet switches the active planet and enters planet view.
+	// Applied after AwakenEchoes and CompleteEchoes.
+	EnterPlanet *int `json:"enterPlanet"`
+
+	// Echo setup — applied to the entered planet when EnterPlanet is set.
+	EchoPlaceTownHall    bool `json:"echoPlaceTownHall"`
+	EchoFillTownCapacity bool `json:"echoFillTownCapacity"`
+	EchoNearSaturate     bool `json:"echoNearSaturate"` // leave exactly one spawn slot
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -161,12 +177,113 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		triggerUnlock(w)
 	}
 
+	// Echo lifecycle — applied after Reveal.
+	for _, idx := range p.AwakenEchoes {
+		if idx < 0 || idx >= len(w.System.Planets) {
+			return nil, fmt.Errorf("awakenEchoes: index %d out of range", idx)
+		}
+		if w.System.Planets[idx].Kind != PlanetEcho {
+			return nil, fmt.Errorf("awakenEchoes: planet %d is not an echo", idx)
+		}
+		if !w.System.Planets[idx].Awakened {
+			saved := w.Economy.Wood
+			if w.Economy.Wood < awakenCost {
+				w.Economy.Wood = awakenCost
+			}
+			awakenPlanet(w, idx)
+			w.Economy.Wood = saved
+		}
+	}
+
+	for _, idx := range p.CompleteEchoes {
+		if idx < 0 || idx >= len(w.System.Planets) {
+			return nil, fmt.Errorf("completeEchoes: index %d out of range", idx)
+		}
+		if w.System.Planets[idx].Kind != PlanetEcho {
+			return nil, fmt.Errorf("completeEchoes: planet %d is not an echo", idx)
+		}
+		if !w.System.Planets[idx].Awakened {
+			saved := w.Economy.Wood
+			if w.Economy.Wood < awakenCost {
+				w.Economy.Wood = awakenCost
+			}
+			awakenPlanet(w, idx)
+			w.Economy.Wood = saved
+		}
+		// Build out the echo to meet the completion gate.
+		switchToPlanet(w, idx)
+		ef := fieldForKind(w, KindWood)
+		if ef == nil {
+			return nil, fmt.Errorf("completeEchoes: echo %d has no wood field", idx)
+		}
+		// Find a clear TH angle (pre-spawned echo nodes may block obvious candidates).
+		thAngle, ok := findValidBuildingAngle(w)
+		if !ok || !placeBuilding(w, thAngle) {
+			return nil, fmt.Errorf("completeEchoes: failed to place Town Hall on echo %d", idx)
+		}
+		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+			w.Economy.WorkerCapacity = max
+		}
+		fillWoodFieldNodes(w, false)
+		checkActivePlanetCompletion(w)
+		if !w.System.Planets[idx].Completed {
+			return nil, fmt.Errorf("completeEchoes: echo %d did not complete", idx)
+		}
+		// Restore starting planet as active and return to system view.
+		switchToPlanet(w, 0)
+		enterSystemView(w)
+	}
+
+	// Select a specific planet in system view.
+	if p.SelectPlanet != nil {
+		w.System.Selected = *p.SelectPlanet
+	}
+
+	// Enter a specific planet (switch active + enter planet view).
+	if p.EnterPlanet != nil {
+		idx := *p.EnterPlanet
+		if idx < 0 || idx >= len(w.System.Planets) {
+			return nil, fmt.Errorf("enterPlanet: index %d out of range", idx)
+		}
+		switchToPlanet(w, idx)
+		enterPlanetView(w)
+		w.System.Selected = idx
+		if p.EchoPlaceTownHall {
+			thAngle, ok := findValidBuildingAngle(w)
+			if !ok || !placeBuilding(w, thAngle) {
+				return nil, fmt.Errorf("echoPlaceTownHall: failed to place Town Hall")
+			}
+		}
+		if p.EchoFillTownCapacity {
+			if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+				w.Economy.WorkerCapacity = max
+			}
+		}
+		if p.EchoNearSaturate {
+			fillWoodFieldNodes(w, true)
+		}
+	}
+
 	// Wood — stamped last so it reflects the intended final balance exactly.
 	if p.Wood != nil {
 		w.Economy.Wood = *p.Wood
 	}
 
 	return w, nil
+}
+
+// findValidBuildingAngle searches the rim for the first angle where a building
+// (TH or camp) can legally be placed. Used for echo planets whose pre-spawned
+// nodes may block obvious candidate angles.
+func findValidBuildingAngle(w *World) (float64, bool) {
+	const steps = 120
+	for i := 0; i < steps; i++ {
+		a := normAngle(-math.Pi + float64(i)*2*math.Pi/steps)
+		if buildPreview(w, a).Valid {
+			return a, true
+		}
+	}
+	return 0, false
 }
 
 // fillWoodFieldNodes spawns wood-field nodes until the field is saturated.

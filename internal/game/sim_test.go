@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -1582,5 +1583,142 @@ func TestNurtureAttentionInactiveAtFieldSaturation(t *testing.T) {
 	// nurtureField must be a no-op.
 	if nurtureField(w, KindWood) {
 		t.Error("nurtureField should fail when field is saturated")
+	}
+}
+
+// ── Echo planet tests ─────────────────────────────────────────────────────────
+
+// newRevealedWorld returns a world that has triggered the system unlock,
+// leaving it in system view with abstract rates snapshotted.
+func newRevealedWorld() *World {
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	Tick(w, dt) // triggers unlock → ViewSystem
+	return w
+}
+
+func TestAbstractIncome_AwakenedEchoUnviewed(t *testing.T) {
+	w := newRevealedWorld()
+	// Awaken echo 1 — its AbstractRate should remain the pre-awakened fraction.
+	originalRate := w.System.Planets[1].AbstractRate
+	w.Economy.Wood = awakenCost
+	awakenPlanet(w, 1)
+
+	// Enter echo 1 (planet view on the echo).
+	switchToPlanet(w, 1)
+	enterPlanetView(w)
+
+	inc := abstractIncome(w)
+	// Active echo (idx 1) must NOT contribute abstract income; echo 2 and starting must.
+	expected := w.System.Planets[0].AbstractRate + w.System.Planets[2].AbstractRate
+	if math.Abs(inc-expected) > 1e-9 {
+		t.Errorf("abstractIncome with echo active: got %f, want %f", inc, expected)
+	}
+
+	// Switch away: echo 1 should contribute its original rate again.
+	switchToPlanet(w, 0)
+	enterPlanetView(w)
+	incAway := abstractIncome(w)
+	if math.Abs(w.System.Planets[1].AbstractRate-originalRate) > 1e-9 {
+		t.Errorf("echo 1 AbstractRate changed while unviewed: got %f, want %f",
+			w.System.Planets[1].AbstractRate, originalRate)
+	}
+	expectedAway := w.System.Planets[1].AbstractRate + w.System.Planets[2].AbstractRate
+	if math.Abs(incAway-expectedAway) > 1e-9 {
+		t.Errorf("abstractIncome with starting active: got %f, want %f", incAway, expectedAway)
+	}
+}
+
+func TestEchoCompletion_AmplifiedRate(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Wood = awakenCost
+	awakenPlanet(w, 1)
+
+	// Enter echo 1 and build it to completion gates.
+	switchToPlanet(w, 1)
+	enterPlanetView(w)
+	f := fieldForKind(w, KindWood)
+	if f == nil {
+		t.Fatal("setup: no wood field on echo")
+	}
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		t.Fatal("setup: cannot place echo TH")
+	}
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+	fillWoodFieldNodes(w, false)
+
+	// Estimate what the rate should be before completion fires.
+	// (workers = 0 in loop, so EstimateRate = 0; AbstractRate will be 0*1.25 = 0.
+	//  That is acceptable — the completion logic is what we're testing.)
+	checkActivePlanetCompletion(w)
+
+	if !w.System.Planets[1].Completed {
+		t.Fatal("echo 1 should be Completed after forestPlanetComplete gates met")
+	}
+	want := EstimateRate(w) * completionAmplifier
+	got := w.System.Planets[1].AbstractRate
+	if math.Abs(got-want) > 1e-9 {
+		t.Errorf("AbstractRate after completion: got %f, want EstimateRate*1.25=%f", got, want)
+	}
+
+	// checkActivePlanetCompletion must be idempotent (no second fire).
+	w.System.Planets[1].AbstractRate = 99.0
+	checkActivePlanetCompletion(w)
+	if w.System.Planets[1].AbstractRate != 99.0 {
+		t.Error("checkActivePlanetCompletion should not re-fire after Completed=true")
+	}
+}
+
+func TestAwakenEitherEchoFirst(t *testing.T) {
+	for _, first := range []int{1, 2} {
+		t.Run(fmt.Sprintf("echo%d_first", first), func(t *testing.T) {
+			w := newRevealedWorld()
+			second := 3 - first // if first=1 → second=2 and vice versa
+			w.Economy.Wood = awakenCost * 2
+
+			awakenPlanet(w, first)
+			awakenPlanet(w, second)
+
+			if !w.System.Planets[first].Awakened {
+				t.Errorf("echo %d: expected Awakened=true", first)
+			}
+			if !w.System.Planets[second].Awakened {
+				t.Errorf("echo %d: expected Awakened=true", second)
+			}
+			if w.PlanetStates[first] == nil {
+				t.Errorf("echo %d: PlanetStates should be non-nil after awakening", first)
+			}
+			if w.PlanetStates[second] == nil {
+				t.Errorf("echo %d: PlanetStates should be non-nil after awakening", second)
+			}
+			// Each layout has a wood field.
+			switchToPlanet(w, first)
+			if fieldForKind(w, KindWood) == nil {
+				t.Errorf("echo %d: no wood field after switching to it", first)
+			}
+			switchToPlanet(w, second)
+			if fieldForKind(w, KindWood) == nil {
+				t.Errorf("echo %d: no wood field after switching to it", second)
+			}
+		})
+	}
+}
+
+func TestAllEchoesComplete(t *testing.T) {
+	w := newRevealedWorld()
+	if allEchoesComplete(w) {
+		t.Error("allEchoesComplete should be false before any echo is completed")
+	}
+	w.System.Planets[1].Completed = true
+	if allEchoesComplete(w) {
+		t.Error("allEchoesComplete should be false when only one echo is completed")
+	}
+	w.System.Planets[2].Completed = true
+	if !allEchoesComplete(w) {
+		t.Error("allEchoesComplete should be true when both echoes are completed")
 	}
 }

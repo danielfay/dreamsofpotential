@@ -46,5 +46,6 @@ const (
 	echoRateFracA  = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
 	echoRateFracB  = 0.45  // echo B rate — slightly lower for variance
 	revealDuration = 3.5   // seconds for the one-time unlock reveal animation
-	awakenCost     = 500.0 // global wood to awaken a dormant echo planet
+	awakenCost          = 500.0 // global wood to awaken a dormant echo planet
+	completionAmplifier = 1.25  // echo AbstractRate multiplier on completion
 )

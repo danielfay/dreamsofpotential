@@ -789,9 +789,32 @@ func abstractIncome(w *World) float64 {
 	return total
 }
 
+// allEchoesComplete reports whether every echo planet in the system is completed.
+func allEchoesComplete(w *World) bool {
+	for _, p := range w.System.Planets {
+		if p.Kind == PlanetEcho && !p.Completed {
+			return false
+		}
+	}
+	return true
+}
+
 // checkActivePlanetCompletion detects when the active echo planet finishes and
-// snapshots its rate. Implemented in Stage 3; stub here so Tick compiles.
-func checkActivePlanetCompletion(w *World) {}
+// snapshots its amplified abstract rate, then fires a lightweight Town Hall pulse.
+func checkActivePlanetCompletion(w *World) {
+	p := &w.System.Planets[w.Active]
+	if p.Kind != PlanetEcho || !p.Awakened || p.Completed {
+		return
+	}
+	if !forestPlanetComplete(w) {
+		return
+	}
+	p.AbstractRate = EstimateRate(w) * completionAmplifier
+	p.Completed = true
+	if th := townHall(w); th != nil {
+		activatePulse(w, &th.Pulse)
+	}
+}
 
 // canAwaken reports whether the echo planet at idx can be awakened right now.
 func canAwaken(w *World, idx int) bool {

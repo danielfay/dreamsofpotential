@@ -333,6 +333,54 @@ func TestSaveLoadRoundTripPlanetStates(t *testing.T) {
 	}
 }
 
+// TestSaveLoadRoundTripEchoLifecycle verifies that awakened and completed echo
+// state — including PlanetStates, Awakened, Completed, LayoutID, and the amplified
+// AbstractRate — survives a save/load cycle unchanged.
+func TestSaveLoadRoundTripEchoLifecycle(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	Tick(w, dt) // unlock
+
+	// Awaken echo 1 and mark it completed with a known amplified rate.
+	w.Economy.Wood = awakenCost
+	awakenPlanet(w, 1)
+	w.System.Planets[1].Completed = true
+	w.System.Planets[1].AbstractRate = 3.75
+	wantLayoutID := w.System.Planets[1].LayoutID
+	w.System.Selected = 1
+	w.Active = 0
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !got.System.Planets[1].Awakened {
+		t.Error("echo 1 Awakened should survive round-trip")
+	}
+	if !got.System.Planets[1].Completed {
+		t.Error("echo 1 Completed should survive round-trip")
+	}
+	if got.System.Planets[1].AbstractRate != 3.75 {
+		t.Errorf("echo 1 AbstractRate: got %f, want 3.75", got.System.Planets[1].AbstractRate)
+	}
+	if got.System.Planets[1].LayoutID != wantLayoutID {
+		t.Errorf("echo 1 LayoutID: got %d, want %d", got.System.Planets[1].LayoutID, wantLayoutID)
+	}
+	if got.PlanetStates[1] == nil {
+		t.Error("PlanetStates[1] should be non-nil after awakening echo 1")
+	}
+	if got.System.Selected != 1 {
+		t.Errorf("System.Selected: got %d, want 1", got.System.Selected)
+	}
+}
+
 // TestLoadVersionMismatch verifies that a save with a different version is
 // treated as missing (returns os.ErrNotExist) so the caller starts fresh.
 func TestLoadVersionMismatch(t *testing.T) {

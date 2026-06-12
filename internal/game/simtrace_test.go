@@ -41,8 +41,12 @@ type SimTraceRunner interface {
 	// changes and returns log events (e.g. "+worker → 3"), or nil.
 	Events(w *World) []string
 
+	// Complete reports whether the scenario's terminal condition has been met.
+	// runSimTrace exits when this returns true.
+	Complete(w *World) bool
+
 	// Summary returns a completion message logged on the row where the planet
-	// finishes. runSimTrace exits when w.System.Unlocked is true.
+	// finishes.
 	Summary(w *World) string
 }
 
@@ -89,7 +93,7 @@ func runSimTrace(t *testing.T, desc string, maxMinutes float64, runner SimTraceR
 			logRow(simTime, ev)
 		}
 
-		if w.System.Unlocked {
+		if runner.Complete(w) {
 			logRow(simTime, runner.Summary(w))
 			break
 		}
@@ -100,7 +104,7 @@ func runSimTrace(t *testing.T, desc string, maxMinutes float64, runner SimTraceR
 		}
 	}
 
-	if !w.System.Unlocked {
+	if !runner.Complete(w) {
 		logRow(simDuration, "ceiling reached — planet NOT complete.  "+runner.Summary(w))
 	}
 
@@ -255,8 +259,159 @@ func (r *startingPlanetRunner) Events(w *World) []string {
 	return events
 }
 
+func (r *startingPlanetRunner) Complete(w *World) bool { return w.System.Unlocked }
+
 func (r *startingPlanetRunner) Summary(w *World) string {
 	return fmt.Sprintf("*** PLANET COMPLETE (nurture presses: %d) ***", r.nurturePressed)
+}
+
+// ── Echo completion ───────────────────────────────────────────────────────────
+
+// TestSimTraceEchoCompletion runs an echo planet from fresh entry to completion,
+// verifying that the completion gate fires and the amplified rate is snapshotted.
+func TestSimTraceEchoCompletion(t *testing.T) {
+	const echoIdx = 1
+	runner := &echoCompletionRunner{echoIdx: echoIdx}
+	w := runSimTrace(t, "echo planet completion (layout 0)", 25, runner)
+	if !w.System.Planets[echoIdx].Completed {
+		t.Errorf("echo %d: expected Completed=true after trace", echoIdx)
+	}
+	if w.System.Planets[echoIdx].AbstractRate <= 0 {
+		t.Errorf("echo %d: AbstractRate should be > 0 after completion, got %f",
+			echoIdx, w.System.Planets[echoIdx].AbstractRate)
+	}
+	t.Logf("echo %d completed — AbstractRate: %.4f wood/sec", echoIdx, w.System.Planets[echoIdx].AbstractRate)
+}
+
+// echoCompletionRunner implements SimTraceRunner for an awakened echo planet.
+// Setup establishes the starting planet unlock, awakens echo at echoIdx, enters it.
+type echoCompletionRunner struct {
+	echoIdx        int
+	field          *ResourceField
+	campTargets    []float64
+	prevWorkers    int
+	prevTrees      int
+	nurturePressed int
+	townFullLogged bool
+}
+
+func (r *echoCompletionRunner) Setup(w *World) {
+	// Fully set up starting planet to allow triggerUnlock.
+	f0 := fieldForKind(w, KindWood)
+	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
+		panic("echoCompletionRunner: cannot place starting TH")
+	}
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	addWorker(w)
+	fillWoodFieldNodes(w, false)
+	w.ResourceDiscovered = true
+	triggerUnlock(w)
+
+	// Awaken the target echo and enter it.
+	w.Economy.Wood = awakenCost
+	awakenPlanet(w, r.echoIdx)
+	w.Economy.Wood = 0
+	switchToPlanet(w, r.echoIdx)
+	enterPlanetView(w)
+
+	// Find a valid TH angle (pre-spawned nodes may block obvious angles).
+	r.field = fieldForKind(w, KindWood)
+	if r.field == nil {
+		panic("echoCompletionRunner: no wood field on echo")
+	}
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		panic("echoCompletionRunner: cannot place echo TH")
+	}
+	w.ResourceDiscovered = true
+
+	r.campTargets = []float64{
+		normAngle(r.field.CenterAngle - math.Pi/3),
+		normAngle(r.field.CenterAngle + math.Pi/3),
+		normAngle(r.field.CenterAngle - 2*math.Pi/3),
+		normAngle(r.field.CenterAngle + 2*math.Pi/3),
+	}
+	r.prevWorkers = len(w.Workers)
+	r.prevTrees = woodTreeCount(w)
+}
+
+func (r *echoCompletionRunner) ColHeader() string {
+	return fmt.Sprintf("%-6s  %-8s  %-14s", "trees", "wood", "field exp/cap")
+}
+
+func (r *echoCompletionRunner) ColRow(w *World) string {
+	fld := fieldForKind(w, KindWood)
+	var expStr string
+	if fld != nil {
+		expStr = fmt.Sprintf("%.0f/%.0f", fld.EXP, fld.Cap)
+	}
+	return fmt.Sprintf("%-6d  %-8.0f  %-14s", woodTreeCount(w), w.Economy.Wood, expStr)
+}
+
+func (r *echoCompletionRunner) PlayerAI(w *World) []string {
+	var events []string
+	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+		buildTownCapacity(w)
+	}
+	campCount := len(w.Buildings) - 1
+	if campCount < len(r.campTargets) &&
+		len(w.Workers) >= campCount*2+3 &&
+		w.Economy.Wood >= CampCost(w) {
+		if a, ok := r.findCampAngle(w, r.campTargets[campCount]); ok {
+			if placeBuilding(w, a) {
+				events = append(events, fmt.Sprintf("+camp %d at %.2f", campCount+1, a))
+			}
+		}
+	}
+	if nurtureAttentionActive(w, KindWood) {
+		if nurtureField(w, KindWood) {
+			r.nurturePressed++
+		}
+	}
+	return events
+}
+
+func (r *echoCompletionRunner) findCampAngle(w *World, target float64) (float64, bool) {
+	const steps = 60
+	const sweep = math.Pi / 3
+	for i := 0; i < steps; i++ {
+		offset := sweep * float64(i) / float64(steps-1)
+		for _, sign := range []float64{1, -1} {
+			a := normAngle(target + sign*offset)
+			if buildPreview(w, a).Valid {
+				return a, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func (r *echoCompletionRunner) Events(w *World) []string {
+	var events []string
+	if cur := len(w.Workers); cur != r.prevWorkers {
+		events = append(events, fmt.Sprintf("+worker → %d (growth %.0f/%.0f)",
+			cur, w.Economy.TownGrowth, w.Economy.TownGrowthCap))
+		r.prevWorkers = cur
+	}
+	if cur := woodTreeCount(w); cur != r.prevTrees {
+		events = append(events, fmt.Sprintf("+tree → %d", cur))
+		r.prevTrees = cur
+	}
+	if townFieldFull(w) && !r.townFullLogged {
+		events = append(events, "*** town full ***")
+		r.townFullLogged = true
+	}
+	return events
+}
+
+func (r *echoCompletionRunner) Complete(w *World) bool {
+	return w.System.Planets[r.echoIdx].Completed
+}
+
+func (r *echoCompletionRunner) Summary(w *World) string {
+	rate := w.System.Planets[r.echoIdx].AbstractRate
+	return fmt.Sprintf("*** ECHO COMPLETE (rate %.4f wood/sec, nurture presses: %d) ***",
+		rate, r.nurturePressed)
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
