@@ -146,9 +146,11 @@ type PlanetState struct {
 	WorkerCapacity     int
 	CapacityBought     int
 	CampsBought        int
-	TownGrowth         float64
-	TownGrowthCap      float64
-	Founded            bool
+	TownGrowth          float64
+	TownGrowthCap       float64
+	TownGrowthOverflow  float64
+	LastWorkerSpawnTime float64
+	Founded             bool
 }
 
 // System holds all persistent state for the planetary system layer.
@@ -241,8 +243,10 @@ type Economy struct {
 	WorkerCapacity int // total worker slots unlocked (founding slot + paid capacity)
 	CapacityBought int // paid capacity purchases; drives the cost curve
 	CampsBought    int
-	TownGrowth     float64 // accumulates gross delivery amount; clamped at TownGrowthCap
-	TownGrowthCap  float64 // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowth         float64 // accumulates gross delivery amount; clamped at TownGrowthCap
+	TownGrowthCap      float64 // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowthOverflow float64 // excess growth banked while capacity-blocked; drains on next open slot
+	LastWorkerSpawnTime float64 // SimTime of most recent spawn; used to enforce workerSpawnCooldown
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
@@ -599,9 +603,11 @@ func parkActive(w *World) {
 		WorkerCapacity:     w.Economy.WorkerCapacity,
 		CapacityBought:     w.Economy.CapacityBought,
 		CampsBought:        w.Economy.CampsBought,
-		TownGrowth:         w.Economy.TownGrowth,
-		TownGrowthCap:      w.Economy.TownGrowthCap,
-		Founded:            townHall(w) != nil,
+		TownGrowth:          w.Economy.TownGrowth,
+		TownGrowthCap:       w.Economy.TownGrowthCap,
+		TownGrowthOverflow:  w.Economy.TownGrowthOverflow,
+		LastWorkerSpawnTime: w.Economy.LastWorkerSpawnTime,
+		Founded:             townHall(w) != nil,
 	}
 }
 
@@ -621,8 +627,10 @@ func loadPlanet(w *World, idx int) {
 	w.Economy.WorkerCapacity = ps.WorkerCapacity
 	w.Economy.CapacityBought = ps.CapacityBought
 	w.Economy.CampsBought    = ps.CampsBought
-	w.Economy.TownGrowth     = ps.TownGrowth
-	w.Economy.TownGrowthCap  = ps.TownGrowthCap
+	w.Economy.TownGrowth          = ps.TownGrowth
+	w.Economy.TownGrowthCap       = ps.TownGrowthCap
+	w.Economy.TownGrowthOverflow  = ps.TownGrowthOverflow
+	w.Economy.LastWorkerSpawnTime = ps.LastWorkerSpawnTime
 	w.PlanetStates[idx]  = nil // active slot is always nil
 	w.Active             = idx
 	w.growthCue          = growthCueState{}

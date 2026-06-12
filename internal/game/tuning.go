@@ -7,7 +7,7 @@ const (
 	campBaseCost           = 200.0 // first camp clearly unreachable during the first-lesson window
 	campCostGrowth         = 1.35  // gentler growth keeps the 4th camp affordable
 	townCapacityBaseCost   = 80.0  // house lights up a few trips after the initial growth fill
-	townCapacityCostGrowth = 1.20  // per paid capacity purchase
+	townCapacityCostGrowth = 1.15  // per paid capacity purchase
 
 	// Two-phase town growth.
 	// Phase 1 (scripted lesson): the initial cap is small so the growth bar
@@ -17,15 +17,16 @@ const (
 	// but meaningful ramp for the rest of the planet.
 	townGrowthInitialCap = 70.0  // first fill only — fires just before house is affordable
 	townGrowthBaseCap    = 250.0 // normal-play base, used from the second fill onward
-	townGrowthCapGrowth  = 1.25  // cap multiplier per worker arrival (phase 2)
+	townGrowthCapGrowth  = 1.18  // cap multiplier per worker arrival (phase 2)
 
 	// Town field geometry — the settlement wedge anchored to the Town Hall angle.
-	townFieldHalfArc     = 0.34 // half angular width of the town wedge (radians)
+	townFieldHalfArc     = 0.60 // half angular width of the town wedge (radians)
 	townFieldDepthFrac   = 1.00 // inward depth as a fraction of planet radius (1.0 = center)
 	townFieldRimInset    = 16.0 // px inside the rim where the first slot row sits
 	townFieldSlotSpacing = 10.0 // px between dwelling slots (row + column pitch)
 
 	// simulation constants
+	workerSpawnCooldown = 3.0  // minimum seconds between worker spawns (prevents overflow burst)
 	workerSpeed         = 40.0 // world px / second
 	loadTime            = 0.5  // seconds to load at the node
 	unloadTime          = 0.3  // seconds to unload at the camp

@@ -284,8 +284,8 @@ func TestMaxTownSlotsFromGeometry(t *testing.T) {
 		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	slots := maxTownSlots(w)
-	if slots != 10 {
-		t.Errorf("expected 10 slots at radius 72, got %d", slots)
+	if slots != 19 {
+		t.Errorf("expected 19 slots at radius 72, got %d", slots)
 	}
 	// Smaller planet should yield fewer slots.
 	w2 := NewWorld()
