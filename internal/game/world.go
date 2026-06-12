@@ -334,6 +334,9 @@ func townHall(w *World) *Building {
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
 func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
+	if w.rng == nil {
+		w.rng = rand.New(rand.NewSource(0))
+	}
 	id := w.NextNodeID
 	w.NextNodeID++
 	return &ResourceNode{
