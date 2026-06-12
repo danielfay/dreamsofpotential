@@ -122,11 +122,33 @@ type SystemPlanet struct {
 	AbstractRate float64
 	RingColorIdx int   // 0 or 1 — slight visual variation between the two echoes
 	Seed         int64 // future world-generation hook
+	Awakened     bool  // echo has been awoken (has a durable live PlanetState)
+	Completed    bool  // echo reached its completion gate
+	LayoutID     int   // which authored echo layout (0 or 1)
 }
 
 // zoomable reports whether this planet has a live sim the player can zoom into.
 func (p SystemPlanet) zoomable() bool {
-	return p.Kind == PlanetStarting
+	return p.Kind == PlanetStarting || (p.Kind == PlanetEcho && p.Awakened)
+}
+
+// PlanetState is one planet's durable live sim state when it is NOT the active
+// (viewed) planet. The active planet's state lives in the top-level World fields.
+type PlanetState struct {
+	Planet             Planet
+	Buildings          []*Building
+	Nodes              []*ResourceNode
+	Workers            []*Worker
+	NextNodeID         int
+	NextWorkerID       int
+	ResourceDiscovered bool
+	SimTime            float64
+	WorkerCapacity     int
+	CapacityBought     int
+	CampsBought        int
+	TownGrowth         float64
+	TownGrowthCap      float64
+	Founded            bool
 }
 
 // System holds all persistent state for the planetary system layer.
@@ -225,7 +247,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 9
+const SaveVersion = 10
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -240,6 +262,13 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 	System             System // system-view unlock state; persisted
+
+	// Multi-planet support: PlanetStates holds parked live state for non-active
+	// planets, index-aligned to System.Planets. The entry for Active is always nil
+	// because that planet's live state lives in the top-level fields above.
+	// Uninstantiated planets (unawakened echoes, unknown) are also nil.
+	PlanetStates []*PlanetState
+	Active       int // System.Planets index currently loaded into top-level live fields
 
 	growthCue         growthCueState
 	pendingGrowthCues []growthCueState
@@ -467,6 +496,15 @@ func NewWorld() *World {
 		Cap:         woodFieldBaseEXP,
 	}
 
+	planets := []SystemPlanet{
+		// Index 0: starting planet (rate set at unlock; Pos is system-view canvas position)
+		{Kind: PlanetStarting, Pos: Vec{X: 118, Y: 92}, Radius: 18},
+		// Index 1 & 2: echo forest producers — rates snapshotted at unlock, zero until then
+		{Kind: PlanetEcho, Pos: Vec{X: 160, Y: 72}, Radius: 12, RingColorIdx: 0, Seed: 42},
+		{Kind: PlanetEcho, Pos: Vec{X: 148, Y: 128}, Radius: 12, RingColorIdx: 1, Seed: 43},
+		// Index 3: unknown frontier silhouette — non-interactive, no rate
+		{Kind: PlanetUnknown, Pos: Vec{X: 242, Y: 162}, Radius: 10},
+	}
 	return &World{
 		Version: SaveVersion,
 		Planet: Planet{
@@ -475,20 +513,73 @@ func NewWorld() *World {
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
 		},
-		Economy: Economy{TownGrowthCap: townGrowthBaseCap},
+		Economy:      Economy{TownGrowthCap: townGrowthBaseCap},
+		Active:       0,
+		PlanetStates: make([]*PlanetState, len(planets)),
 		System: System{
 			Unlocked: false,
 			View:     ViewPlanet,
 			Selected: -1,
-			Planets: []SystemPlanet{
-				// Index 0: starting planet (rate set at unlock; Pos is system-view canvas position)
-				{Kind: PlanetStarting, Pos: Vec{X: 118, Y: 92}, Radius: 18},
-				// Index 1 & 2: echo forest producers — rates snapshotted at unlock, zero until then
-				{Kind: PlanetEcho, Pos: Vec{X: 160, Y: 72}, Radius: 12, RingColorIdx: 0, Seed: 42},
-				{Kind: PlanetEcho, Pos: Vec{X: 148, Y: 128}, Radius: 12, RingColorIdx: 1, Seed: 43},
-				// Index 3: unknown frontier silhouette — non-interactive, no rate
-				{Kind: PlanetUnknown, Pos: Vec{X: 242, Y: 162}, Radius: 10},
-			},
+			Planets:  planets,
 		},
 	}
+}
+
+// ── Multi-planet park / load / switch ────────────────────────────────────────
+
+// parkActive saves the active planet's live fields into PlanetStates[Active].
+// After this call PlanetStates[Active] holds a snapshot; the top-level fields
+// are still live. Call loadPlanet afterwards to complete a switch.
+func parkActive(w *World) {
+	w.PlanetStates[w.Active] = &PlanetState{
+		Planet:             w.Planet,
+		Buildings:          w.Buildings,
+		Nodes:              w.Nodes,
+		Workers:            w.Workers,
+		NextNodeID:         w.NextNodeID,
+		NextWorkerID:       w.NextWorkerID,
+		ResourceDiscovered: w.ResourceDiscovered,
+		SimTime:            w.SimTime,
+		WorkerCapacity:     w.Economy.WorkerCapacity,
+		CapacityBought:     w.Economy.CapacityBought,
+		CampsBought:        w.Economy.CampsBought,
+		TownGrowth:         w.Economy.TownGrowth,
+		TownGrowthCap:      w.Economy.TownGrowthCap,
+		Founded:            townHall(w) != nil,
+	}
+}
+
+// loadPlanet replaces the top-level live fields with PlanetStates[idx] and
+// clears the parked slot (active slot is always nil). Economy.Wood is global
+// and is never touched. Transient cue state is cleared; it rebuilds at runtime.
+func loadPlanet(w *World, idx int) {
+	ps := w.PlanetStates[idx]
+	w.Planet             = ps.Planet
+	w.Buildings          = ps.Buildings
+	w.Nodes              = ps.Nodes
+	w.Workers            = ps.Workers
+	w.NextNodeID         = ps.NextNodeID
+	w.NextWorkerID       = ps.NextWorkerID
+	w.ResourceDiscovered = ps.ResourceDiscovered
+	w.SimTime            = ps.SimTime
+	w.Economy.WorkerCapacity = ps.WorkerCapacity
+	w.Economy.CapacityBought = ps.CapacityBought
+	w.Economy.CampsBought    = ps.CampsBought
+	w.Economy.TownGrowth     = ps.TownGrowth
+	w.Economy.TownGrowthCap  = ps.TownGrowthCap
+	w.PlanetStates[idx]  = nil // active slot is always nil
+	w.Active             = idx
+	w.growthCue          = growthCueState{}
+	w.pendingGrowthCues  = nil
+	w.lastDelivery       = deliverySplit{}
+}
+
+// switchToPlanet parks the current active planet and loads the one at idx.
+// No-op if idx is already active.
+func switchToPlanet(w *World, idx int) {
+	if idx == w.Active {
+		return
+	}
+	parkActive(w)
+	loadPlanet(w, idx)
 }
