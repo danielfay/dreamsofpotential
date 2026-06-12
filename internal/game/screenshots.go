@@ -62,6 +62,11 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewEchoSelectedScenario(),
 		revealMidpointScenario(),
 		planetViewReturnButtonScenario(),
+		systemViewEchoAwakenabledScenario(),
+		systemViewEchoAwakenedScenario(),
+		echoPlanetFreshScenario(),
+		systemViewOneEchoCompletedScenario(),
+		systemViewBothEchoesCompletedScenario(),
 	}
 }
 
@@ -379,6 +384,75 @@ func planetViewReturnButtonScenario() screenshotScenario {
 	w.System.View = ViewPlanet
 	return screenshotScenario{name: "18-planet-view-return-button", world: w, fullHUD: true}
 }
+
+func mustBuildQAWorld(p QAPreset) *World {
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		panic(fmt.Sprintf("screenshot setup failed: %v", err))
+	}
+	return w
+}
+
+func systemViewEchoAwakenabledScenario() screenshotScenario {
+	wood := 600.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		Wood: &wood,
+	})
+	w.System.Selected = 1
+	return screenshotScenario{name: "19-system-view-echo-awakenable", world: w, fullHUD: true}
+}
+
+func systemViewEchoAwakenedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes: []int{1},
+		SelectPlanet: intPtr(1),
+		Wood: &wood,
+	})
+	return screenshotScenario{name: "20-system-view-echo-awakened", world: w, fullHUD: true}
+}
+
+func echoPlanetFreshScenario() screenshotScenario {
+	wood := 50.0
+	ep := intPtr(1)
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes: []int{1},
+		EnterPlanet: ep,
+		Wood: &wood,
+	})
+	return screenshotScenario{name: "21-echo-planet-fresh", world: w, fullHUD: true}
+}
+
+func systemViewOneEchoCompletedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		SelectPlanet: intPtr(1),
+		Wood: &wood,
+	})
+	return screenshotScenario{name: "22-system-view-one-echo-completed", world: w, fullHUD: true}
+}
+
+func systemViewBothEchoesCompletedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1, 2},
+		Wood: &wood,
+	})
+	return screenshotScenario{name: "23-system-view-both-echoes-completed", world: w, fullHUD: true}
+}
+
+func intPtr(v int) *int { return &v }
 
 func screenshotWorld(seed int64) *World {
 	rand.Seed(seed)

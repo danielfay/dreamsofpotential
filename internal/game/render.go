@@ -765,13 +765,13 @@ func drawSystemView(scene *ebiten.Image, w *World, debug bool) {
 			continue
 		}
 		p := w.System.Planets[i]
-		drawSystemPlanet(scene, p, w.System.Selected == i, w.SimTime, 1.0, debug)
+		drawSystemPlanet(scene, w, p, w.System.Selected == i, w.SimTime, 1.0, debug)
 	}
 }
 
 // drawSystemPlanet renders one system-view planet disk with its rim ring.
 // brightness is [0,1] and is used by the reveal flicker effect.
-func drawSystemPlanet(scene *ebiten.Image, p SystemPlanet, selected bool, simTime float64, brightness float32, debug bool) {
+func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bool, simTime float64, brightness float32, debug bool) {
 	cx, cy := float32(p.Pos.X), float32(p.Pos.Y)
 	r := float32(p.Radius)
 
@@ -792,14 +792,35 @@ func drawSystemPlanet(scene *ebiten.Image, p SystemPlanet, selected bool, simTim
 		}
 		body := scaleColor(col, brightness)
 		vector.FillCircle(scene, cx, cy, r, body, false)
-		// Warm rim highlight.
-		twinkle := float32(0.7 + 0.3*math.Sin(simTime*1.8+float64(p.RingColorIdx)*1.2))
-		rimAlpha := uint8(float32(160) * twinkle * brightness)
-		drawSystemOrbitRing(scene, cx, cy, r, 1.5, color.RGBA{R: colSysEchoRim.R, G: colSysEchoRim.G, B: colSysEchoRim.B, A: rimAlpha})
+		switch {
+		case p.Completed:
+			// Afterglow: matches the starting planet's green afterglow treatment.
+			glowAlpha := uint8(float32(18) * brightness)
+			vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: 50, G: 180, B: 70, A: glowAlpha}, false)
+			rimCol := scaleColor(colSysStartRim, brightness)
+			drawSystemOrbitRing(scene, cx, cy, r, 2.5, rimCol)
+		case p.Awakened:
+			// Active but incomplete: solid bright rim, no twinkle.
+			rimCol := scaleColor(colSysStartRim, brightness)
+			drawSystemOrbitRing(scene, cx, cy, r, 2.0, rimCol)
+		default:
+			// Dormant: warm twinkling rim.
+			twinkle := float32(0.7 + 0.3*math.Sin(simTime*1.8+float64(p.RingColorIdx)*1.2))
+			rimAlpha := uint8(float32(160) * twinkle * brightness)
+			drawSystemOrbitRing(scene, cx, cy, r, 1.5, color.RGBA{R: colSysEchoRim.R, G: colSysEchoRim.G, B: colSysEchoRim.B, A: rimAlpha})
+		}
 
 	case PlanetUnknown:
 		vector.FillCircle(scene, cx, cy, r, colSysUnknown, false)
 		vector.FillCircle(scene, cx, cy, r, colSysUnknownRim, false)
+		// When both echoes are complete, add a faint sinusoidal shimmer.
+		if allEchoesComplete(w) {
+			shimmer := float32(0.5 + 0.5*math.Sin(simTime*1.5))
+			shimAlpha := uint8(float32(28) * shimmer * brightness)
+			if shimAlpha > 0 {
+				vector.FillCircle(scene, cx, cy, r+1, color.RGBA{R: 180, G: 180, B: 220, A: shimAlpha}, false)
+			}
+		}
 	}
 
 	if selected {
@@ -943,12 +964,12 @@ func drawRevealPhaseB(scene *ebiten.Image, w *World, phaseElapsed float64) {
 		if 1+ei >= len(w.System.Planets) {
 			break
 		}
-		drawSystemPlanet(scene, w.System.Planets[1+ei], false, w.SimTime, echoGlow[ei], false)
+		drawSystemPlanet(scene, w, w.System.Planets[1+ei], false, w.SimTime, echoGlow[ei], false)
 	}
 
 	// Starting planet: bright, selected.
 	if len(w.System.Planets) > 0 {
-		drawSystemPlanet(scene, w.System.Planets[0], true, w.SimTime, 1.0, false)
+		drawSystemPlanet(scene, w, w.System.Planets[0], true, w.SimTime, 1.0, false)
 	}
 
 	// Expanding wave ring.
