@@ -525,6 +525,53 @@ func NewWorld() *World {
 	}
 }
 
+// ── Echo planet layouts ───────────────────────────────────────────────────────
+
+// newEchoPlanetState returns a freshly initialised durable live state for an
+// awakened echo planet. The planet has a dormant wood field and pre-spawned
+// trees but no settlement; the player still places the Town Hall on entry.
+// layoutID selects between two stable authored layout variants.
+func newEchoPlanetState(layoutID int) *PlanetState {
+	center := Vec{X: 160, Y: 120} // same planet-view canvas center as starting
+	var radius float64
+	var forestAngle float64
+	switch layoutID {
+	case 1:
+		radius = 65
+		forestAngle = -math.Pi * 2 / 3 // upper-left arc
+	default: // 0
+		radius = 60
+		forestAngle = math.Pi / 6 // slight right of horizontal
+	}
+
+	field := &ResourceField{
+		Kind:        KindWood,
+		CenterAngle: forestAngle,
+		HalfArc:     forestHalfArc,
+		Cap:         woodFieldBaseEXP,
+	}
+
+	// Build a temporary world so we can reuse the node-spawning helpers.
+	tmp := &World{
+		Planet: Planet{
+			Center:      center,
+			Radius:      radius,
+			Composition: map[ResourceKind]float64{KindWood: 1.0},
+			Fields:      []*ResourceField{field},
+		},
+	}
+	for range startingNodes {
+		spawnNode(tmp, field)
+	}
+
+	return &PlanetState{
+		Planet:        tmp.Planet,
+		Nodes:         tmp.Nodes,
+		NextNodeID:    tmp.NextNodeID,
+		TownGrowthCap: townGrowthBaseCap,
+	}
+}
+
 // ── Multi-planet park / load / switch ────────────────────────────────────────
 
 // parkActive saves the active planet's live fields into PlanetStates[Active].

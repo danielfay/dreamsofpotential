@@ -62,19 +62,54 @@ var (
 	colPreviewDebug  = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
 )
 
+// planetViewPalette holds the planet-view colors that vary by planet identity.
+type planetViewPalette struct {
+	background color.RGBA
+	edge       color.RGBA
+	body       color.RGBA
+}
+
+// activePlanetPalette returns a subtle palette variation for the active planet
+// so echo planets feel distinct while keeping the same visual language.
+func activePlanetPalette(w *World) planetViewPalette {
+	if !w.System.Unlocked || w.Active == 0 {
+		// Starting planet or pre-unlock: original green-on-black palette.
+		return planetViewPalette{
+			background: colBackground,
+			edge:       colPlanetEdge,
+			body:       colPlanetBody,
+		}
+	}
+	switch w.System.Planets[w.Active].LayoutID {
+	case 1: // echo layout 1 — warmer amber tint
+		return planetViewPalette{
+			background: color.RGBA{R: 14, G: 10, B: 8, A: 255},
+			edge:       color.RGBA{R: 140, G: 100, B: 30, A: 255},
+			body:       color.RGBA{R: 8, G: 5, B: 3, A: 255},
+		}
+	default: // echo layout 0 — cooler teal tint
+		return planetViewPalette{
+			background: color.RGBA{R: 8, G: 12, B: 20, A: 255},
+			edge:       color.RGBA{R: 30, G: 120, B: 110, A: 255},
+			body:       color.RGBA{R: 3, G: 6, B: 12, A: 255},
+		}
+	}
+}
+
 // DrawWorld renders the complete world state onto the low-res scene image.
 // pv is non-nil during build-placement mode and drives the camp ghost and route
 // line preview. debug enables the range-boundary markers.
 func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) {
-	scene.Fill(colBackground)
+	pal := activePlanetPalette(w)
+	scene.Fill(pal.background)
 
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	r := float32(w.Planet.Radius)
 
-	// planet: green outer ring then black body on top
+	// planet: rim ring then dark body on top
 	const rimWidth = float32(4)
-	vector.FillCircle(scene, cx, cy, r, colPlanetEdge, false)
-	vector.FillCircle(scene, cx, cy, r-rimWidth, colPlanetBody, false)
+	vector.FillCircle(scene, cx, cy, r, pal.edge, false)
+	vector.FillCircle(scene, cx, cy, r-rimWidth, pal.body, false)
 
 	// Resource field interior fill: stable composition, not node-spawn progress.
 	for _, f := range w.Planet.Fields {

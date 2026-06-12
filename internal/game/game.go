@@ -58,6 +58,7 @@ type Game struct {
 
 	// system-view button rects in native screen space (set during drawOverlay; read by handleInput)
 	sysEnterRect  sysRect // enter-planet tray button
+	sysAwakenRect sysRect // awaken-echo tray button
 	sysReturnRect sysRect // return-to-system button in planet view
 
 	// double-click tracking for system-view planet zoom
@@ -213,10 +214,7 @@ func (g *Game) Update() error {
 	if justUnlocked {
 		g.revealActive = true
 		g.revealElapsed = 0
-		g.placing = false
-		g.freePlacing = false
-		g.holdAction = holdNone
-		g.holdDuration = 0
+		clearTransientUI(g)
 	}
 
 	if g.world.System.View == ViewPlanet {
@@ -274,9 +272,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	bgCol := colBackground
-	if g.world.System.View == ViewSystem || g.revealActive {
+	var bgCol color.RGBA
+	switch {
+	case g.world.System.View == ViewSystem || g.revealActive:
 		bgCol = colSysBackground
+	default:
+		bgCol = activePlanetPalette(g.world).background
 	}
 	screen.Fill(bgCol)
 
@@ -542,12 +543,59 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	rateY := swY + swSize - float32(rateH)
 	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), rateY, colWoodLabel, face)
 
-	// Enter-planet button: only for the starting planet.
+	// Right side of tray: awaken button for un-awakened echoes, enter button for zoomable planets.
 	g.sysEnterRect = sysRect{}
-	if p.Kind == PlanetStarting {
-		btnSize := float32(14 * scale)
-		btnX := tx + tw - btnSize - float32(5*scale)
-		btnY := ty + (th-btnSize)/2
+	g.sysAwakenRect = sysRect{}
+	btnSize := float32(14 * scale)
+	btnX := tx + tw - btnSize - float32(5*scale)
+	btnY := ty + (th-btnSize)/2
+
+	if p.Kind == PlanetEcho && !p.Awakened {
+		// Awaken button: burst/sparkle glyph, enabled or greyed by affordability.
+		canAff := canAwaken(g.world, sel)
+		fillCol := color.RGBA{R: 60, G: 40, B: 100, A: 240}
+		rimCol := color.RGBA{R: 160, G: 100, B: 220, A: 200}
+		glyphCol := color.RGBA{R: 200, G: 160, B: 255, A: 220}
+		if !canAff {
+			fillCol = color.RGBA{R: 30, G: 25, B: 45, A: 180}
+			rimCol = color.RGBA{R: 80, G: 60, B: 110, A: 120}
+			glyphCol = color.RGBA{R: 100, G: 80, B: 130, A: 120}
+		}
+		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, fillCol, false)
+		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, rimCol, false)
+
+		// Four-point burst glyph.
+		cx2 := btnX + btnSize/2
+		cy2 := btnY + btnSize/2
+		ray := float32(4 * scale)
+		half := float32(1.5 * scale)
+		// Four diagonal rays from center.
+		vector.StrokeLine(screen, cx2-ray, cy2-ray, cx2+ray, cy2+ray, half, glyphCol, false)
+		vector.StrokeLine(screen, cx2+ray, cy2-ray, cx2-ray, cy2+ray, half, glyphCol, false)
+		vector.FillCircle(screen, cx2, cy2, half+float32(scale), glyphCol, false)
+
+		// Cost label to the left of the button.
+		costStr := fmt.Sprintf("%.0f", awakenCost)
+		_, costH := text.Measure(costStr, face, 0)
+		costY := btnY + (btnSize-float32(costH))/2
+		swSz := float32(6 * scale)
+		swX2 := btnX - float32(5*scale) - swSz
+		swY2 := btnY + (btnSize-swSz)/2
+		swCol := colWoodResource
+		if !canAff {
+			swCol = color.RGBA{R: 80, G: 60, B: 30, A: 120}
+		}
+		vector.FillRect(screen, swX2, swY2, swSz, swSz, swCol, false)
+		labelCol := colWoodLabel
+		if !canAff {
+			labelCol = color.RGBA{R: 100, G: 90, B: 80, A: 150}
+		}
+		costW, _ := text.Measure(costStr, face, 0)
+		drawSysText(screen, costStr, swX2-float32(4*scale)-float32(costW), costY, labelCol, face)
+		g.sysAwakenRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
+
+	} else if p.zoomable() {
+		// Enter button: planet circle glyph.
 		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 30, G: 80, B: 50, A: 240}, false)
 		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 80, G: 200, B: 100, A: 200}, false)
 		bCx := btnX + btnSize/2
@@ -576,6 +624,16 @@ func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, f
 	op.GeoM.Translate(float64(x), float64(y))
 	op.ColorScale.ScaleWithColor(col)
 	text.Draw(target, s, face, op)
+}
+
+// clearTransientUI resets all mid-action player state. Call on any view transition
+// so placement, holds, and menu state don't bleed across planet switches.
+func clearTransientUI(g *Game) {
+	g.placing = false
+	g.freePlacing = false
+	g.holdAction = holdNone
+	g.holdDuration = 0
+	g.showMenu = false
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
