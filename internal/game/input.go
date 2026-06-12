@@ -23,12 +23,23 @@ func (g *Game) handleSystemInput() {
 	}
 	mx, my := ebiten.CursorPosition()
 
+	// Check awaken-echo tray button.
+	if g.sysAwakenRect.w > 0 {
+		if float32(mx) >= g.sysAwakenRect.x && float32(mx) < g.sysAwakenRect.x+g.sysAwakenRect.w &&
+			float32(my) >= g.sysAwakenRect.y && float32(my) < g.sysAwakenRect.y+g.sysAwakenRect.h {
+			awakenPlanet(g.world, g.world.System.Selected)
+			return
+		}
+	}
+
 	// Check enter-planet tray button (sysEnterRect set in drawOverlay previous frame).
 	if g.sysEnterRect.w > 0 {
 		if float32(mx) >= g.sysEnterRect.x && float32(mx) < g.sysEnterRect.x+g.sysEnterRect.w &&
 			float32(my) >= g.sysEnterRect.y && float32(my) < g.sysEnterRect.y+g.sysEnterRect.h {
+			idx := g.world.System.Selected
+			switchToPlanet(g.world, idx)
 			enterPlanetView(g.world)
-			g.world.System.Selected = 0
+			clearTransientUI(g)
 			return
 		}
 	}
@@ -43,9 +54,11 @@ func (g *Game) handleSystemInput() {
 			if p.zoomable() &&
 				i == g.sysDoubleClickPlanet &&
 				time.Since(g.sysDoubleClickTime) < sysDoubleClickWindow {
-				// Double-click on the starting planet — zoom in.
+				// Double-click on a zoomable planet — enter it.
+				switchToPlanet(g.world, i)
 				enterPlanetView(g.world)
 				g.world.System.Selected = i
+				clearTransientUI(g)
 				g.sysDoubleClickPlanet = -1
 				return
 			}
@@ -63,12 +76,15 @@ func (g *Game) handlePlanetViewSystemReturn() {
 	if !g.world.System.Unlocked {
 		return
 	}
+	returnToSystem := func() {
+		parkActive(g.world)
+		enterSystemView(g.world)
+		clearTransientUI(g)
+	}
 	// Mouse wheel down (scroll out → system view).
 	_, wy := ebiten.Wheel()
 	if wy < 0 {
-		enterSystemView(g.world)
-		g.placing = false
-		g.freePlacing = false
+		returnToSystem()
 		return
 	}
 	// Return button click (sysReturnRect set in drawOverlay previous frame).
@@ -76,9 +92,7 @@ func (g *Game) handlePlanetViewSystemReturn() {
 		mx, my := ebiten.CursorPosition()
 		if float32(mx) >= g.sysReturnRect.x && float32(mx) < g.sysReturnRect.x+g.sysReturnRect.w &&
 			float32(my) >= g.sysReturnRect.y && float32(my) < g.sysReturnRect.y+g.sysReturnRect.h {
-			enterSystemView(g.world)
-			g.placing = false
-			g.freePlacing = false
+			returnToSystem()
 		}
 	}
 }

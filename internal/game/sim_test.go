@@ -1412,22 +1412,22 @@ func TestStartingPlanetComplete_RequiresBothGates(t *testing.T) {
 	w := newMasteredWorld()
 
 	// Both gates: should be complete.
-	if !startingPlanetComplete(w) {
-		t.Fatal("expected startingPlanetComplete true when both gates are met")
+	if !forestPlanetComplete(w) {
+		t.Fatal("expected forestPlanetComplete true when both gates are met")
 	}
 
 	// Only town: reset field saturation by clearing nodes.
 	w2 := newMasteredWorld()
 	w2.Nodes = nil
-	if startingPlanetComplete(w2) {
-		t.Error("expected startingPlanetComplete false when wood field not saturated")
+	if forestPlanetComplete(w2) {
+		t.Error("expected forestPlanetComplete false when wood field not saturated")
 	}
 
 	// Only field: reset town capacity.
 	w3 := newMasteredWorld()
 	w3.Economy.WorkerCapacity = 0
-	if startingPlanetComplete(w3) {
-		t.Error("expected startingPlanetComplete false when town capacity not maxed")
+	if forestPlanetComplete(w3) {
+		t.Error("expected forestPlanetComplete false when town capacity not maxed")
 	}
 }
 

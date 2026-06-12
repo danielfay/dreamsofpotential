@@ -43,7 +43,8 @@ const (
 	startingNodes        = 5
 
 	// system view / abstract production
-	echoRateFracA  = 0.55 // echo A rate as fraction of starting planet's snapshotted rate
-	echoRateFracB  = 0.45 // echo B rate — slightly lower for variance
-	revealDuration = 3.5  // seconds for the one-time unlock reveal animation
+	echoRateFracA  = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
+	echoRateFracB  = 0.45  // echo B rate — slightly lower for variance
+	revealDuration = 3.5   // seconds for the one-time unlock reveal animation
+	awakenCost     = 500.0 // global wood to awaken a dormant echo planet
 )

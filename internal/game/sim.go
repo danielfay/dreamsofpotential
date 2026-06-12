@@ -764,30 +764,56 @@ func updateWorkerPos(w *World, wk *Worker) {
 
 // ── System-view / unlock helpers ─────────────────────────────────────────────
 
-// startingPlanetComplete reports the mastery gate: town capacity is maxed AND
-// the wood field can no longer place a new tree node.
-func startingPlanetComplete(w *World) bool {
+// forestPlanetComplete reports the mastery gate for forest-kind planets:
+// town capacity is maxed AND the wood field can no longer place a new tree.
+// Future planet kinds should define their own completion gate.
+func forestPlanetComplete(w *World) bool {
 	f := fieldForKind(w, KindWood)
 	return townFieldFull(w) && f != nil && !fieldCanSpawnNode(w, f)
 }
 
-// abstractIncome returns total abstract wood/sec for the current view mode.
-// In planet view only the echo planets produce abstractly (the starting planet
-// runs its live sim). In system view all producers including the starting
-// planet produce abstractly. The unknown silhouette never produces.
+// abstractIncome returns total abstract wood/sec from all non-active producing
+// planets. The active planet runs live (or is frozen in system view), so it is
+// excluded when in planet view to avoid double-counting. Unknown never produces.
 func abstractIncome(w *World) float64 {
 	var total float64
 	for i, p := range w.System.Planets {
-		switch p.Kind {
-		case PlanetStarting:
-			if w.System.View == ViewSystem {
-				total += w.System.Planets[i].AbstractRate
-			}
-		case PlanetEcho:
-			total += p.AbstractRate
+		if p.Kind == PlanetUnknown {
+			continue
 		}
+		if w.System.View == ViewPlanet && i == w.Active {
+			continue // active planet runs its live sim; skip abstract contribution
+		}
+		total += p.AbstractRate
 	}
 	return total
+}
+
+// checkActivePlanetCompletion detects when the active echo planet finishes and
+// snapshots its rate. Implemented in Stage 3; stub here so Tick compiles.
+func checkActivePlanetCompletion(w *World) {}
+
+// canAwaken reports whether the echo planet at idx can be awakened right now.
+func canAwaken(w *World, idx int) bool {
+	if idx < 0 || idx >= len(w.System.Planets) {
+		return false
+	}
+	p := w.System.Planets[idx]
+	return p.Kind == PlanetEcho && !p.Awakened && w.Economy.Wood >= awakenCost
+}
+
+// awakenPlanet spends global wood to awaken the echo planet at idx, creating
+// its durable live state. The player stays in system view (no auto-zoom).
+// The echo keeps its original abstract rate until completion.
+func awakenPlanet(w *World, idx int) {
+	if !canAwaken(w, idx) {
+		return
+	}
+	w.Economy.Wood -= awakenCost
+	layoutID := w.System.Planets[idx].RingColorIdx
+	w.System.Planets[idx].Awakened = true
+	w.System.Planets[idx].LayoutID = layoutID
+	w.PlanetStates[idx] = newEchoPlanetState(layoutID)
 }
 
 // triggerUnlock snapshots the starting planet's analytic rate once, marks the
@@ -833,12 +859,13 @@ func Tick(w *World, dt float64) (justUnlocked bool) {
 	// Planet view (or pre-unlock): run the live sim.
 	Step(w, dt)
 	if w.System.Unlocked {
-		// Post-unlock planet view: echo planets continue producing abstractly.
+		// Post-unlock planet view: abstract income + check for echo completion.
 		w.Economy.Wood += abstractIncome(w) * dt
+		checkActivePlanetCompletion(w)
 		return false
 	}
 	// Pre-unlock: check mastery gate exactly once.
-	if startingPlanetComplete(w) {
+	if forestPlanetComplete(w) {
 		triggerUnlock(w)
 		return true
 	}

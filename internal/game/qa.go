@@ -151,7 +151,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 
 	// System reveal — call triggerUnlock if both mastery gates are met.
 	if p.Reveal {
-		if !startingPlanetComplete(w) {
+		if !forestPlanetComplete(w) {
 			return nil, fmt.Errorf("Reveal: world not mastered (town full=%v, field saturated=%v)",
 				townFieldFull(w), func() bool {
 					f := fieldForKind(w, KindWood)
