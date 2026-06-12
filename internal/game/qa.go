@@ -3,7 +3,6 @@ package game
 import (
 	"fmt"
 	"math"
-	"math/rand"
 )
 
 // QAPreset describes a reproducible mid-game world state for manual QA.
@@ -66,9 +65,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	if seed == 0 {
 		seed = 11
 	}
-	rand.Seed(seed)
-
-	w := NewWorld()
+	w := newWorldWithSeed(seed)
 
 	// Resource discovery (default true so HUD gauge and Nurture are active).
 	if p.Discovered != nil {

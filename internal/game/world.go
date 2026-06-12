@@ -278,6 +278,7 @@ type World struct {
 	pendingGrowthCues []growthCueState
 	lastDelivery      deliverySplit
 	abstractRateWin   abstractRateWindow
+	rng               *rand.Rand // seeded per-world; use this instead of the global source
 }
 
 type abstractRateWindow struct {
@@ -342,7 +343,7 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 		Pos:                w.Planet.RimPoint(angle),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
-		Size:               0.6 + rand.Float64()*0.8,
+		Size:               0.6 + w.rng.Float64()*0.8,
 	}
 }
 
@@ -498,6 +499,10 @@ func fieldForKind(w *World, kind ResourceKind) *ResourceField {
 
 // NewWorld returns a freshly initialised world ready to start the game.
 func NewWorld() *World {
+	return newWorldWithSeed(0)
+}
+
+func newWorldWithSeed(seed int64) *World {
 	center := Vec{X: 160, Y: 120}
 	radius := 72.0
 	forestAngle := -math.Pi / 2 // top of the rim
@@ -535,6 +540,7 @@ func NewWorld() *World {
 			Selected: -1,
 			Planets:  planets,
 		},
+		rng: rand.New(rand.NewSource(seed)),
 	}
 }
 
@@ -572,6 +578,7 @@ func newEchoPlanetState(layoutID int) *PlanetState {
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
 		},
+		rng: rand.New(rand.NewSource(int64(layoutID))),
 	}
 	for range startingNodes {
 		spawnNode(tmp, field)

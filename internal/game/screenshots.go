@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/png"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 
@@ -455,8 +454,7 @@ func systemViewBothEchoesCompletedScenario() screenshotScenario {
 func intPtr(v int) *int { return &v }
 
 func screenshotWorld(seed int64) *World {
-	rand.Seed(seed)
-	return NewWorld()
+	return newWorldWithSeed(seed)
 }
 
 func mustPlace(w *World, angle float64) {

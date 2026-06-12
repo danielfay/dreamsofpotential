@@ -56,7 +56,7 @@ func runSimTrace(t *testing.T, desc string, maxMinutes float64, runner SimTraceR
 	t.Helper()
 	simDuration := maxMinutes * 60.0
 
-	w := NewWorld()
+	w := newWorldWithSeed(42)
 	runner.Setup(w)
 
 	header := fmt.Sprintf("%-5s  %-7s  %s  notes", "time", "workers", runner.ColHeader())
