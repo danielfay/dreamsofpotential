@@ -8,7 +8,7 @@ const (
 	campCostGrowth         = 1.50
 	townCapacityBaseCost   = 40.0 // cost of the first paid capacity slot (CapacityBought==0)
 	townCapacityCostGrowth = 1.15 // per paid capacity purchase
-	townGrowthBaseCap      = 10.0 // initial Town Growth threshold
+	townGrowthBaseCap      = 40.0 // initial Town Growth threshold
 	townGrowthCapGrowth    = 1.35 // cap multiplier per worker arrival
 
 	// Town field geometry — the settlement wedge anchored to the Town Hall angle.
