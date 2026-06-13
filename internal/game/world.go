@@ -122,9 +122,10 @@ type SystemPlanet struct {
 	AbstractRate float64
 	RingColorIdx int   // 0 or 1 — slight visual variation between the two echoes
 	Seed         int64 // future world-generation hook
-	Awakened     bool  // echo has been awoken (has a durable live PlanetState)
-	Completed    bool  // echo reached its completion gate
-	LayoutID     int   // which authored echo layout (0 or 1)
+	Awakened     bool    // echo has been awoken (has a durable live PlanetState)
+	Completed    bool    // echo reached its completion gate
+	CompletedAt  float64 // planet SimTime when completion triggered; drives atmosphere intro
+	LayoutID     int     // which authored echo layout (0 or 1)
 }
 
 // zoomable reports whether this planet has a live sim the player can zoom into.

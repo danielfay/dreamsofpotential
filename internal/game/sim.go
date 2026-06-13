@@ -921,6 +921,7 @@ func checkActivePlanetCompletion(w *World) {
 	}
 	p.AbstractRate = EstimateRate(w) * completionAmplifier
 	p.Completed = true
+	p.CompletedAt = w.SimTime
 	if th := townHall(w); th != nil {
 		activatePulse(w, &th.Pulse)
 	}
@@ -965,6 +966,7 @@ func triggerUnlock(w *World) {
 	if len(w.System.Planets) > 2 {
 		w.System.Planets[2].AbstractRate = base * echoRateFracB
 	}
+	w.System.Planets[0].CompletedAt = w.SimTime
 	w.System.Unlocked = true
 	w.System.View = ViewSystem
 	w.System.Selected = 0

@@ -96,6 +96,76 @@ func activePlanetPalette(w *World) planetViewPalette {
 	}
 }
 
+// drawPlanetAtmosphere draws a wide coloured glow behind the planet when it is
+// complete. Multiple concentric transparent circles accumulate into a soft
+// gradient that fills much of the screen. The glow expands from the rim during
+// an intro animation and then breathes gently in steady state.
+func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
+	p := w.System.Planets[w.Active]
+
+	var completedAt float64
+	switch {
+	case p.Kind == PlanetEcho && p.Completed:
+		completedAt = p.CompletedAt
+	case p.Kind == PlanetStarting && w.System.Unlocked:
+		completedAt = p.CompletedAt
+	default:
+		return
+	}
+
+	// Choose atmosphere colour by planet type / layout.
+	var base color.RGBA
+	switch {
+	case p.Kind == PlanetEcho && p.LayoutID == 1:
+		base = colAtmosphereB
+	case p.Kind == PlanetEcho:
+		base = colAtmosphereA
+	default:
+		base = colAtmosphereStart
+	}
+
+	// Intro progress: 0→1 over atmosphereIntroDur seconds, quadratic ease-out.
+	animAge := w.SimTime - completedAt
+	rawProg := animAge / atmosphereIntroDur
+	if rawProg > 1 {
+		rawProg = 1
+	}
+	progress := float32(1.0 - (1.0-rawProg)*(1.0-rawProg))
+
+	// Gentle breathing in steady state.
+	breath := float32(0.8 + 0.2*math.Sin(w.SimTime*atmosphereBreathFreq))
+
+	// Ten concentric layers drawn outermost-first. FillCircle uses
+	// ColorScaleModePremultipliedAlpha internally, so the RGB components must
+	// be premultiplied by alpha — otherwise even a small alpha renders at full
+	// colour. Premultiplying keeps each layer faint; they accumulate to ~40%
+	// of the base colour at the rim and fade to near-zero at the screen edge.
+	type layer struct{ offset, alpha float32 }
+	layers := [10]layer{
+		{115, 4},
+		{95,  6},
+		{77,  9},
+		{61,  12},
+		{47,  15},
+		{35,  18},
+		{25,  21},
+		{16,  24},
+		{9,   27},
+		{3,   30},
+	}
+
+	for _, l := range layers {
+		a := l.alpha * progress * breath
+		// Premultiply so FillCircle's premultiplied-alpha path works correctly.
+		vector.FillCircle(scene, cx, cy, r+l.offset*progress, color.RGBA{
+			R: uint8(float32(base.R) * a / 255),
+			G: uint8(float32(base.G) * a / 255),
+			B: uint8(float32(base.B) * a / 255),
+			A: uint8(a),
+		}, false)
+	}
+}
+
 // DrawWorld renders the complete world state onto the low-res scene image.
 // pv is non-nil during build-placement mode and drives the camp ghost and route
 // line preview. debug enables the range-boundary markers.
@@ -105,6 +175,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	r := float32(w.Planet.Radius)
+
+	// Completion atmosphere drawn first — planet body covers the interior.
+	drawPlanetAtmosphere(scene, w, cx, cy, r)
 
 	// planet: rim ring then dark body on top
 	const rimWidth = float32(4)
