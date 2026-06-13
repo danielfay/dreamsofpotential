@@ -507,6 +507,30 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		_, textH := text.Measure(hudStr, face, 0)
 		textY := swY + swSize - float32(textH)
 		drawSysText(screen, hudStr, textX, textY, colWoodLabel, face)
+
+		// Earned Potential circles — one per kind, shown only after first award.
+		// Rendered in enum order so layout is deterministic.
+		potRow := swY + swSize + float32(3*scale)
+		potR := float32(4 * scale)
+		potCols := []struct {
+			kind PotentialKind
+			col  color.RGBA
+		}{
+			{PotentialForest, colForestPotential},
+			{PotentialWater, colWaterPotential},
+		}
+		potX := swX + potR
+		for _, pk := range potCols {
+			count := g.world.Economy.Potential[pk.kind]
+			if count <= 0 {
+				continue
+			}
+			drawPotentialCircle(screen, potX, potRow+potR, potR, pk.col)
+			countStr := fmt.Sprintf("%d", count)
+			cw, ch := text.Measure(countStr, face, 0)
+			drawSysText(screen, countStr, potX+potR+float32(2*scale), potRow+potR-float32(ch)/2+float32(ch), pk.col, face)
+			potX += potR*2 + float32(cw) + float32(8*scale)
+		}
 	}
 
 	// Bottom tray for selected planet.
@@ -574,24 +598,24 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		vector.StrokeLine(screen, cx2+ray, cy2-ray, cx2-ray, cy2+ray, half, glyphCol, false)
 		vector.FillCircle(screen, cx2, cy2, half+float32(scale), glyphCol, false)
 
-		// Cost label to the left of the button.
-		costStr := fmt.Sprintf("%.0f", awakenCost)
+		// Cost label to the left of the button: "1" + Forest Potential circle.
+		costStr := "1"
 		_, costH := text.Measure(costStr, face, 0)
 		costY := btnY + (btnSize-float32(costH))/2
-		swSz := float32(6 * scale)
-		swX2 := btnX - float32(5*scale) - swSz
-		swY2 := btnY + (btnSize-swSz)/2
-		swCol := colWoodResource
+		circR := float32(3 * scale)
+		circX := btnX - float32(5*scale) - circR
+		circY := btnY + btnSize/2
+		circCol := colForestPotential
 		if !canAff {
-			swCol = color.RGBA{R: 80, G: 60, B: 30, A: 120}
+			circCol = colForestPotentialDim
 		}
-		vector.FillRect(screen, swX2, swY2, swSz, swSz, swCol, false)
-		labelCol := colWoodLabel
+		drawPotentialCircle(screen, circX, circY, circR, circCol)
+		labelCol := colForestPotentialLabel
 		if !canAff {
-			labelCol = color.RGBA{R: 100, G: 90, B: 80, A: 150}
+			labelCol = colForestPotentialLabelDim
 		}
 		costW, _ := text.Measure(costStr, face, 0)
-		drawSysText(screen, costStr, swX2-float32(4*scale)-float32(costW), costY, labelCol, face)
+		drawSysText(screen, costStr, circX-circR-float32(4*scale)-float32(costW), costY, labelCol, face)
 		g.sysAwakenRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 
 	} else if p.zoomable() {
@@ -605,6 +629,11 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		drawSystemOrbitRing(screen, bCx, bCy, bR+float32(2*scale), 1, color.RGBA{R: 200, G: 240, B: 200, A: 160})
 		g.sysEnterRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 	}
+}
+
+// drawPotentialCircle draws a single Potential token circle centered at (cx, cy).
+func drawPotentialCircle(dst *ebiten.Image, cx, cy, r float32, col color.RGBA) {
+	vector.FillCircle(dst, cx, cy, r, col, false)
 }
 
 func sysSwatchColor(p SystemPlanet) color.RGBA {

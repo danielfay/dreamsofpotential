@@ -345,7 +345,7 @@ func TestSaveLoadRoundTripEchoLifecycle(t *testing.T) {
 	Tick(w, dt) // unlock
 
 	// Awaken echo 1 and mark it completed with a known amplified rate.
-	w.Economy.Wood = awakenCost
+	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, 1)
 	w.System.Planets[1].Completed = true
 	w.System.Planets[1].AbstractRate = 3.75
@@ -378,6 +378,28 @@ func TestSaveLoadRoundTripEchoLifecycle(t *testing.T) {
 	}
 	if got.System.Selected != 1 {
 		t.Errorf("System.Selected: got %d, want 1", got.System.Selected)
+	}
+}
+
+func TestSavePotentialRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	w.Economy.Potential[PotentialForest] = 2
+	w.Economy.Potential[PotentialWater] = 1
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Economy.Potential[PotentialForest] != 2 {
+		t.Errorf("PotentialForest: got %d, want 2", got.Economy.Potential[PotentialForest])
+	}
+	if got.Economy.Potential[PotentialWater] != 1 {
+		t.Errorf("PotentialWater: got %d, want 1", got.Economy.Potential[PotentialWater])
 	}
 }
 

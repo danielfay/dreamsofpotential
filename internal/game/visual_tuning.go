@@ -9,6 +9,13 @@ var (
 	colWoodResource = color.RGBA{R: 40, G: 160, B: 60, A: 255}  // swatch fill — matches planet HUD wood button
 	colWoodLabel    = color.RGBA{R: 140, G: 210, B: 140, A: 230} // text labels for wood amounts and rates
 
+	// Potential token colours. Circles (not squares) are the visual convention for Potential.
+	colForestPotential      = color.RGBA{R: 40, G: 160, B: 60, A: 255}  // green circle — same identity as wood
+	colForestPotentialDim   = color.RGBA{R: 80, G: 60, B: 30, A: 120}   // greyed when not affordable
+	colForestPotentialLabel = color.RGBA{R: 140, G: 210, B: 140, A: 230} // cost numeric label
+	colForestPotentialLabelDim = color.RGBA{R: 100, G: 90, B: 80, A: 150}
+	colWaterPotential       = color.RGBA{R: 60, G: 140, B: 220, A: 255}  // blue circle — water resonance
+
 	// Worker colours.
 	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
 	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty

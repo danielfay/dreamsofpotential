@@ -308,9 +308,8 @@ func (r *echoCompletionRunner) Setup(w *World) {
 	triggerUnlock(w)
 
 	// Awaken the target echo and enter it.
-	w.Economy.Wood = awakenCost
+	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, r.echoIdx)
-	w.Economy.Wood = 0
 	switchToPlanet(w, r.echoIdx)
 	enterPlanetView(w)
 
