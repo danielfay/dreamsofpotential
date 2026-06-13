@@ -206,10 +206,8 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		w.Economy.WorkerCapacity = 1
 		w.Economy.TownGrowthCap = townGrowthInitialCap
 		spawnWorkerAtTownHall(w)
-		// Awaken the wood field: spawn starting trees near the founded hall.
-		if f := fieldForKind(w, KindWood); f != nil {
-			foundStartingNodes(w, f, angle)
-		}
+		// Awaken all known fields: distribute starting nodes across them.
+		foundStartingNodes(w, angle)
 		return true
 	}
 	// Paid logging camp.

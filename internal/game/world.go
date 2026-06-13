@@ -427,21 +427,42 @@ func spawnNode(w *World, f *ResourceField) growthResult {
 	return spawnNodeNear(w, f, intended)
 }
 
-// foundStartingNodes spawns the initial wood trees when the settlement is
-// founded. Two trees flank the Town Hall; the rest spread around the planet
-// using a golden-angle offset from the opposite side.
-func foundStartingNodes(w *World, f *ResourceField, townHallAngle float64) {
+// foundStartingNodes spawns the initial nodes when the settlement is founded.
+// Two nodes flank the Town Hall (in whichever field contains it); the rest are
+// distributed one at a time, each independently picking a random known field.
+func foundStartingNodes(w *World, townHallAngle float64) {
+	var fields []*ResourceField
+	for _, f := range w.Planet.Fields {
+		if f.Known {
+			fields = append(fields, f)
+		}
+	}
+	if len(fields) == 0 {
+		return
+	}
+
 	count := startingNodes
 	if w.Planet.StartingNodes > 0 {
 		count = w.Planet.StartingNodes
 	}
+
+	// Flanking nodes go in the field that contains the Town Hall angle.
+	thField := fields[0]
+	for _, f := range fields {
+		if angleWithinField(f, townHallAngle) {
+			thField = f
+			break
+		}
+	}
 	const flankCount = 2
 	for range flankCount {
-		spawnNodeNear(w, f, townHallAngle)
+		spawnNodeNear(w, thField, townHallAngle)
 	}
-	const phi = 2.399 // golden angle in radians
-	for i := range count - flankCount {
-		intended := normAngle(townHallAngle + math.Pi + float64(i)*phi)
+
+	// Remaining nodes: each picks a random known field independently.
+	for range count - flankCount {
+		f := fields[w.rng.Intn(len(fields))]
+		intended := normAngle(f.CenterAngle + (w.rng.Float64()*2-1)*f.HalfArc*0.8)
 		spawnNodeNear(w, f, intended)
 	}
 }
