@@ -26,6 +26,7 @@ const (
 	townFieldSlotSpacing = 10.0 // px between dwelling slots (row + column pitch)
 
 	// simulation constants
+	lakeSpeedFactor     = 0.20 // workers cross lake arcs at 20% normal speed
 	workerSpawnCooldown = 3.0  // minimum seconds between worker spawns (prevents overflow burst)
 	workerSpeed         = 40.0 // world px / second
 	loadTime            = 0.5  // seconds to load at the node

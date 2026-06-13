@@ -46,10 +46,10 @@ type placementPreview struct {
 	Reject           float64         // transient invalid-confirm feedback intensity [0,1]
 }
 
-// routeDist returns the short-way rim arc distance between two angles on a
-// planet of the given radius. Mirrors the computation in sim.go routeLen.
-func routeDist(radius, a, b float64) float64 {
-	return math.Abs(normAngle(b-a)) * radius
+// routeDist returns the effective arc distance between two angles.
+// Mirrors routeLen in sim.go — lake arcs cost 1/lakeSpeedFactor more.
+func routeDist(w *World, a, b float64) float64 {
+	return effectiveArc(w, a, b)
 }
 
 // localNodes partitions all world nodes into free and claimed slices based on
@@ -62,7 +62,7 @@ func localNodes(w *World, angle float64) (free []previewRoute, claimed, reserved
 		if n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
 			free = append(free, previewRoute{
 				Node: n,
-				Dist: routeDist(w.Planet.Radius, angle, n.Angle),
+				Dist: routeDist(w, angle, n.Angle),
 			})
 		} else if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {
 			reserved = append(reserved, n)
@@ -131,7 +131,7 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 	}
 	blocked := placementBlockedNodes(w, kind, angle)
 	blockedBuildings := placementBlockedBuildings(w, kind, angle)
-	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0
+	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0 && !inLake(w, angle)
 	return placementPreview{
 		Kind:             kind,
 		Angle:            angle,
