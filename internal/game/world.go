@@ -240,6 +240,7 @@ type Planet struct {
 	Composition   map[ResourceKind]float64
 	Fields        []*ResourceField
 	FieldProgress map[ResourceKind]*KindProgress // planet-level EXP/Cap per kind; shared across all regions of that kind
+	StartingNodes int                            // override for foundStartingNodes count; 0 means use the global default
 }
 
 // RimPoint returns the world point on the planet's rim at the given angle.
@@ -355,6 +356,14 @@ func townHall(w *World) *Building {
 	return nil
 }
 
+// initTransientWorldState restores fields that are not persisted in JSON.
+// Call after any JSON unmarshal so the world is safe to use immediately.
+func initTransientWorldState(w *World) {
+	if w.rng == nil {
+		w.rng = rand.New(rand.NewSource(0))
+	}
+}
+
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
 func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
@@ -418,17 +427,42 @@ func spawnNode(w *World, f *ResourceField) growthResult {
 	return spawnNodeNear(w, f, intended)
 }
 
-// foundStartingNodes spawns the initial wood trees when the settlement is
-// founded. Two trees flank the Town Hall; the rest spread around the planet
-// using a golden-angle offset from the opposite side.
-func foundStartingNodes(w *World, f *ResourceField, townHallAngle float64) {
+// foundStartingNodes spawns the initial nodes when the settlement is founded.
+// Two nodes flank the Town Hall (in whichever field contains it); the rest are
+// distributed one at a time, each independently picking a random known field.
+func foundStartingNodes(w *World, townHallAngle float64) {
+	var fields []*ResourceField
+	for _, f := range w.Planet.Fields {
+		if f.Known {
+			fields = append(fields, f)
+		}
+	}
+	if len(fields) == 0 {
+		return
+	}
+
+	count := startingNodes
+	if w.Planet.StartingNodes > 0 {
+		count = w.Planet.StartingNodes
+	}
+
+	// Flanking nodes go in the field that contains the Town Hall angle.
+	thField := fields[0]
+	for _, f := range fields {
+		if angleWithinField(f, townHallAngle) {
+			thField = f
+			break
+		}
+	}
 	const flankCount = 2
 	for range flankCount {
-		spawnNodeNear(w, f, townHallAngle)
+		spawnNodeNear(w, thField, townHallAngle)
 	}
-	const phi = 2.399 // golden angle in radians
-	for i := range startingNodes - flankCount {
-		intended := normAngle(townHallAngle + math.Pi + float64(i)*phi)
+
+	// Remaining nodes: each picks a random known field independently.
+	for range count - flankCount {
+		f := fields[w.rng.Intn(len(fields))]
+		intended := normAngle(f.CenterAngle + (w.rng.Float64()*2-1)*f.HalfArc*0.8)
 		spawnNodeNear(w, f, intended)
 	}
 }
@@ -504,15 +538,32 @@ func inLake(w *World, angle float64) bool {
 	return false
 }
 
-// effectiveArc returns the arc distance from a to b in world px where each
-// lake sub-arc costs 1/lakeSpeedFactor more (workers traverse lakes slower).
-// Uses a fixed-step midpoint integration (64 samples) over the shortest arc.
+// effectiveArc returns the cheaper of the two arcs from a to b in world px,
+// where each lake sub-arc costs 1/lakeSpeedFactor more (workers go slower
+// through lakes). Uses a fixed-step midpoint integration (64 samples) per
+// candidate arc so workers route around lakes when it's faster to do so.
 func effectiveArc(w *World, a, b float64) float64 {
-	arc := normAngle(b - a)
-	totalLen := math.Abs(arc) * w.Planet.Radius
-	if totalLen == 0 {
+	short := normAngle(b - a) // in (-π, π]
+	if short == 0 {
 		return 0
 	}
+	// Fast path: no lake fields → geometric arc is always optimal.
+	if !hasAnyLake(w) {
+		return math.Abs(short) * w.Planet.Radius
+	}
+	shortCost := arcCost(w, a, short)
+	// If the short arc is all land it can't be beaten: it's both shorter AND penalty-free.
+	if shortCost == math.Abs(short)*w.Planet.Radius {
+		return shortCost
+	}
+	long := short - math.Copysign(2*math.Pi, short)
+	return min(shortCost, arcCost(w, a, long))
+}
+
+// arcCost integrates the effective travel cost along a signed arc of `arc`
+// radians starting from angle `a`. Positive arc = clockwise, negative = CCW.
+func arcCost(w *World, a, arc float64) float64 {
+	totalLen := math.Abs(arc) * w.Planet.Radius
 	const steps = 64
 	var lakeAngle float64
 	for i := 0; i < steps; i++ {
@@ -523,6 +574,16 @@ func effectiveArc(w *World, a, b float64) float64 {
 	}
 	lakeLen := lakeAngle * w.Planet.Radius
 	return (totalLen - lakeLen) + lakeLen/lakeSpeedFactor
+}
+
+// hasAnyLake reports whether the active planet has any KindWater field.
+func hasAnyLake(w *World) bool {
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWater {
+			return true
+		}
+	}
+	return false
 }
 
 func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *ResourceNode {
@@ -611,50 +672,80 @@ func newWorldWithSeed(seed int64) *World {
 // ── Echo planet layouts ───────────────────────────────────────────────────────
 
 // newEchoPlanetState returns a freshly initialised durable live state for an
-// awakened echo planet. The planet has a dormant wood field and pre-spawned
-// trees but no settlement; the player still places the Town Hall on entry.
-// layoutID selects between two stable authored layout variants.
+// awakened echo planet. The planet has pre-spawned trees but no settlement;
+// the player still places the Town Hall on entry.
+// layoutID 0 = Lakewood (blue-rim planet), layoutID 1 = Tight Grove (yellow-rim planet).
 func newEchoPlanetState(layoutID int) *PlanetState {
-	center := Vec{X: 160, Y: 120} // same planet-view canvas center as starting
-	var radius float64
-	var forestAngle float64
+	center := Vec{X: 160, Y: 120}
 	switch layoutID {
-	case 1:
-		radius = 65
-		forestAngle = -math.Pi * 2 / 3 // upper-left arc
-	default: // 0
-		radius = 60
-		forestAngle = math.Pi / 6 // slight right of horizontal
+	case 0:
+		return newLakewoodState(center)
+	default:
+		return newTightGroveState(center)
 	}
+}
 
-	field := &ResourceField{
-		Kind:        KindWood,
-		CenterAngle: forestAngle,
-		HalfArc:     forestHalfArc,
-		Known:       true,
-	}
-
-	// Build a temporary world so we can reuse the node-spawning helpers.
-	tmp := &World{
+// newTightGroveState builds echoB: a compact full-forest planet where TH
+// placement immediately spawns many trees, leaving only 1-2 valid camp spots.
+func newTightGroveState(center Vec) *PlanetState {
+	return &PlanetState{
 		Planet: Planet{
 			Center:      center,
-			Radius:      radius,
+			Radius:      tightGroveRadius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields:      []*ResourceField{field},
+			Fields: []*ResourceField{{
+				Kind:        KindWood,
+				CenterAngle: 0,
+				HalfArc:     forestHalfArc, // full circle
+				Known:       true,
+			}},
+			FieldProgress: map[ResourceKind]*KindProgress{
+				KindWood: {Cap: woodFieldBaseEXP},
+			},
+			StartingNodes: tightGroveStartNodes,
+		},
+		TownGrowthCap: townGrowthBaseCap,
+	}
+}
+
+// newLakewoodState builds echoB: a forest split by a lake arc so workers
+// naturally avoid the island region until a local camp is built there.
+// Completion awards both Forest and Water Potential.
+func newLakewoodState(center Vec) *PlanetState {
+	mainForest := &ResourceField{
+		Kind:        KindWood,
+		CenterAngle: lakewoodMainForestAngle,
+		HalfArc:     lakewoodMainForestArc,
+		Known:       true,
+	}
+	islandForest := &ResourceField{
+		Kind:        KindWood,
+		CenterAngle: lakewoodIslandForestAngle,
+		HalfArc:     lakewoodIslandForestArc,
+		Known:       true,
+	}
+	largeLake := &ResourceField{
+		Kind:        KindWater,
+		CenterAngle: lakewoodLargeLakeAngle,
+		HalfArc:     lakewoodLargeLakeArc,
+		Known:       false,
+	}
+	smallLake := &ResourceField{
+		Kind:        KindWater,
+		CenterAngle: lakewoodSmallLakeAngle,
+		HalfArc:     lakewoodSmallLakeArc,
+		Known:       false,
+	}
+	return &PlanetState{
+		Planet: Planet{
+			Center:      center,
+			Radius:      lakewoodRadius,
+			Composition: map[ResourceKind]float64{KindWood: 1.0},
+			Fields:      []*ResourceField{mainForest, islandForest, largeLake, smallLake},
 			FieldProgress: map[ResourceKind]*KindProgress{
 				KindWood: {Cap: woodFieldBaseEXP},
 			},
 		},
-		rng: rand.New(rand.NewSource(int64(layoutID))),
-	}
-	for range startingNodes {
-		spawnNode(tmp, field)
-	}
-
-	return &PlanetState{
-		Planet:        tmp.Planet,
-		Nodes:         tmp.Nodes,
-		NextNodeID:    tmp.NextNodeID,
 		TownGrowthCap: townGrowthBaseCap,
 	}
 }

@@ -47,40 +47,53 @@ func TestEffectiveArcNoLake(t *testing.T) {
 	}
 }
 
-func TestEffectiveArcCrossesLake(t *testing.T) {
+// TestArcCostLake verifies the lake-penalty formula inside arcCost directly.
+// Lake at [π/4, 3π/4]; CW arc from 0 to π: land π/4, lake π/2, land π/4.
+func TestArcCostLake(t *testing.T) {
 	w := newLakeFixtureWorld()
 	radius := w.Planet.Radius
-	// Path 0→π crosses the lake arc [π/4, 3π/4].
-	// Land: [0,π/4] ∪ [3π/4,π]  = π/2
-	// Lake: [π/4, 3π/4]          = π/2
-	a, b := 0.0, math.Pi
 	lakeLen := (math.Pi / 2) * radius
 	landLen := (math.Pi / 2) * radius
 	want := landLen + lakeLen/lakeSpeedFactor
-	got := effectiveArc(w, a, b)
-	// 1 % tolerance for stepping discretisation.
+	got := arcCost(w, 0, math.Pi)
 	if math.Abs(got-want)/want > 0.01 {
-		t.Errorf("effectiveArc crosses lake: got %v, want ~%v", got, want)
+		t.Errorf("arcCost crosses lake: got %v, want ~%v", got, want)
 	}
-	// Must exceed the geometric distance.
 	if got <= math.Pi*radius {
-		t.Errorf("effectiveArc crossing lake should exceed geometric distance: got %v, geo %v",
+		t.Errorf("arcCost crossing lake should exceed geometric distance: got %v, geo %v",
 			got, math.Pi*radius)
+	}
+}
+
+// TestEffectiveArcAvoidsLake verifies that effectiveArc routes around a lake
+// when the other arc is clear and of equal angular length.
+// Lake at [π/4, 3π/4]; both arcs from 0 to π are π rad, but the CCW arc
+// ([0, -π]) is lake-free, so effectiveArc should equal the geometric distance.
+func TestEffectiveArcAvoidsLake(t *testing.T) {
+	w := newLakeFixtureWorld()
+	radius := w.Planet.Radius
+	want := math.Pi * radius // CCW arc: no lake penalty
+	got := effectiveArc(w, 0, math.Pi)
+	if math.Abs(got-want)/want > 0.01 {
+		t.Errorf("effectiveArc (clear arc available): got %v, want ~%v", got, want)
 	}
 }
 
 func TestRouteLenLake(t *testing.T) {
 	w := newLakeFixtureWorld()
-	// Camp on the far side; node at angle 0 — route crosses the lake.
-	camp := &Building{Kind: KindLoggingCamp, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}
+	// Lake spans [π/4, 3π/4]. Camp just past the lake at 3π/4+0.2; node at 0.
+	// Short CW arc (≈2.56 rad) crosses the lake; the free CCW arc (≈3.73 rad)
+	// is cheaper. routeLen follows the detour and exceeds the geometric distance.
+	campAngle := 3*math.Pi/4 + 0.2
+	camp := &Building{Kind: KindLoggingCamp, Angle: campAngle, Pos: w.Planet.RimPoint(campAngle)}
 	w.Buildings = []*Building{camp}
 	node := newNode(w, KindWood, 0)
 	node.OwnerID = -1
 	w.Nodes = []*ResourceNode{node}
 
-	geo := math.Pi * w.Planet.Radius
+	geo := campAngle * w.Planet.Radius // shortest angular distance
 	if rl := routeLen(w, node); rl <= geo {
-		t.Errorf("routeLen crossing lake should exceed geometric distance: got %v, geo %v", rl, geo)
+		t.Errorf("routeLen with lake detour should exceed geometric distance: got %v, geo %v", rl, geo)
 	}
 }
 

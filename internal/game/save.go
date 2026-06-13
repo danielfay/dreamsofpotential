@@ -79,6 +79,7 @@ func LoadFrom(path string) (*World, error) {
 	if w.Version != SaveVersion {
 		return nil, fmt.Errorf("save version %d, want %d", w.Version, SaveVersion)
 	}
+	initTransientWorldState(&w)
 	return &w, nil
 }
 
@@ -101,5 +102,7 @@ func Load() (*World, error) {
 	if w.Version != SaveVersion {
 		return nil, os.ErrNotExist
 	}
+	initTransientWorldState(&w)
 	return &w, nil
 }
+

@@ -14,9 +14,6 @@ var (
 	colForestPotentialLabel = color.RGBA{R: 140, G: 210, B: 140, A: 230} // cost numeric label
 	colWaterPotential       = color.RGBA{R: 60, G: 140, B: 220, A: 255}  // blue circle — water resonance
 
-	// Lake terrain fill — muted blue, distinct from forest and sky.
-	colLake = color.RGBA{R: 28, G: 72, B: 155, A: 130}
-
 	// Awaken button — enabled state (purple burst).
 	colAwakenFill  = color.RGBA{R: 60, G: 40, B: 100, A: 240}
 	colAwakenRim   = color.RGBA{R: 160, G: 100, B: 220, A: 200}

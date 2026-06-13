@@ -44,7 +44,39 @@ const (
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
 
-	// system view / abstract production
+	// ── Tight Grove (echoB, layoutID 1) ─────────────────────────────────────
+	// Compact full-forest planet. TH placement immediately spawns many more trees
+	// than usual, leaving only 1-2 valid camp spots and teaching pressure decisions.
+	tightGroveRadius     = 50.0
+	tightGroveStartNodes = 12 // burst of trees on TH placement — nearly fills the rim
+
+	// ── Lakewood (echoA, layoutID 0) ─────────────────────────────────────────
+	// Forest split by a lake arc so workers naturally avoid the island region
+	// until a local camp is built there. Completion awards Water Potential.
+	// The four fields tile the full ring without gaps or overlaps:
+	//   main forest 140° + large lake 100° + island forest 60° + small lake 60° = 360°
+	lakewoodRadius = 65.0
+
+	// Main forest: upper arc where the town hall gets placed. 140° total.
+	lakewoodMainForestAngle = -math.Pi / 2    // top of rim (-90°)
+	lakewoodMainForestArc   = 7 * math.Pi / 18 // 70° half-arc → spans -160° to -20°
+
+	// Large lake: clockwise from main forest. 100° total — a real barrier.
+	// Workers crossing CW to the island pay the full lake penalty.
+	lakewoodLargeLakeAngle = math.Pi / 6      // right side (30°)
+	lakewoodLargeLakeArc   = 5 * math.Pi / 18 // 50° half-arc → spans -20° to 80°
+
+	// Island forest: across the large lake. 60° total — tempting but expensive.
+	lakewoodIslandForestAngle = 11 * math.Pi / 18 // lower-right (110°)
+	lakewoodIslandForestArc   = math.Pi / 6        // 30° half-arc → spans 80° to 140°
+
+	// Small lake: completes the ring on the left side. 60° total.
+	// Partially penalises the CCW detour, but less than the large lake CW.
+	lakewoodSmallLakeAngle = 17 * math.Pi / 18 // left side (170°)
+	lakewoodSmallLakeArc   = math.Pi / 6        // 30° half-arc → spans 140° to -160°
+
+
+	// ── system view / abstract production
 	echoRateFracA  = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
 	echoRateFracB  = 0.45  // echo B rate — slightly lower for variance
 	revealDuration = 3.5   // seconds for the one-time unlock reveal animation

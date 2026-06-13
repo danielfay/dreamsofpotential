@@ -44,6 +44,7 @@ type HUD struct {
 	previewText      *widget.Text
 	resourceSquare   *widget.Button
 	buildCapacityDbg *widget.Button
+	freeCapacityDbg  *widget.Button
 	addWorkerDbg     *widget.Button
 	buildCampDbg     *widget.Button
 	freeCampDbg      *widget.Button
@@ -137,7 +138,9 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	}
 
 	thWood, campWood := deliveryTotals(w)
-	h.woodText.Label = fmt.Sprintf("wood: %.0f (%.2f/s)  TH %.1f  camps %.1f", w.Economy.Wood, EstimateRate(w), thWood, campWood)
+	h.woodText.Label = fmt.Sprintf("wood: %.0f (%.2f/s)  TH %.1f  camps %.1f  forest:%d water:%d",
+		w.Economy.Wood, EstimateRate(w), thWood, campWood,
+		w.Economy.Potential[PotentialForest], w.Economy.Potential[PotentialWater])
 
 	active, returning, settling, reaction, waiting := 0, 0, 0, 0, 0
 	for _, wk := range w.Workers {
@@ -161,20 +164,39 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	h.nodeText.Label = fmt.Sprintf("nodes: %d free  %d reserved  %d claimed  pending %s",
 		freeNodes, reservedNodes, claimedNodes, pendingRebalanceText(w))
 
-	if len(w.Planet.Fields) > 0 {
-		f := w.Planet.Fields[0]
-		fp := w.Planet.FieldProgress[f.Kind]
-		fullStr := ""
-		if townFieldFull(w) {
-			fullStr = "  FULL"
-		}
+	{
+		fp := w.Planet.FieldProgress[KindWood]
 		var fpEXP, fpCap float64
 		if fp != nil {
 			fpEXP, fpCap = fp.EXP, fp.Cap
 		}
-		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %d trees/press  cue pending: %v\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
+		// Count nodes per known wood field so multi-region planets are visible.
+		var fieldLines []string
+		for i, f := range w.Planet.Fields {
+			if f.Kind != KindWood || !f.Known {
+				continue
+			}
+			count := 0
+			for _, n := range w.Nodes {
+				if n.Kind == KindWood && angleWithinField(f, n.Angle) {
+					count++
+				}
+			}
+			canSpawn := fieldCanSpawnNode(w, f)
+			satStr := "sat"
+			if canSpawn {
+				satStr = "open"
+			}
+			fieldLines = append(fieldLines, fmt.Sprintf("  field[%d] nodes:%d %s", i, count, satStr))
+		}
+		fullStr := ""
+		if townFieldFull(w) {
+			fullStr = "  FULL"
+		}
+		h.fieldText.Label = fmt.Sprintf("wood EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\n%s\nnurture: %d/press  cue pending: %v\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
 			fpEXP, fpCap, woodFieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
+			strings.Join(fieldLines, "\n"),
 			nurtureTreesPerPress, nurtureGrowthCuePending(w),
 			w.Economy.TownGrowth, w.Economy.TownGrowthCap,
 			w.Economy.WorkerCapacity, maxTownSlots(w), w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
@@ -184,22 +206,24 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	cc := townCapacityCost(w)
 	h.buildCapacityDbg.SetText(fmt.Sprintf("Build capacity (%.0f)", cc))
 	h.buildCapacityDbg.GetWidget().Disabled = w.Economy.Wood < cc || townHall(w) == nil || townFieldFull(w)
+	h.freeCapacityDbg.GetWidget().Disabled = townHall(w) == nil || townFieldFull(w)
 	h.addWorkerDbg.GetWidget().Disabled = townHall(w) == nil
 
-	if len(w.Buildings) == 0 {
+	if placing {
+		h.buildCampDbg.SetText("Cancel placement")
+		h.freeCampDbg.SetText("Cancel / free place")
+	} else if len(w.Buildings) == 0 {
 		h.buildCampDbg.SetText("Place Town Hall (free)")
-	} else {
-		h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", CampCost(w)))
-	}
-	h.buildCampDbg.GetWidget().Disabled = placing
-	if len(w.Buildings) == 0 {
 		h.freeCampDbg.SetText("Free Town Hall")
 	} else {
+		h.buildCampDbg.SetText(fmt.Sprintf("Build camp (%.0f)", CampCost(w)))
 		h.freeCampDbg.SetText("Free camp")
 	}
-	h.freeCampDbg.GetWidget().Disabled = placing
-	h.upgradeFieldDbg.GetWidget().Disabled = len(w.Planet.Fields) == 0
-	h.growFullDbg.GetWidget().Disabled = len(w.Planet.Fields) == 0
+	// Never disable these — the handler toggles placement/cancel on every click.
+	h.buildCampDbg.GetWidget().Disabled = false
+	h.freeCampDbg.GetWidget().Disabled = false
+	h.upgradeFieldDbg.GetWidget().Disabled = fieldForKind(w, KindWood) == nil
+	h.growFullDbg.GetWidget().Disabled = fieldForKind(w, KindWood) == nil
 
 	if pv != nil {
 		validity := "valid"
@@ -246,6 +270,7 @@ func (h *HUD) applyDebugSectionVisibility() {
 	h.workerText.GetWidget().SetVisibility(showCore)
 	h.nodeText.GetWidget().SetVisibility(showCore)
 	h.buildCapacityDbg.GetWidget().SetVisibility(showCore)
+	h.freeCapacityDbg.GetWidget().SetVisibility(showCore)
 	h.addWorkerDbg.GetWidget().SetVisibility(showCore)
 	h.buildCampDbg.GetWidget().SetVisibility(showCore)
 	h.resetBtn.GetWidget().SetVisibility(showCore)
@@ -410,6 +435,15 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		}),
 	)
 
+	hud.freeCapacityDbg = widget.NewButton(
+		widget.ButtonOpts.Image(dbgBtnImg()),
+		widget.ButtonOpts.Text("Free capacity", face, dbgTxtCol),
+		widget.ButtonOpts.TextPadding(dbgPad),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			addFreeCapacity(g.world)
+		}),
+	)
+
 	hud.addWorkerDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
 		widget.ButtonOpts.Text("Add free worker", face, dbgTxtCol),
@@ -451,19 +485,19 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud.upgradeFieldDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
-		widget.ButtonOpts.Text("Upgrade field", face, dbgTxtCol),
+		widget.ButtonOpts.Text("Upgrade all fields", face, dbgTxtCol),
 		widget.ButtonOpts.TextPadding(dbgPad),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			upgradeFirstFieldForDebug(g.world)
+			upgradeAllFieldsForDebug(g.world)
 		}),
 	)
 
 	hud.growFullDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
-		widget.ButtonOpts.Text("Grow until blocked/full", face, dbgTxtCol),
+		widget.ButtonOpts.Text("Grow all until blocked", face, dbgTxtCol),
 		widget.ButtonOpts.TextPadding(dbgPad),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			growFirstFieldUntilBlockedForDebug(g.world)
+			growAllFieldsUntilBlockedForDebug(g.world)
 		}),
 	)
 
@@ -509,6 +543,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.fieldText)
 	hud.debugPanel.AddChild(hud.previewText)
 	hud.debugPanel.AddChild(hud.buildCapacityDbg)
+	hud.debugPanel.AddChild(hud.freeCapacityDbg)
 	hud.debugPanel.AddChild(hud.addWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.freeCampDbg)

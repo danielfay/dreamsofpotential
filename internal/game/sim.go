@@ -458,12 +458,8 @@ func activateGrowthCue(w *World, result growthResult) {
 	w.growthCue = cue
 }
 
-func upgradeFirstFieldForDebug(w *World) bool {
-	if len(w.Planet.Fields) == 0 {
-		return false
-	}
-	f := w.Planet.Fields[0]
-	fp := w.Planet.FieldProgress[f.Kind]
+func upgradeAllFieldsForDebug(w *World) bool {
+	fp := w.Planet.FieldProgress[KindWood]
 	if fp == nil {
 		return false
 	}
@@ -471,18 +467,15 @@ func upgradeFirstFieldForDebug(w *World) bool {
 	if amount <= 0 {
 		amount = fp.Cap
 	}
-	depositToField(w, f.Kind, amount)
+	depositToField(w, KindWood, amount)
 	return true
 }
 
-func growFirstFieldUntilBlockedForDebug(w *World) bool {
-	if len(w.Planet.Fields) == 0 {
-		return false
-	}
+func growAllFieldsUntilBlockedForDebug(w *World) bool {
 	const maxDebugGrowthSteps = 512
 	for i := 0; i < maxDebugGrowthSteps; i++ {
 		before := len(w.Nodes)
-		if !upgradeFirstFieldForDebug(w) {
+		if !upgradeAllFieldsForDebug(w) {
 			return false
 		}
 		if len(w.Nodes) == before {
@@ -640,6 +633,20 @@ func townFieldFull(w *World) bool {
 // townCapacityCost returns the wood cost of the next paid capacity slot.
 func townCapacityCost(w *World) float64 {
 	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
+}
+
+// addFreeCapacity unlocks one worker slot without spending wood. Debug-only.
+func addFreeCapacity(w *World) bool {
+	if townHall(w) == nil {
+		return false
+	}
+	if w.Economy.WorkerCapacity >= maxTownSlots(w) {
+		return false
+	}
+	w.Economy.WorkerCapacity++
+	w.Economy.CapacityBought++
+	tryConsumeGrowth(w)
+	return true
 }
 
 // buildTownCapacity spends wood to unlock one worker slot. Calls
@@ -1014,6 +1021,8 @@ func awardCompletionPotential(w *World) {
 		switch f.Kind {
 		case KindWood:
 			w.Economy.Potential[PotentialForest]++
+		case KindWater:
+			w.Economy.Potential[PotentialWater]++
 		}
 	}
 }
