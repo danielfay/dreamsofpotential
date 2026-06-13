@@ -355,6 +355,14 @@ func townHall(w *World) *Building {
 	return nil
 }
 
+// initTransientWorldState restores fields that are not persisted in JSON.
+// Call after any JSON unmarshal so the world is safe to use immediately.
+func initTransientWorldState(w *World) {
+	if w.rng == nil {
+		w.rng = rand.New(rand.NewSource(0))
+	}
+}
+
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
 func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {

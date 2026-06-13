@@ -39,5 +39,6 @@ func Load() (*World, error) {
 	if w.Version != SaveVersion {
 		return nil, os.ErrNotExist
 	}
+	initTransientWorldState(&w)
 	return &w, nil
 }
