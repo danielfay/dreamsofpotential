@@ -577,13 +577,9 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	if p.Kind == PlanetEcho && !p.Awakened {
 		// Awaken button: burst/sparkle glyph, enabled or greyed by affordability.
 		canAff := canAwaken(g.world, sel)
-		fillCol := color.RGBA{R: 60, G: 40, B: 100, A: 240}
-		rimCol := color.RGBA{R: 160, G: 100, B: 220, A: 200}
-		glyphCol := color.RGBA{R: 200, G: 160, B: 255, A: 220}
+		fillCol, rimCol, glyphCol := colAwakenFill, colAwakenRim, colAwakenGlyph
 		if !canAff {
-			fillCol = color.RGBA{R: 15, G: 12, B: 22, A: 160}
-			rimCol = color.RGBA{R: 35, G: 28, B: 50, A: 80}
-			glyphCol = color.RGBA{R: 50, G: 38, B: 65, A: 90}
+			fillCol, rimCol, glyphCol = colAwakenFillDim, colAwakenRimDim, colAwakenGlyphDim
 		}
 		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, fillCol, false)
 		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, rimCol, false)

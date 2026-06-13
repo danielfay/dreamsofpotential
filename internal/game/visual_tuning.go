@@ -14,6 +14,16 @@ var (
 	colForestPotentialLabel = color.RGBA{R: 140, G: 210, B: 140, A: 230} // cost numeric label
 	colWaterPotential       = color.RGBA{R: 60, G: 140, B: 220, A: 255}  // blue circle — water resonance
 
+	// Awaken button — enabled state (purple burst).
+	colAwakenFill  = color.RGBA{R: 60, G: 40, B: 100, A: 240}
+	colAwakenRim   = color.RGBA{R: 160, G: 100, B: 220, A: 200}
+	colAwakenGlyph = color.RGBA{R: 200, G: 160, B: 255, A: 220}
+
+	// Awaken button — disabled state (near-black, glyph barely visible).
+	colAwakenFillDim  = color.RGBA{R: 15, G: 12, B: 22, A: 160}
+	colAwakenRimDim   = color.RGBA{R: 35, G: 28, B: 50, A: 80}
+	colAwakenGlyphDim = color.RGBA{R: 50, G: 38, B: 65, A: 90}
+
 	// Worker colours.
 	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
 	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty
