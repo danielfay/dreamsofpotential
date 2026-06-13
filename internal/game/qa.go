@@ -121,18 +121,21 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	// Field EXP — applied after settling to preserve exact values.
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
-		if p.FieldCapCycles != nil {
-			for range *p.FieldCapCycles {
-				f.Cap *= woodFieldEXPGrowth
+		fp := w.Planet.FieldProgress[f.Kind]
+		if fp != nil {
+			if p.FieldCapCycles != nil {
+				for range *p.FieldCapCycles {
+					fp.Cap *= woodFieldEXPGrowth
+				}
 			}
-		}
-		switch {
-		case p.FieldExpFromCap != nil:
-			f.EXP = math.Max(0, math.Min(f.Cap, f.Cap+*p.FieldExpFromCap))
-		case p.FieldExpFrac != nil:
-			f.EXP = math.Max(0, math.Min(f.Cap, f.Cap**p.FieldExpFrac))
-		case p.FieldExpAbs != nil:
-			f.EXP = math.Max(0, math.Min(f.Cap, *p.FieldExpAbs))
+			switch {
+			case p.FieldExpFromCap != nil:
+				fp.EXP = math.Max(0, math.Min(fp.Cap, fp.Cap+*p.FieldExpFromCap))
+			case p.FieldExpFrac != nil:
+				fp.EXP = math.Max(0, math.Min(fp.Cap, fp.Cap**p.FieldExpFrac))
+			case p.FieldExpAbs != nil:
+				fp.EXP = math.Max(0, math.Min(fp.Cap, *p.FieldExpAbs))
+			}
 		}
 	}
 

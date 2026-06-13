@@ -18,12 +18,16 @@ func (a Vec) Dist(b Vec) float64 {
 type ResourceKind int
 
 const (
-	KindWood ResourceKind = iota
+	KindWood  ResourceKind = iota
+	KindWater              // future lake terrain; unknown fields carry this kind
 )
 
 func kindName(k ResourceKind) string {
-	if k == KindWood {
+	switch k {
+	case KindWood:
 		return "wood"
+	case KindWater:
+		return "water"
 	}
 	return "unknown"
 }
@@ -183,13 +187,20 @@ type Building struct {
 	Pulse         PulseState
 }
 
-// ResourceField tracks per-kind progress toward spawning a new resource node.
+// KindProgress holds planet-level EXP accumulation for one resource kind.
+// All known regions of that kind share a single progress counter.
+type KindProgress struct {
+	EXP float64
+	Cap float64
+}
+
+// ResourceField is a region arc on the planet rim where a resource kind grows.
+// EXP/Cap moved to Planet.FieldProgress so multiple regions can share progress.
 type ResourceField struct {
-	Kind           ResourceKind
-	CenterAngle    float64
-	HalfArc        float64
-	EXP            float64
-	Cap            float64
+	Kind        ResourceKind
+	CenterAngle float64
+	HalfArc     float64
+	Known       bool // false for teaser/unknown regions (never accrue EXP, never gate completion)
 }
 
 type growthOutcome int
@@ -224,10 +235,11 @@ type growthCueState struct {
 
 // Planet is the disc the player operates on.
 type Planet struct {
-	Center      Vec
-	Radius      float64
-	Composition map[ResourceKind]float64
-	Fields      []*ResourceField
+	Center        Vec
+	Radius        float64
+	Composition   map[ResourceKind]float64
+	Fields        []*ResourceField
+	FieldProgress map[ResourceKind]*KindProgress // planet-level EXP/Cap per kind; shared across all regions of that kind
 }
 
 // RimPoint returns the world point on the planet's rim at the given angle.
@@ -263,7 +275,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 11
+const SaveVersion = 12
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -391,12 +403,12 @@ func spawnNodeNear(w *World, f *ResourceField, intended float64) growthResult {
 }
 
 // spawnNode places a new node within the field's arc, distributing it among
-// existing nodes using a golden-ratio spacing to avoid clustering. If the field
-// has no valid free surface left, the nearest same-field node grows instead.
+// existing nodes in that region using a golden-ratio spacing to avoid clustering.
+// If the field has no valid free surface left, the nearest same-field node grows instead.
 func spawnNode(w *World, f *ResourceField) growthResult {
 	count := 0
 	for _, n := range w.Nodes {
-		if n.Kind == f.Kind {
+		if n.Kind == f.Kind && angleWithinField(f, n.Angle) {
 			count++
 		}
 	}
@@ -526,7 +538,7 @@ func newWorldWithSeed(seed int64) *World {
 		Kind:        KindWood,
 		CenterAngle: forestAngle,
 		HalfArc:     forestHalfArc,
-		Cap:         woodFieldBaseEXP,
+		Known:       true,
 	}
 
 	planets := []SystemPlanet{
@@ -545,6 +557,9 @@ func newWorldWithSeed(seed int64) *World {
 			Radius:      radius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
+			FieldProgress: map[ResourceKind]*KindProgress{
+				KindWood: {Cap: woodFieldBaseEXP},
+			},
 		},
 		Economy:      Economy{TownGrowthCap: townGrowthBaseCap, Potential: make(map[PotentialKind]int)},
 		Active:       0,
@@ -582,7 +597,7 @@ func newEchoPlanetState(layoutID int) *PlanetState {
 		Kind:        KindWood,
 		CenterAngle: forestAngle,
 		HalfArc:     forestHalfArc,
-		Cap:         woodFieldBaseEXP,
+		Known:       true,
 	}
 
 	// Build a temporary world so we can reuse the node-spawning helpers.
@@ -592,6 +607,9 @@ func newEchoPlanetState(layoutID int) *PlanetState {
 			Radius:      radius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
+			FieldProgress: map[ResourceKind]*KindProgress{
+				KindWood: {Cap: woodFieldBaseEXP},
+			},
 		},
 		rng: rand.New(rand.NewSource(int64(layoutID))),
 	}

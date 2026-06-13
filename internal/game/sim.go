@@ -202,17 +202,6 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 	startReturnHome(w, wk)
 }
 
-func fieldEXPToNextLevel(f *ResourceField) float64 {
-	if f == nil || f.Cap <= 0 {
-		return 0
-	}
-	needed := f.Cap - f.EXP
-	if needed <= 0 {
-		return f.Cap
-	}
-	return needed
-}
-
 func startReturnHome(w *World, wk *Worker) {
 	releaseOwnedNode(w, wk)
 	releaseWorkerReservations(w, wk.ID)
@@ -380,28 +369,53 @@ func findNode(w *World, id int) *ResourceNode {
 	return nil
 }
 
-// depositToField increments the field EXP for kind and spawns a new node
-// each time EXP meets or exceeds the cap. Assignment happens
-// automatically on the next tick via assignNodes.
+// depositToField increments the planet-level field EXP for kind and spawns a
+// new node each time EXP meets or exceeds the cap. The spawn target region is
+// chosen by pickGrowthRegion (random among eligible known regions of that kind).
 func depositToField(w *World, kind ResourceKind, amount float64) {
-	for _, f := range w.Planet.Fields {
-		if f.Kind != kind {
-			continue
-		}
-		f.EXP += amount
-		for f.EXP >= f.Cap {
-			f.EXP -= f.Cap
-			// Capped geometric: grow the threshold exponentially while the step is
-			// small, then switch to additive so late-game trees stay naturally reachable.
-			if step := f.Cap * (woodFieldEXPGrowth - 1); step < woodFieldEXPMaxStep {
-				f.Cap *= woodFieldEXPGrowth
-			} else {
-				f.Cap += woodFieldEXPMaxStep
-			}
-			activateGrowthCue(w, spawnNode(w, f))
-		}
+	fp := w.Planet.FieldProgress[kind]
+	if fp == nil {
 		return
 	}
+	fp.EXP += amount
+	for fp.EXP >= fp.Cap {
+		fp.EXP -= fp.Cap
+		// Capped geometric: grow the threshold exponentially while the step is
+		// small, then switch to additive so late-game trees stay naturally reachable.
+		if step := fp.Cap * (woodFieldEXPGrowth - 1); step < woodFieldEXPMaxStep {
+			fp.Cap *= woodFieldEXPGrowth
+		} else {
+			fp.Cap += woodFieldEXPMaxStep
+		}
+		f := pickGrowthRegion(w, kind)
+		if f == nil {
+			break
+		}
+		activateGrowthCue(w, spawnNode(w, f))
+	}
+}
+
+// pickGrowthRegion selects a known region of the given kind to receive a new
+// spawn. Prefers regions that can still accept a tree; falls back to any known
+// region when all are saturated (spawnNode will upgrade the nearest node instead).
+func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
+	var eligible []*ResourceField
+	var fallback *ResourceField
+	for _, f := range w.Planet.Fields {
+		if f.Kind != kind || !f.Known {
+			continue
+		}
+		if fallback == nil {
+			fallback = f
+		}
+		if fieldCanSpawnNode(w, f) {
+			eligible = append(eligible, f)
+		}
+	}
+	if len(eligible) > 0 {
+		return eligible[w.rng.Intn(len(eligible))]
+	}
+	return fallback
 }
 
 func activateGrowthCue(w *World, result growthResult) {
@@ -433,9 +447,13 @@ func upgradeFirstFieldForDebug(w *World) bool {
 		return false
 	}
 	f := w.Planet.Fields[0]
-	amount := f.Cap - f.EXP
+	fp := w.Planet.FieldProgress[f.Kind]
+	if fp == nil {
+		return false
+	}
+	amount := fp.Cap - fp.EXP
 	if amount <= 0 {
-		amount = f.Cap
+		amount = fp.Cap
 	}
 	depositToField(w, f.Kind, amount)
 	return true
@@ -465,17 +483,20 @@ func nurtureGrowthCuePending(w *World) bool {
 	return growthCueActive(w.growthCue) || len(w.pendingGrowthCues) > 0
 }
 
-// nurtureField directly spawns up to nurtureTreesPerPress new trees on the
-// matching field. Returns false if the resource is not yet discovered, the
-// field is missing or saturated, or a growth cue is already playing.
+// nurtureField directly spawns up to nurtureTreesPerPress new trees across all
+// known regions of the given kind. Returns false if the resource is not yet
+// discovered, no known region can accept a tree, or a growth cue is already playing.
 func nurtureField(w *World, kind ResourceKind) bool {
-	f := fieldForKind(w, kind)
-	if !w.ResourceDiscovered || f == nil || !fieldCanSpawnNode(w, f) ||
-		nurtureGrowthCuePending(w) {
+	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
+		return false
+	}
+	f := pickGrowthRegion(w, kind)
+	if f == nil || !fieldCanSpawnNode(w, f) {
 		return false
 	}
 	for range nurtureTreesPerPress {
-		if !fieldCanSpawnNode(w, f) {
+		f = pickGrowthRegion(w, kind)
+		if f == nil || !fieldCanSpawnNode(w, f) {
 			break
 		}
 		activateGrowthCue(w, spawnNode(w, f))
@@ -485,14 +506,14 @@ func nurtureField(w *World, kind ResourceKind) bool {
 
 // nurtureAttentionActive reports whether the Nurture button should show its
 // attention pulse. Fires once all worker slots are both purchased AND filled
-// with physical workers, the planet can still accept more trees, and no
-// growth cue is pending.
+// with physical workers, any known region of that kind can still accept a tree,
+// and no growth cue is pending.
 func nurtureAttentionActive(w *World, kind ResourceKind) bool {
-	if !w.ResourceDiscovered {
+	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
 		return false
 	}
-	f := fieldForKind(w, kind)
-	if f == nil || !fieldCanSpawnNode(w, f) || nurtureGrowthCuePending(w) {
+	f := pickGrowthRegion(w, kind)
+	if f == nil || !fieldCanSpawnNode(w, f) {
 		return false
 	}
 	slots := maxTownSlots(w)
@@ -817,11 +838,21 @@ func updateWorkerPos(w *World, wk *Worker) {
 // ── System-view / unlock helpers ─────────────────────────────────────────────
 
 // forestPlanetComplete reports the mastery gate for forest-kind planets:
-// town capacity is maxed AND the wood field can no longer place a new tree.
-// Future planet kinds should define their own completion gate.
+// town capacity is maxed AND every known KindWood region is saturated.
 func forestPlanetComplete(w *World) bool {
-	f := fieldForKind(w, KindWood)
-	return townFieldFull(w) && f != nil && !fieldCanSpawnNode(w, f)
+	if !townFieldFull(w) {
+		return false
+	}
+	hasKnownForest := false
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWood && f.Known {
+			hasKnownForest = true
+			if fieldCanSpawnNode(w, f) {
+				return false
+			}
+		}
+	}
+	return hasKnownForest
 }
 
 // updateActiveAbstractRate samples EstimateRate into a rolling bucket-min window and
