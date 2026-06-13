@@ -47,36 +47,38 @@ const (
 	// ── Tight Grove (echoA, layoutID 0) ─────────────────────────────────────
 	// Smaller radius and narrower forest arc so the rim fills up faster,
 	// teaching that placement decisions matter under surface pressure.
+	// Forest (1.2π) + water (0.8π) tile the full ring with zero gaps/overlaps.
 	tightGroveRadius      = 50.0
 	tightGroveForestAngle = -math.Pi / 2  // top of rim
-	tightGroveForestArc   = math.Pi * 0.6 // ~108° half-arc, noticeably narrower than π
-	tightGroveStartNodes  = 8             // pre-crowded from the start
+	tightGroveForestArc   = math.Pi * 0.6 // 108° half-arc → total 216°
+	tightGroveWaterAngle = math.Pi / 2   // bottom of rim, opposite the forest
+	tightGroveWaterArc   = math.Pi * 0.4 // 72° half-arc → total 144°; forest+water = 360°
 
 	// ── Lakewood (echoB, layoutID 1) ─────────────────────────────────────────
 	// Forest split by a lake arc so workers naturally avoid the island region
 	// until a local camp is built there. Completion awards Water Potential.
+	// The four fields tile the full ring without gaps or overlaps:
+	//   main forest 140° + large lake 100° + island forest 60° + small lake 60° = 360°
 	lakewoodRadius = 65.0
 
-	// Main forest: upper arc where the town hall gets placed.
-	lakewoodMainForestAngle = -math.Pi / 2 // top of rim
-	lakewoodMainForestArc   = 0.90         // wide enough for comfortable placement
+	// Main forest: upper arc where the town hall gets placed. 140° total.
+	lakewoodMainForestAngle = -math.Pi / 2    // top of rim (-90°)
+	lakewoodMainForestArc   = 7 * math.Pi / 18 // 70° half-arc → spans -160° to -20°
 
-	// Large lake: sits on the clockwise short-arc route from main forest to island,
-	// making that route expensive so workers avoid the island until a camp is built.
-	lakewoodLargeLakeAngle = math.Pi / 6  // right side (~30°)
-	lakewoodLargeLakeArc   = 0.85         // wide — a real barrier
+	// Large lake: clockwise from main forest. 100° total — a real barrier.
+	// Workers crossing CW to the island pay the full lake penalty.
+	lakewoodLargeLakeAngle = math.Pi / 6      // right side (30°)
+	lakewoodLargeLakeArc   = 5 * math.Pi / 18 // 50° half-arc → spans -20° to 80°
 
-	// Island forest: across the large lake; visible but expensive to reach from main.
-	lakewoodIslandForestAngle = math.Pi * 0.55 // lower-right (~99°)
-	lakewoodIslandForestArc   = 0.55
+	// Island forest: across the large lake. 60° total — tempting but expensive.
+	lakewoodIslandForestAngle = 11 * math.Pi / 18 // lower-right (110°)
+	lakewoodIslandForestArc   = math.Pi / 6        // 30° half-arc → spans 80° to 140°
 
-	// Small shaping lake: left side adds visual variety and partially penalises
-	// the counter-clockwise detour around the ring.
-	lakewoodSmallLakeAngle = -math.Pi * 0.85 // left (~-153°)
-	lakewoodSmallLakeArc   = 0.45
+	// Small lake: completes the ring on the left side. 60° total.
+	// Partially penalises the CCW detour, but less than the large lake CW.
+	lakewoodSmallLakeAngle = 17 * math.Pi / 18 // left side (170°)
+	lakewoodSmallLakeArc   = math.Pi / 6        // 30° half-arc → spans 140° to -160°
 
-	lakewoodMainStartNodes   = 5 // main forest seeding
-	lakewoodIslandStartNodes = 2 // a few visible island trees — tempting but not packed
 
 	// ── system view / abstract production
 	echoRateFracA  = 0.55  // echo A rate as fraction of starting planet's snapshotted rate

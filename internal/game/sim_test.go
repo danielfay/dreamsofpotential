@@ -1840,9 +1840,9 @@ func setupEchoForCompletion(t *testing.T, w *World, echoIdx int) {
 	fillWoodFieldNodes(w, false)
 }
 
-// TestTightGrove_CompletionAwardsForestPotentialOnly verifies that Tight Grove
-// (echoA, layoutID 0) awards exactly +1 Forest Potential and no Water Potential.
-func TestTightGrove_CompletionAwardsForestPotentialOnly(t *testing.T) {
+// TestTightGrove_CompletionAwardsPotential verifies that Tight Grove (echoA, layoutID 0)
+// awards +1 Forest Potential (known wood field) and +1 Water Potential (fill water field).
+func TestTightGrove_CompletionAwardsPotential(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, 1) // echoA = layoutID 0 (Tight Grove)
@@ -1856,8 +1856,8 @@ func TestTightGrove_CompletionAwardsForestPotentialOnly(t *testing.T) {
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
 		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
 	}
-	if got := w.Economy.Potential[PotentialWater]; got != 0 {
-		t.Errorf("Water Potential after Tight Grove: got %d, want 0", got)
+	if got := w.Economy.Potential[PotentialWater]; got != 1 {
+		t.Errorf("Water Potential after Tight Grove: got %d, want 1", got)
 	}
 }
 

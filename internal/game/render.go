@@ -674,9 +674,7 @@ func drawResourceFieldFill(scene *ebiten.Image, planet Planet, f *ResourceField,
 		return
 	}
 	if f.Kind == KindWater {
-		drawFieldSector(scene, cx, cy, radius, start, end, colLake)
-		drawFieldSectorBand(scene, cx, cy, radius-1, 2, start, end,
-			color.RGBA{R: 80, G: 150, B: 220, A: 60})
+		drawWaterFieldFill(scene, cx, cy, radius, start, end)
 		return
 	}
 	drawFieldSector(scene, cx, cy, radius, start, end, color.RGBA{R: 200, G: 200, B: 200, A: 54})
@@ -743,6 +741,49 @@ func drawForestFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle
 		drawFieldSectorBand(scene, cx, cy, ring.r, 2, startAngle, endAngle, ring.col)
 	}
 	drawForestCanopyFlecks(scene, cx, cy, radius, startAngle, endAngle)
+}
+
+// drawWaterFieldFill layers low-alpha blues so the water reads as a filled
+// biome with subtle ripple texture, mirroring drawForestFieldFill in blue.
+func drawWaterFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
+	drawFieldSector(scene, cx, cy, radius, startAngle, endAngle, color.RGBA{R: 10, G: 40, B: 112, A: 190})
+
+	for _, ring := range []struct {
+		r   float32
+		col color.RGBA
+	}{
+		{radius * 0.93, color.RGBA{R: 18, G: 72, B: 158, A: 38}},
+		{radius * 0.75, color.RGBA{R: 6, G: 28, B: 88, A: 36}},
+		{radius * 0.52, color.RGBA{R: 24, G: 90, B: 178, A: 26}},
+		{radius * 0.30, color.RGBA{R: 8, G: 38, B: 108, A: 26}},
+	} {
+		drawFieldSectorBand(scene, cx, cy, ring.r, 2, startAngle, endAngle, ring.col)
+	}
+	drawWaterRippleFlecks(scene, cx, cy, radius, startAngle, endAngle)
+}
+
+// drawWaterRippleFlecks adds deterministic shimmer dots inside the water field,
+// mirroring the forest canopy fleck approach but in blue tones.
+func drawWaterRippleFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
+	span := endAngle - startAngle
+	for i := 0; i < 52; i++ {
+		aFrac := math.Mod(float64(i)*0.38196601125+0.23, 1)
+		rFrac := math.Sqrt(math.Mod(float64(i)*0.75487766625+0.31, 1))
+		angle := startAngle + span*aFrac
+		rr := radius * float32(0.12+0.78*rFrac)
+		x := cx + rr*float32(math.Cos(angle))
+		y := cy + rr*float32(math.Sin(angle))
+
+		col := color.RGBA{R: 55, G: 130, B: 215, A: 44}
+		if i%3 == 0 {
+			col = color.RGBA{R: 8, G: 40, B: 118, A: 44}
+		}
+		size := float32(1)
+		if i%9 == 0 {
+			size = 2
+		}
+		vector.FillRect(scene, x-size/2, y-size/2, size, size, col, false)
+	}
 }
 
 // drawFieldSector fills either a full circular field or a partial wedge.

@@ -668,25 +668,22 @@ func newTightGroveState(center Vec) *PlanetState {
 		HalfArc:     tightGroveForestArc,
 		Known:       true,
 	}
-	tmp := &World{
+	water := &ResourceField{
+		Kind:        KindWater,
+		CenterAngle: tightGroveWaterAngle,
+		HalfArc:     tightGroveWaterArc,
+		Known:       false,
+	}
+	return &PlanetState{
 		Planet: Planet{
 			Center:      center,
 			Radius:      tightGroveRadius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields:      []*ResourceField{forest},
+			Fields:      []*ResourceField{forest, water},
 			FieldProgress: map[ResourceKind]*KindProgress{
 				KindWood: {Cap: woodFieldBaseEXP},
 			},
 		},
-		rng: rand.New(rand.NewSource(0)),
-	}
-	for range tightGroveStartNodes {
-		spawnNode(tmp, forest)
-	}
-	return &PlanetState{
-		Planet:        tmp.Planet,
-		Nodes:         tmp.Nodes,
-		NextNodeID:    tmp.NextNodeID,
 		TownGrowthCap: townGrowthBaseCap,
 	}
 }
@@ -719,7 +716,7 @@ func newLakewoodState(center Vec) *PlanetState {
 		HalfArc:     lakewoodSmallLakeArc,
 		Known:       false,
 	}
-	tmp := &World{
+	return &PlanetState{
 		Planet: Planet{
 			Center:      center,
 			Radius:      lakewoodRadius,
@@ -729,18 +726,6 @@ func newLakewoodState(center Vec) *PlanetState {
 				KindWood: {Cap: woodFieldBaseEXP},
 			},
 		},
-		rng: rand.New(rand.NewSource(1)),
-	}
-	for range lakewoodMainStartNodes {
-		spawnNode(tmp, mainForest)
-	}
-	for range lakewoodIslandStartNodes {
-		spawnNode(tmp, islandForest)
-	}
-	return &PlanetState{
-		Planet:        tmp.Planet,
-		Nodes:         tmp.Nodes,
-		NextNodeID:    tmp.NextNodeID,
 		TownGrowthCap: townGrowthBaseCap,
 	}
 }
