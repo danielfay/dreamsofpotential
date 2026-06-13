@@ -802,7 +802,7 @@ func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
 	fp.EXP = 7
 	fp.Cap = 20
 
-	if !upgradeFirstFieldForDebug(w) {
+	if !upgradeAllFieldsForDebug(w) {
 		t.Fatal("expected debug field upgrade to run")
 	}
 	if len(w.Nodes) != 1 {
@@ -829,7 +829,7 @@ func TestGrowFirstFieldUntilBlockedForDebugStopsOnUpgrade(t *testing.T) {
 	n.Size = 1
 	w.Nodes = []*ResourceNode{n}
 
-	if !growFirstFieldUntilBlockedForDebug(w) {
+	if !growAllFieldsUntilBlockedForDebug(w) {
 		t.Fatal("expected debug grow-until-full to run")
 	}
 	if len(w.Nodes) != 1 {
