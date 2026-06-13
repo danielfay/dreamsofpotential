@@ -85,17 +85,17 @@ func activePlanetPalette(w *World) planetViewPalette {
 		}
 	}
 	switch w.System.Planets[w.Active].LayoutID {
-	case 1: // echo layout 1 — warmer amber tint
+	case 1: // echo layout 1 — warm yellow-green (forest)
 		return planetViewPalette{
-			background: color.RGBA{R: 14, G: 10, B: 8, A: 255},
-			edge:       color.RGBA{R: 140, G: 100, B: 30, A: 255},
-			body:       color.RGBA{R: 8, G: 5, B: 3, A: 255},
+			background: color.RGBA{R: 10, G: 14, B: 6, A: 255},
+			edge:       color.RGBA{R: 85, G: 145, B: 35, A: 255},
+			body:       color.RGBA{R: 5, G: 8, B: 3, A: 255},
 		}
-	default: // echo layout 0 — cooler teal tint
+	default: // echo layout 0 — cool blue-green (forest)
 		return planetViewPalette{
-			background: color.RGBA{R: 8, G: 12, B: 20, A: 255},
-			edge:       color.RGBA{R: 30, G: 120, B: 110, A: 255},
-			body:       color.RGBA{R: 3, G: 6, B: 12, A: 255},
+			background: color.RGBA{R: 6, G: 14, B: 10, A: 255},
+			edge:       color.RGBA{R: 35, G: 130, B: 75, A: 255},
+			body:       color.RGBA{R: 3, G: 8, B: 5, A: 255},
 		}
 	}
 }
@@ -827,7 +827,10 @@ var (
 	colSysStartRim   = color.RGBA{R: 100, G: 215, B: 115, A: 255} // bright active green rim
 	colSysEchoA      = color.RGBA{R: 40, G: 140, B: 60, A: 255}   // dim green — dormant echo A
 	colSysEchoB      = color.RGBA{R: 35, G: 120, B: 55, A: 255}   // dim green — dormant echo B
-	colSysEchoRim    = color.RGBA{R: 100, G: 160, B: 80, A: 200}  // muted green rim — dormant
+	colSysEchoRimA   = color.RGBA{R: 80, G: 210, B: 145, A: 200}  // muted cool blue-green rim — layout 0
+	colSysEchoRimB   = color.RGBA{R: 155, G: 220, B: 70, A: 200}  // muted warm yellow-green rim — layout 1
+	colSysEchoActiveRimA = color.RGBA{R: 80, G: 215, B: 145, A: 255} // bright cool blue-green — awakened/completed layout 0
+	colSysEchoActiveRimB = color.RGBA{R: 155, G: 225, B: 70, A: 255} // bright warm yellow-green — awakened/completed layout 1
 	colSysUnknown    = color.RGBA{R: 28, G: 28, B: 38, A: 255}    // dark silhouette
 	colSysUnknownRim = color.RGBA{R: 50, G: 50, B: 70, A: 180}    // faint orbit tint
 	colSysOrbit      = color.RGBA{R: 40, G: 40, B: 60, A: 80}     // faint orbit ellipse
@@ -896,27 +899,30 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 
 	case PlanetEcho:
 		col := colSysEchoA
+		echoRim := colSysEchoRimA
+		echoActiveRim := colSysEchoActiveRimA
 		if p.RingColorIdx == 1 {
 			col = colSysEchoB
+			echoRim = colSysEchoRimB
+			echoActiveRim = colSysEchoActiveRimB
 		}
 		body := scaleColor(col, brightness)
 		vector.FillCircle(scene, cx, cy, r, body, false)
 		switch {
 		case p.Completed:
-			// Afterglow: matches the starting planet's green afterglow treatment.
 			glowAlpha := uint8(float32(18) * brightness)
-			vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: 50, G: 180, B: 70, A: glowAlpha}, false)
-			rimCol := scaleColor(colSysStartRim, brightness)
+			vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: echoActiveRim.R, G: echoActiveRim.G, B: echoActiveRim.B, A: glowAlpha}, false)
+			rimCol := scaleColor(echoActiveRim, brightness)
 			drawSystemOrbitRing(scene, cx, cy, r, 2.5, rimCol)
 		case p.Awakened:
 			// Active but incomplete: solid bright rim, no twinkle.
-			rimCol := scaleColor(colSysStartRim, brightness)
+			rimCol := scaleColor(echoActiveRim, brightness)
 			drawSystemOrbitRing(scene, cx, cy, r, 2.0, rimCol)
 		default:
-			// Dormant: warm twinkling rim.
+			// Dormant: twinkling rim in the layout's colour family.
 			twinkle := float32(0.7 + 0.3*math.Sin(simTime*1.8+float64(p.RingColorIdx)*1.2))
 			rimAlpha := uint8(float32(160) * twinkle * brightness)
-			drawSystemOrbitRing(scene, cx, cy, r, 1.5, color.RGBA{R: colSysEchoRim.R, G: colSysEchoRim.G, B: colSysEchoRim.B, A: rimAlpha})
+			drawSystemOrbitRing(scene, cx, cy, r, 1.5, color.RGBA{R: echoRim.R, G: echoRim.G, B: echoRim.B, A: rimAlpha})
 		}
 
 	case PlanetUnknown:

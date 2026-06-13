@@ -53,7 +53,7 @@ const (
 
 var (
 	// Per-planet atmosphere tint colours. The alpha is set per-layer at draw time.
-	colAtmosphereStart = color.RGBA{R: 55, G: 200, B: 80, A: 255}  // starting planet — green
-	colAtmosphereA     = color.RGBA{R: 20, G: 160, B: 210, A: 255} // echo layout 0 — teal
-	colAtmosphereB     = color.RGBA{R: 220, G: 115, B: 20, A: 255} // echo layout 1 — amber
+	colAtmosphereStart = color.RGBA{R: 55, G: 200, B: 80, A: 255}  // starting planet — mid green
+	colAtmosphereA     = color.RGBA{R: 40, G: 190, B: 100, A: 255} // echo layout 0 — cool blue-green
+	colAtmosphereB     = color.RGBA{R: 110, G: 210, B: 45, A: 255} // echo layout 1 — warm yellow-green
 )
