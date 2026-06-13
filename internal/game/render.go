@@ -114,12 +114,12 @@ func init() {
 	gradAtmosphereB = buildAtmosphereGrad(colAtmosphereB)
 }
 
-// buildAtmosphereGrad returns a gradient from base@alpha30 (inner rim) to
+// buildAtmosphereGrad returns a gradient from base@alpha20 (inner rim) to
 // base@alpha0 (outer edge) for sampling ring opacities in drawPlanetAtmosphere.
 func buildAtmosphereGrad(base color.RGBA) colorgrad.Gradient {
 	g, err := colorgrad.NewGradient().
 		Colors(
-			colorgrad.Rgb8(base.R, base.G, base.B, 30),
+			colorgrad.Rgb8(base.R, base.G, base.B, 20),
 			colorgrad.Rgb8(base.R, base.G, base.B, 0),
 		).
 		Build()
