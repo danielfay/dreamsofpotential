@@ -1014,6 +1014,8 @@ func awardCompletionPotential(w *World) {
 		switch f.Kind {
 		case KindWood:
 			w.Economy.Potential[PotentialForest]++
+		case KindWater:
+			w.Economy.Potential[PotentialWater]++
 		}
 	}
 }

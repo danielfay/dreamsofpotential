@@ -1826,6 +1826,134 @@ func TestEchoCompletion_AwardsForestPotential(t *testing.T) {
 	}
 }
 
+func setupEchoForCompletion(t *testing.T, w *World, echoIdx int) {
+	t.Helper()
+	switchToPlanet(w, echoIdx)
+	enterPlanetView(w)
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		t.Fatalf("setup: cannot place Town Hall on echo %d", echoIdx)
+	}
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+	fillWoodFieldNodes(w, false)
+}
+
+// TestTightGrove_CompletionAwardsForestPotentialOnly verifies that Tight Grove
+// (echoA, layoutID 0) awards exactly +1 Forest Potential and no Water Potential.
+func TestTightGrove_CompletionAwardsForestPotentialOnly(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1) // echoA = layoutID 0 (Tight Grove)
+	setupEchoForCompletion(t, w, 1)
+
+	checkActivePlanetCompletion(w)
+
+	if !w.System.Planets[1].Completed {
+		t.Fatal("Tight Grove should be marked Completed")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 0 {
+		t.Errorf("Water Potential after Tight Grove: got %d, want 0", got)
+	}
+}
+
+// TestLakewood_CompletionAwardsForestAndWaterPotential verifies that Lakewood
+// (echoB, layoutID 1) awards +1 Forest Potential and +1 Water Potential.
+func TestLakewood_CompletionAwardsForestAndWaterPotential(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 2) // echoB = layoutID 1 (Lakewood)
+	setupEchoForCompletion(t, w, 2)
+
+	checkActivePlanetCompletion(w)
+
+	if !w.System.Planets[2].Completed {
+		t.Fatal("Lakewood should be marked Completed")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after Lakewood: got %d, want 1", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 1 {
+		t.Errorf("Water Potential after Lakewood: got %d, want 1", got)
+	}
+}
+
+// TestLakewood_RequiresIslandSaturation verifies that Lakewood does not complete
+// until the island forest region is also saturated.
+func TestLakewood_RequiresIslandSaturation(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 2)
+	switchToPlanet(w, 2)
+	enterPlanetView(w)
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		t.Fatal("setup: cannot place Town Hall on Lakewood")
+	}
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+	// Fill only the main (first) wood field, leave island unsaturated.
+	var mainField *ResourceField
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWood && f.Known {
+			mainField = f
+			break
+		}
+	}
+	if mainField == nil {
+		t.Fatal("setup: no main wood field on Lakewood")
+	}
+	for fieldCanSpawnNode(w, mainField) {
+		spawnNode(w, mainField)
+	}
+
+	checkActivePlanetCompletion(w)
+	if w.System.Planets[2].Completed {
+		t.Error("Lakewood should NOT complete with only main forest saturated")
+	}
+}
+
+// TestLakewood_WaterFieldsDoNotAccrueEXP verifies unknown KindWater fields on
+// Lakewood never accumulate field EXP (they don't gate completion).
+func TestLakewood_WaterFieldsDoNotAccrueEXP(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 2)
+	switchToPlanet(w, 2)
+	enterPlanetView(w)
+
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWater {
+			if fp := w.Planet.FieldProgress[KindWater]; fp != nil && fp.EXP != 0 {
+				t.Errorf("KindWater FieldProgress.EXP should be 0, got %v", fp.EXP)
+			}
+		}
+	}
+}
+
+// TestLakewood_AwakensWithForestPotential verifies awakening Lakewood still costs
+// exactly 1 Forest Potential (same gate as Tight Grove and Phase 1 generic).
+func TestLakewood_AwakensWithForestPotential(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+
+	if !canAwaken(w, 2) {
+		t.Fatal("should be able to awaken echoB with 1 Forest Potential")
+	}
+	awakenPlanet(w, 2)
+	if got := w.Economy.Potential[PotentialForest]; got != 0 {
+		t.Errorf("Forest Potential after awakening Lakewood: got %d, want 0", got)
+	}
+	if !w.System.Planets[2].Awakened {
+		t.Error("echoB should be awakened")
+	}
+}
+
 // runTick advances the simulation for the given duration using Tick (view-aware path).
 func runTick(w *World, seconds float64) {
 	ticks := int(math.Round(seconds / dt))

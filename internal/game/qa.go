@@ -278,17 +278,18 @@ func findValidBuildingAngle(w *World) (float64, bool) {
 	return 0, false
 }
 
-// fillWoodFieldNodes spawns wood-field nodes until the field is saturated.
-// If leaveSpaceForOne is true, stops while exactly one valid spawn angle remains
-// so one more growth event will trigger saturation (and thus the mastery gate).
+// fillWoodFieldNodes spawns wood-field nodes until every known KindWood field is
+// saturated. If leaveSpaceForOne is true, removes the last spawned node so
+// exactly one more growth event will trigger saturation (and thus the mastery gate).
 func fillWoodFieldNodes(w *World, leaveSpaceForOne bool) {
-	f := fieldForKind(w, KindWood)
-	if f == nil {
-		return
-	}
 	startID := w.NextNodeID
-	for fieldCanSpawnNode(w, f) {
-		spawnNode(w, f)
+	for _, f := range w.Planet.Fields {
+		if f.Kind != KindWood || !f.Known {
+			continue
+		}
+		for fieldCanSpawnNode(w, f) {
+			spawnNode(w, f)
+		}
 	}
 	if !leaveSpaceForOne {
 		return
