@@ -528,7 +528,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			drawPotentialCircle(screen, potX, potRow+potR, potR, pk.col)
 			countStr := fmt.Sprintf("%d", count)
 			cw, ch := text.Measure(countStr, face, 0)
-			drawSysText(screen, countStr, potX+potR+float32(2*scale), potRow+potR-float32(ch)/2+float32(ch), pk.col, face)
+			drawSysText(screen, countStr, potX+potR+float32(2*scale), potRow+potR-float32(ch)/2, pk.col, face)
 			potX += potR*2 + float32(cw) + float32(8*scale)
 		}
 	}
