@@ -521,8 +521,8 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		}
 		potX := swX + potR
 		for _, pk := range potCols {
-			count := g.world.Economy.Potential[pk.kind]
-			if count <= 0 {
+			count, earned := g.world.Economy.Potential[pk.kind]
+			if !earned {
 				continue
 			}
 			drawPotentialCircle(screen, potX, potRow+potR, potR, pk.col)
