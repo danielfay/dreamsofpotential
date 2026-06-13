@@ -45,4 +45,15 @@ const (
 	// reveal animation phases (seconds)
 	revealPhaseASecs   = 1.0   // planet pulse + pull phase before system appears
 	revealWaveSpeedPxS = 200.0 // pixels/second the reveal wave expands
+
+	// Completion atmosphere — wide coloured glow drawn behind the planet on completion.
+	atmosphereIntroDur  = 3.0  // seconds for the atmosphere to expand into place
+	atmosphereBreathFreq = 0.35 // rad/s — one full breath every ~18 s
+)
+
+var (
+	// Per-planet atmosphere tint colours. The alpha is set per-layer at draw time.
+	colAtmosphereStart = color.RGBA{R: 55, G: 200, B: 80, A: 255}  // starting planet — mid green
+	colAtmosphereA     = color.RGBA{R: 40, G: 190, B: 100, A: 255} // echo layout 0 — cool blue-green
+	colAtmosphereB     = color.RGBA{R: 110, G: 210, B: 45, A: 255} // echo layout 1 — warm yellow-green
 )

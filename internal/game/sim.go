@@ -7,6 +7,7 @@ func Step(w *World, dt float64) {
 	w.SimTime += dt
 	tickPulses(w, dt)
 	tickGrowthCue(w, dt)
+	tickOverflowGrowth(w)
 	assignNodes(w)
 	for _, wk := range w.Workers {
 		stepWorker(w, wk, dt)
@@ -625,25 +626,51 @@ func buildTownCapacity(w *World) bool {
 }
 
 // tryConsumeGrowth spawns at most one worker when Town Growth has reached its
-// cap and a slot is free, then resets growth to 0 and raises the cap.
-// When capacity-blocked and growth is full, clamps growth at the cap (no
-// overflow accumulation). Returns true if a worker spawned.
+// cap and a slot is free, then resets growth and raises the cap.
+//
+// When all slots are filled but more can be purchased, excess growth is banked
+// in TownGrowthOverflow instead of discarded; draining happens in
+// tickOverflowGrowth and after each spawn.
+//
+// When capacity is permanently full (townFieldFull && no available slots),
+// growth is clamped at cap and overflow is cleared.
+//
+// A workerSpawnCooldown prevents overflow from triggering rapid-fire spawns.
 func tryConsumeGrowth(w *World) bool {
 	if w.Economy.TownGrowth < w.Economy.TownGrowthCap {
 		return false
 	}
 	if availableCapacity(w) <= 0 {
+		if townFieldFull(w) {
+			// All slots bought and all workers spawned: clear overflow, stop tracking.
+			w.Economy.TownGrowth = w.Economy.TownGrowthCap
+			w.Economy.TownGrowthOverflow = 0
+		} else {
+			// Capacity full but more houses can still be purchased: bank overflow.
+			if excess := w.Economy.TownGrowth - w.Economy.TownGrowthCap; excess > 0 {
+				w.Economy.TownGrowthOverflow += excess
+			}
+			w.Economy.TownGrowth = w.Economy.TownGrowthCap
+		}
+		return false
+	}
+	// Enforce minimum gap between spawns so overflow doesn't burst all at once.
+	if w.Economy.LastWorkerSpawnTime > 0 && w.SimTime-w.Economy.LastWorkerSpawnTime < workerSpawnCooldown {
 		w.Economy.TownGrowth = w.Economy.TownGrowthCap
 		return false
+	}
+	// Bank any excess above the cap before resetting.
+	if excess := w.Economy.TownGrowth - w.Economy.TownGrowthCap; excess > 0 {
+		w.Economy.TownGrowthOverflow += excess
 	}
 	th := townHall(w)
 	if spawnWorkerAtTownHall(w) == nil {
 		return false
 	}
+	w.Economy.LastWorkerSpawnTime = w.SimTime
 	if th != nil {
 		activatePulse(w, &th.Pulse)
 	}
-	w.Economy.TownGrowth = 0
 	// Transition from the scripted first-lesson cap to the normal-play ramp.
 	// After that, grow geometrically like every other fill.
 	if w.Economy.TownGrowthCap < townGrowthBaseCap {
@@ -651,7 +678,32 @@ func tryConsumeGrowth(w *World) bool {
 	} else {
 		w.Economy.TownGrowthCap *= townGrowthCapGrowth
 	}
+	// Immediately drain overflow into the fresh gauge so the bar visually
+	// refills and the next spawn is ready once the cooldown expires.
+	w.Economy.TownGrowth = 0
+	if w.Economy.TownGrowthOverflow > 0 {
+		drain := math.Min(w.Economy.TownGrowthOverflow, w.Economy.TownGrowthCap)
+		w.Economy.TownGrowth = drain
+		w.Economy.TownGrowthOverflow -= drain
+	}
 	return true
+}
+
+// tickOverflowGrowth drains banked overflow into the growth gauge each tick
+// and tries to spawn once the cooldown has expired. This allows overflow-driven
+// spawns to proceed even when no delivery is incoming.
+func tickOverflowGrowth(w *World) {
+	if availableCapacity(w) <= 0 {
+		return
+	}
+	if w.Economy.TownGrowthOverflow > 0 {
+		if needed := w.Economy.TownGrowthCap - w.Economy.TownGrowth; needed > 0 {
+			drain := math.Min(w.Economy.TownGrowthOverflow, needed)
+			w.Economy.TownGrowth += drain
+			w.Economy.TownGrowthOverflow -= drain
+		}
+	}
+	tryConsumeGrowth(w)
 }
 
 func addFreeWorkerAtTownHall(w *World) bool {
@@ -869,6 +921,7 @@ func checkActivePlanetCompletion(w *World) {
 	}
 	p.AbstractRate = EstimateRate(w) * completionAmplifier
 	p.Completed = true
+	p.CompletedAt = w.SimTime
 	if th := townHall(w); th != nil {
 		activatePulse(w, &th.Pulse)
 	}
@@ -913,6 +966,7 @@ func triggerUnlock(w *World) {
 	if len(w.System.Planets) > 2 {
 		w.System.Planets[2].AbstractRate = base * echoRateFracB
 	}
+	w.System.Planets[0].CompletedAt = w.SimTime
 	w.System.Unlocked = true
 	w.System.View = ViewSystem
 	w.System.Selected = 0

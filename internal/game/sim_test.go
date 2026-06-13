@@ -58,8 +58,13 @@ func TestWorkerArrivalOnDelivery(t *testing.T) {
 	if len(w.Workers) != 2 {
 		t.Errorf("expected 1 original + 1 spawned worker; got %d", len(w.Workers))
 	}
-	if w.Economy.TownGrowth != 0 {
-		t.Errorf("TownGrowth should reset to 0 after spawn; got %.4f", w.Economy.TownGrowth)
+	// The delivery pushed growth above cap by exactly gross; that excess is banked as
+	// overflow and immediately re-drained into the fresh gauge.
+	if w.Economy.TownGrowth != gross {
+		t.Errorf("TownGrowth should equal delivery excess (%.4f) after spawn; got %.4f", gross, w.Economy.TownGrowth)
+	}
+	if w.Economy.TownGrowthOverflow != 0 {
+		t.Errorf("TownGrowthOverflow should be zero after drain; got %.4f", w.Economy.TownGrowthOverflow)
 	}
 	wantCap := townGrowthBaseCap * townGrowthCapGrowth
 	if math.Abs(w.Economy.TownGrowthCap-wantCap) > 1e-9 {

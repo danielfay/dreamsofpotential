@@ -18,6 +18,11 @@ func (g *Game) handleSystemInput() {
 
 	// Mouse wheel up: not applicable in system view (already here).
 
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+		g.world.System.Selected = -1
+		return
+	}
+
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		return
 	}

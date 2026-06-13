@@ -122,9 +122,10 @@ type SystemPlanet struct {
 	AbstractRate float64
 	RingColorIdx int   // 0 or 1 — slight visual variation between the two echoes
 	Seed         int64 // future world-generation hook
-	Awakened     bool  // echo has been awoken (has a durable live PlanetState)
-	Completed    bool  // echo reached its completion gate
-	LayoutID     int   // which authored echo layout (0 or 1)
+	Awakened     bool    // echo has been awoken (has a durable live PlanetState)
+	Completed    bool    // echo reached its completion gate
+	CompletedAt  float64 // planet SimTime when completion triggered; drives atmosphere intro
+	LayoutID     int     // which authored echo layout (0 or 1)
 }
 
 // zoomable reports whether this planet has a live sim the player can zoom into.
@@ -146,9 +147,11 @@ type PlanetState struct {
 	WorkerCapacity     int
 	CapacityBought     int
 	CampsBought        int
-	TownGrowth         float64
-	TownGrowthCap      float64
-	Founded            bool
+	TownGrowth          float64
+	TownGrowthCap       float64
+	TownGrowthOverflow  float64
+	LastWorkerSpawnTime float64
+	Founded             bool
 }
 
 // System holds all persistent state for the planetary system layer.
@@ -241,8 +244,10 @@ type Economy struct {
 	WorkerCapacity int // total worker slots unlocked (founding slot + paid capacity)
 	CapacityBought int // paid capacity purchases; drives the cost curve
 	CampsBought    int
-	TownGrowth     float64 // accumulates gross delivery amount; clamped at TownGrowthCap
-	TownGrowthCap  float64 // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowth         float64 // accumulates gross delivery amount; clamped at TownGrowthCap
+	TownGrowthCap      float64 // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowthOverflow float64 // excess growth banked while capacity-blocked; drains on next open slot
+	LastWorkerSpawnTime float64 // SimTime of most recent spawn; used to enforce workerSpawnCooldown
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
@@ -274,6 +279,7 @@ type World struct {
 	pendingGrowthCues []growthCueState
 	lastDelivery      deliverySplit
 	abstractRateWin   abstractRateWindow
+	rng               *rand.Rand // seeded per-world; use this instead of the global source
 }
 
 type abstractRateWindow struct {
@@ -329,6 +335,9 @@ func townHall(w *World) *Building {
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
 // Size is randomised in [0.6, 1.4] and affects both the visual and yield per trip.
 func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
+	if w.rng == nil {
+		w.rng = rand.New(rand.NewSource(0))
+	}
 	id := w.NextNodeID
 	w.NextNodeID++
 	return &ResourceNode{
@@ -338,7 +347,7 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 		Pos:                w.Planet.RimPoint(angle),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
-		Size:               0.6 + rand.Float64()*0.8,
+		Size:               0.6 + w.rng.Float64()*0.8,
 	}
 }
 
@@ -494,6 +503,10 @@ func fieldForKind(w *World, kind ResourceKind) *ResourceField {
 
 // NewWorld returns a freshly initialised world ready to start the game.
 func NewWorld() *World {
+	return newWorldWithSeed(0)
+}
+
+func newWorldWithSeed(seed int64) *World {
 	center := Vec{X: 160, Y: 120}
 	radius := 72.0
 	forestAngle := -math.Pi / 2 // top of the rim
@@ -531,6 +544,7 @@ func NewWorld() *World {
 			Selected: -1,
 			Planets:  planets,
 		},
+		rng: rand.New(rand.NewSource(seed)),
 	}
 }
 
@@ -568,6 +582,7 @@ func newEchoPlanetState(layoutID int) *PlanetState {
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
 		},
+		rng: rand.New(rand.NewSource(int64(layoutID))),
 	}
 	for range startingNodes {
 		spawnNode(tmp, field)
@@ -599,9 +614,11 @@ func parkActive(w *World) {
 		WorkerCapacity:     w.Economy.WorkerCapacity,
 		CapacityBought:     w.Economy.CapacityBought,
 		CampsBought:        w.Economy.CampsBought,
-		TownGrowth:         w.Economy.TownGrowth,
-		TownGrowthCap:      w.Economy.TownGrowthCap,
-		Founded:            townHall(w) != nil,
+		TownGrowth:          w.Economy.TownGrowth,
+		TownGrowthCap:       w.Economy.TownGrowthCap,
+		TownGrowthOverflow:  w.Economy.TownGrowthOverflow,
+		LastWorkerSpawnTime: w.Economy.LastWorkerSpawnTime,
+		Founded:             townHall(w) != nil,
 	}
 }
 
@@ -621,8 +638,10 @@ func loadPlanet(w *World, idx int) {
 	w.Economy.WorkerCapacity = ps.WorkerCapacity
 	w.Economy.CapacityBought = ps.CapacityBought
 	w.Economy.CampsBought    = ps.CampsBought
-	w.Economy.TownGrowth     = ps.TownGrowth
-	w.Economy.TownGrowthCap  = ps.TownGrowthCap
+	w.Economy.TownGrowth          = ps.TownGrowth
+	w.Economy.TownGrowthCap       = ps.TownGrowthCap
+	w.Economy.TownGrowthOverflow  = ps.TownGrowthOverflow
+	w.Economy.LastWorkerSpawnTime = ps.LastWorkerSpawnTime
 	w.PlanetStates[idx]  = nil // active slot is always nil
 	w.Active             = idx
 	w.growthCue          = growthCueState{}

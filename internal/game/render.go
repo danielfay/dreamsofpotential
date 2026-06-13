@@ -4,6 +4,10 @@ import (
 	"image/color"
 	"math"
 
+	colorful "github.com/lucasb-eyer/go-colorful"
+	"github.com/mazznoer/colorgrad"
+	"github.com/tanema/gween/ease"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -81,18 +85,120 @@ func activePlanetPalette(w *World) planetViewPalette {
 		}
 	}
 	switch w.System.Planets[w.Active].LayoutID {
-	case 1: // echo layout 1 — warmer amber tint
+	case 1: // echo layout 1 — warm yellow-green (forest)
 		return planetViewPalette{
-			background: color.RGBA{R: 14, G: 10, B: 8, A: 255},
-			edge:       color.RGBA{R: 140, G: 100, B: 30, A: 255},
-			body:       color.RGBA{R: 8, G: 5, B: 3, A: 255},
+			background: color.RGBA{R: 10, G: 14, B: 6, A: 255},
+			edge:       color.RGBA{R: 85, G: 145, B: 35, A: 255},
+			body:       color.RGBA{R: 5, G: 8, B: 3, A: 255},
 		}
-	default: // echo layout 0 — cooler teal tint
+	default: // echo layout 0 — cool blue-green (forest)
 		return planetViewPalette{
-			background: color.RGBA{R: 8, G: 12, B: 20, A: 255},
-			edge:       color.RGBA{R: 30, G: 120, B: 110, A: 255},
-			body:       color.RGBA{R: 3, G: 6, B: 12, A: 255},
+			background: color.RGBA{R: 6, G: 14, B: 10, A: 255},
+			edge:       color.RGBA{R: 35, G: 130, B: 75, A: 255},
+			body:       color.RGBA{R: 3, G: 8, B: 5, A: 255},
 		}
+	}
+}
+
+// atmosphereGrads holds per-planet-type alpha-falloff gradients for the
+// completion glow. Built once at init; keyed by atmosphere colour variant.
+var (
+	gradAtmosphereStart colorgrad.Gradient
+	gradAtmosphereA     colorgrad.Gradient
+	gradAtmosphereB     colorgrad.Gradient
+)
+
+func init() {
+	gradAtmosphereStart = buildAtmosphereGrad(colAtmosphereStart)
+	gradAtmosphereA = buildAtmosphereGrad(colAtmosphereA)
+	gradAtmosphereB = buildAtmosphereGrad(colAtmosphereB)
+}
+
+// buildAtmosphereGrad returns a gradient from base@alpha20 (inner rim) to
+// base@alpha0 (outer edge) for sampling ring opacities in drawPlanetAtmosphere.
+func buildAtmosphereGrad(base color.RGBA) colorgrad.Gradient {
+	g, err := colorgrad.NewGradient().
+		Colors(
+			colorgrad.Rgb8(base.R, base.G, base.B, 20),
+			colorgrad.Rgb8(base.R, base.G, base.B, 0),
+		).
+		Build()
+	if err != nil {
+		panic(err)
+	}
+	return g
+}
+
+// drawPlanetAtmosphere draws a wide coloured glow behind the planet when it is
+// complete. Multiple concentric transparent circles accumulate into a soft
+// gradient that fills much of the screen. The glow expands from the rim during
+// an intro animation and then breathes gently in steady state.
+func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
+	p := w.System.Planets[w.Active]
+
+	var completedAt float64
+	switch {
+	case p.Kind == PlanetEcho && p.Completed:
+		completedAt = p.CompletedAt
+	case p.Kind == PlanetStarting && w.System.Unlocked:
+		completedAt = p.CompletedAt
+	default:
+		return
+	}
+
+	// Choose atmosphere colour and gradient by planet type / layout.
+	var (
+		base      color.RGBA
+		atmosGrad colorgrad.Gradient
+	)
+	switch {
+	case p.Kind == PlanetEcho && p.LayoutID == 1:
+		base = colAtmosphereB
+		atmosGrad = gradAtmosphereB
+	case p.Kind == PlanetEcho:
+		base = colAtmosphereA
+		atmosGrad = gradAtmosphereA
+	default:
+		base = colAtmosphereStart
+		atmosGrad = gradAtmosphereStart
+	}
+
+	// Intro progress: 0→1 over atmosphereIntroDur seconds, quadratic ease-out.
+	animAge := w.SimTime - completedAt
+	rawProg := animAge / atmosphereIntroDur
+	if rawProg > 1 {
+		rawProg = 1
+	}
+	progress := ease.OutQuad(float32(rawProg), 0, 1, 1)
+
+	// Gentle breathing in steady state.
+	breath := float32(0.8 + 0.2*math.Sin(w.SimTime*atmosphereBreathFreq))
+
+	// Ten concentric layers drawn outermost-first. FillCircle uses
+	// ColorScaleModePremultipliedAlpha internally, so the RGB components must
+	// be premultiplied by alpha — otherwise even a small alpha renders at full
+	// colour. Premultiplying keeps each layer faint; they accumulate to ~40%
+	// of the base colour at the rim and fade to near-zero at the screen edge.
+	//
+	// Alpha at each ring is sampled from a smooth gradient (inner=opaque →
+	// outer=transparent), giving a cleaner falloff than a hard-coded table.
+	const innerOff, outerOff = float32(3), float32(115)
+	offsets := [10]float32{115, 95, 77, 61, 47, 35, 25, 16, 9, 3}
+	for _, offset := range offsets {
+		tNorm := float64((offset - innerOff) / (outerOff - innerOff))
+		_, _, _, a32 := atmosGrad.At(tNorm).RGBA()
+		rawA := float32(uint8(a32 >> 8))
+		a := rawA * progress * breath
+		if a <= 0 {
+			continue
+		}
+		// Premultiply so FillCircle's premultiplied-alpha path works correctly.
+		vector.FillCircle(scene, cx, cy, r+offset*progress, color.RGBA{
+			R: uint8(float32(base.R) * a / 255),
+			G: uint8(float32(base.G) * a / 255),
+			B: uint8(float32(base.B) * a / 255),
+			A: uint8(a),
+		}, false)
 	}
 }
 
@@ -105,6 +211,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	r := float32(w.Planet.Radius)
+
+	// Completion atmosphere drawn first — planet body covers the interior.
+	drawPlanetAtmosphere(scene, w, cx, cy, r)
 
 	// planet: rim ring then dark body on top
 	const rimWidth = float32(4)
@@ -322,13 +431,13 @@ func workerColor(w *World, wk *Worker) color.RGBA {
 }
 
 func brighten(col color.RGBA, amount uint8) color.RGBA {
-	add := func(v uint8) uint8 {
-		if int(v)+int(amount) > 255 {
-			return 255
-		}
-		return v + amount
+	if amount == 0 {
+		return col
 	}
-	return color.RGBA{R: add(col.R), G: add(col.G), B: add(col.B), A: col.A}
+	c, _ := colorful.MakeColor(color.RGBA{R: col.R, G: col.G, B: col.B, A: 255})
+	result := c.BlendLab(colorful.Color{R: 1, G: 1, B: 1}, float64(amount)/255.0).Clamped()
+	r8, g8, b8 := result.RGB255()
+	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
 
 // drawRimArc strokes an arc from angle a to b along planet's rim with the
@@ -396,7 +505,7 @@ func growthNodeVisualAlpha(w *World, n *ResourceNode) uint8 {
 }
 
 func smoothStep(t float32) float32 {
-	return t * t * (3 - 2*t)
+	return ease.InOutSine(t, 0, 1, 1)
 }
 
 // drawPineTree draws a 3-layer pine tree at n.Pos oriented inward along the
@@ -718,7 +827,10 @@ var (
 	colSysStartRim   = color.RGBA{R: 100, G: 215, B: 115, A: 255} // bright active green rim
 	colSysEchoA      = color.RGBA{R: 40, G: 140, B: 60, A: 255}   // dim green — dormant echo A
 	colSysEchoB      = color.RGBA{R: 35, G: 120, B: 55, A: 255}   // dim green — dormant echo B
-	colSysEchoRim    = color.RGBA{R: 100, G: 160, B: 80, A: 200}  // muted green rim — dormant
+	colSysEchoRimA   = color.RGBA{R: 80, G: 210, B: 145, A: 200}  // muted cool blue-green rim — layout 0
+	colSysEchoRimB   = color.RGBA{R: 155, G: 220, B: 70, A: 200}  // muted warm yellow-green rim — layout 1
+	colSysEchoActiveRimA = color.RGBA{R: 80, G: 215, B: 145, A: 255} // bright cool blue-green — awakened/completed layout 0
+	colSysEchoActiveRimB = color.RGBA{R: 155, G: 225, B: 70, A: 255} // bright warm yellow-green — awakened/completed layout 1
 	colSysUnknown    = color.RGBA{R: 28, G: 28, B: 38, A: 255}    // dark silhouette
 	colSysUnknownRim = color.RGBA{R: 50, G: 50, B: 70, A: 180}    // faint orbit tint
 	colSysOrbit      = color.RGBA{R: 40, G: 40, B: 60, A: 80}     // faint orbit ellipse
@@ -787,27 +899,30 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 
 	case PlanetEcho:
 		col := colSysEchoA
+		echoRim := colSysEchoRimA
+		echoActiveRim := colSysEchoActiveRimA
 		if p.RingColorIdx == 1 {
 			col = colSysEchoB
+			echoRim = colSysEchoRimB
+			echoActiveRim = colSysEchoActiveRimB
 		}
 		body := scaleColor(col, brightness)
 		vector.FillCircle(scene, cx, cy, r, body, false)
 		switch {
 		case p.Completed:
-			// Afterglow: matches the starting planet's green afterglow treatment.
 			glowAlpha := uint8(float32(18) * brightness)
-			vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: 50, G: 180, B: 70, A: glowAlpha}, false)
-			rimCol := scaleColor(colSysStartRim, brightness)
+			vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: echoActiveRim.R, G: echoActiveRim.G, B: echoActiveRim.B, A: glowAlpha}, false)
+			rimCol := scaleColor(echoActiveRim, brightness)
 			drawSystemOrbitRing(scene, cx, cy, r, 2.5, rimCol)
 		case p.Awakened:
 			// Active but incomplete: solid bright rim, no twinkle.
-			rimCol := scaleColor(colSysStartRim, brightness)
+			rimCol := scaleColor(echoActiveRim, brightness)
 			drawSystemOrbitRing(scene, cx, cy, r, 2.0, rimCol)
 		default:
-			// Dormant: warm twinkling rim.
+			// Dormant: twinkling rim in the layout's colour family.
 			twinkle := float32(0.7 + 0.3*math.Sin(simTime*1.8+float64(p.RingColorIdx)*1.2))
 			rimAlpha := uint8(float32(160) * twinkle * brightness)
-			drawSystemOrbitRing(scene, cx, cy, r, 1.5, color.RGBA{R: colSysEchoRim.R, G: colSysEchoRim.G, B: colSysEchoRim.B, A: rimAlpha})
+			drawSystemOrbitRing(scene, cx, cy, r, 1.5, color.RGBA{R: echoRim.R, G: echoRim.G, B: echoRim.B, A: rimAlpha})
 		}
 
 	case PlanetUnknown:
@@ -828,7 +943,8 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 	}
 }
 
-// scaleColor multiplies a color's RGB channels by brightness (clamped to [0,1]).
+// scaleColor dims a colour toward black by brightness (0=black, 1=unchanged),
+// blending in Lab space for perceptually even darkening.
 func scaleColor(col color.RGBA, brightness float32) color.RGBA {
 	if brightness >= 1 {
 		return col
@@ -836,12 +952,10 @@ func scaleColor(col color.RGBA, brightness float32) color.RGBA {
 	if brightness <= 0 {
 		return color.RGBA{A: col.A}
 	}
-	return color.RGBA{
-		R: uint8(float32(col.R) * brightness),
-		G: uint8(float32(col.G) * brightness),
-		B: uint8(float32(col.B) * brightness),
-		A: col.A,
-	}
+	c, _ := colorful.MakeColor(color.RGBA{R: col.R, G: col.G, B: col.B, A: 255})
+	result := c.BlendLab(colorful.Color{}, float64(1-brightness)).Clamped()
+	r8, g8, b8 := result.RGB255()
+	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
 
 func drawSystemOrbitRing(scene *ebiten.Image, cx, cy, radius, width float32, col color.RGBA) {
