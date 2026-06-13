@@ -6,6 +6,7 @@ import (
 
 	colorful "github.com/lucasb-eyer/go-colorful"
 	"github.com/mazznoer/colorgrad"
+	"github.com/tanema/gween/ease"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -168,7 +169,7 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 	if rawProg > 1 {
 		rawProg = 1
 	}
-	progress := float32(1.0 - (1.0-rawProg)*(1.0-rawProg))
+	progress := ease.OutQuad(float32(rawProg), 0, 1, 1)
 
 	// Gentle breathing in steady state.
 	breath := float32(0.8 + 0.2*math.Sin(w.SimTime*atmosphereBreathFreq))
@@ -504,7 +505,7 @@ func growthNodeVisualAlpha(w *World, n *ResourceNode) uint8 {
 }
 
 func smoothStep(t float32) float32 {
-	return t * t * (3 - 2*t)
+	return ease.InOutSine(t, 0, 1, 1)
 }
 
 // drawPineTree draws a 3-layer pine tree at n.Pos oriented inward along the

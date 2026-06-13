@@ -7,6 +7,7 @@ require (
 	github.com/hajimehoshi/ebiten/v2 v2.9.9
 	github.com/lucasb-eyer/go-colorful v1.4.0
 	github.com/mazznoer/colorgrad v0.11.1
+	github.com/tanema/gween v0.0.0-20250522035225-e874ee3ae01a
 	golang.org/x/image v0.31.0
 )
 
