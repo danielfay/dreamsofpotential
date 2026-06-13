@@ -673,6 +673,12 @@ func drawResourceFieldFill(scene *ebiten.Image, planet Planet, f *ResourceField,
 		drawForestFieldFill(scene, cx, cy, radius, start, end)
 		return
 	}
+	if f.Kind == KindWater {
+		drawFieldSector(scene, cx, cy, radius, start, end, colLake)
+		drawFieldSectorBand(scene, cx, cy, radius-1, 2, start, end,
+			color.RGBA{R: 80, G: 150, B: 220, A: 60})
+		return
+	}
 	drawFieldSector(scene, cx, cy, radius, start, end, color.RGBA{R: 200, G: 200, B: 200, A: 54})
 }
 

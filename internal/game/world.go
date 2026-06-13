@@ -456,6 +456,9 @@ func nodeSpawnAngleValid(w *World, f *ResourceField, candidate *ResourceNode, an
 	if !angleWithinField(f, angle) {
 		return false
 	}
+	if inLake(w, angle) {
+		return false
+	}
 	candidateHalf := nodeBuildingBlockHalfArc(candidate, w.Planet.Radius)
 	for _, b := range w.Buildings {
 		if anglesOverlap(angle, candidateHalf, b.Angle, buildingHardHalfArc(b.Kind, w.Planet.Radius)) {
@@ -489,6 +492,37 @@ func fieldCanSpawnNode(w *World, f *ResourceField) bool {
 		}
 	}
 	return false
+}
+
+// inLake reports whether angle is inside any KindWater field arc.
+func inLake(w *World, angle float64) bool {
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWater && angleWithinField(f, angle) {
+			return true
+		}
+	}
+	return false
+}
+
+// effectiveArc returns the arc distance from a to b in world px where each
+// lake sub-arc costs 1/lakeSpeedFactor more (workers traverse lakes slower).
+// Uses a fixed-step midpoint integration (64 samples) over the shortest arc.
+func effectiveArc(w *World, a, b float64) float64 {
+	arc := normAngle(b - a)
+	totalLen := math.Abs(arc) * w.Planet.Radius
+	if totalLen == 0 {
+		return 0
+	}
+	const steps = 64
+	var lakeAngle float64
+	for i := 0; i < steps; i++ {
+		frac := (float64(i) + 0.5) / float64(steps)
+		if inLake(w, normAngle(a+arc*frac)) {
+			lakeAngle += math.Abs(arc) / float64(steps)
+		}
+	}
+	lakeLen := lakeAngle * w.Planet.Radius
+	return (totalLen - lakeLen) + lakeLen/lakeSpeedFactor
 }
 
 func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *ResourceNode {

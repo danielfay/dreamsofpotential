@@ -6,19 +6,20 @@ import (
 )
 
 func TestRouteDist(t *testing.T) {
-	radius := 90.0
+	w := NewWorld() // no lake fields — effective arc equals geometric arc
+	radius := w.Planet.Radius
 	// Same angle → 0.
-	if got := routeDist(radius, 0, 0); got != 0 {
+	if got := routeDist(w, 0, 0); got != 0 {
 		t.Errorf("routeDist same angle: got %v, want 0", got)
 	}
 	// Quarter turn.
 	want := (math.Pi / 2) * radius
-	if got := routeDist(radius, 0, math.Pi/2); math.Abs(got-want) > 1e-9 {
+	if got := routeDist(w, 0, math.Pi/2); math.Abs(got-want) > 1e-9 {
 		t.Errorf("routeDist quarter turn: got %v, want %v", got, want)
 	}
 	// Short-way through the ±π boundary.
 	want2 := 0.2 * radius
-	if got := routeDist(radius, math.Pi-0.1, -math.Pi+0.1); math.Abs(got-want2) > 1e-9 {
+	if got := routeDist(w, math.Pi-0.1, -math.Pi+0.1); math.Abs(got-want2) > 1e-9 {
 		t.Errorf("routeDist wraparound: got %v, want %v", got, want2)
 	}
 }
@@ -55,7 +56,7 @@ func TestLocalNodes(t *testing.T) {
 		if r.Dist < 0 {
 			t.Error("negative Dist in free route")
 		}
-		want := routeDist(w.Planet.Radius, center, r.Node.Angle)
+		want := routeDist(w, center, r.Node.Angle)
 		if math.Abs(r.Dist-want) > 1e-9 {
 			t.Errorf("Dist mismatch: got %v, want %v", r.Dist, want)
 		}

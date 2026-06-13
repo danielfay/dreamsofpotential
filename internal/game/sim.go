@@ -74,7 +74,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.State = StateToForest
 			return
 		}
-		if moveAlongArc(&wk.Angle, th.Angle, w.Planet.Radius, workerSpeed*dt) {
+		speed := workerSpeed
+		if inLake(w, wk.Angle) {
+			speed *= lakeSpeedFactor
+		}
+		if moveAlongArc(&wk.Angle, th.Angle, w.Planet.Radius, speed*dt) {
 			wk.State = StateToForest
 		}
 	case StateToForest:
@@ -83,7 +87,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			startReturnHome(w, wk)
 			return
 		}
-		if moveAlongArc(&wk.Angle, node.Angle, w.Planet.Radius, workerSpeed*dt) {
+		speed := workerSpeed
+		if inLake(w, wk.Angle) {
+			speed *= lakeSpeedFactor
+		}
+		if moveAlongArc(&wk.Angle, node.Angle, w.Planet.Radius, speed*dt) {
 			node.OwnerID = wk.ID
 			node.ReservedByWorkerID = -1
 			wk.State = StateLoading
@@ -113,7 +121,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			startReturnHome(w, wk)
 			return
 		}
-		if moveAlongArc(&wk.Angle, camp.Angle, w.Planet.Radius, workerSpeed*dt) {
+		speed := workerSpeed
+		if inLake(w, wk.Angle) {
+			speed *= lakeSpeedFactor
+		}
+		if moveAlongArc(&wk.Angle, camp.Angle, w.Planet.Radius, speed*dt) {
 			wk.State = StateUnloading
 			wk.Timer = unloadTime
 			wk.DeliveryKind = camp.Kind
@@ -136,7 +148,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.State = StateIdleWaiting
 			return
 		}
-		if moveAlongArc(&wk.Angle, th.Angle, w.Planet.Radius, workerSpeed*dt) {
+		speed := workerSpeed
+		if inLake(w, wk.Angle) {
+			speed *= lakeSpeedFactor
+		}
+		if moveAlongArc(&wk.Angle, th.Angle, w.Planet.Radius, speed*dt) {
 			wk.State = StateToIdleSpot
 		}
 	case StateToIdleSpot:
@@ -224,14 +240,14 @@ func clearTarget(wk *Worker) {
 	wk.PendingNodeID = -1
 }
 
-// routeLen returns the arc distance from node to its nearest camp.
+// routeLen returns the effective arc distance from node to its nearest camp.
 // Returns math.MaxFloat64 if no camps exist.
 func routeLen(w *World, node *ResourceNode) float64 {
 	camp := nearestCamp(w, node)
 	if camp == nil {
 		return math.MaxFloat64
 	}
-	return math.Abs(normAngle(node.Angle-camp.Angle)) * w.Planet.Radius
+	return effectiveArc(w, node.Angle, camp.Angle)
 }
 
 // bestFreeNode returns the unclaimed/unreserved node with the shortest route to
@@ -344,13 +360,13 @@ func findWorker(w *World, id int) *Worker {
 	return nil
 }
 
-// nearestCamp returns the camp with the smallest arc distance to node's angle.
+// nearestCamp returns the camp with the lowest effective arc cost to node's angle.
 // Returns nil if no camps exist.
 func nearestCamp(w *World, node *ResourceNode) *Building {
 	var best *Building
 	bestDist := math.MaxFloat64
 	for _, b := range w.Buildings {
-		dist := math.Abs(normAngle(b.Angle-node.Angle)) * w.Planet.Radius
+		dist := effectiveArc(w, node.Angle, b.Angle)
 		if dist < bestDist {
 			bestDist = dist
 			best = b
