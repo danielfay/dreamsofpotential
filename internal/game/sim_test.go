@@ -1840,38 +1840,38 @@ func setupEchoForCompletion(t *testing.T, w *World, echoIdx int) {
 	fillWoodFieldNodes(w, false)
 }
 
-// TestTightGrove_CompletionAwardsPotential verifies that Tight Grove (echoA, layoutID 0)
-// awards +1 Forest Potential (known wood field) and +1 Water Potential (fill water field).
-func TestTightGrove_CompletionAwardsPotential(t *testing.T) {
+// TestTightGrove_CompletionAwardsForestPotentialOnly verifies that Tight Grove
+// (layoutID 1, planet index 2) awards +1 Forest Potential and no Water Potential.
+func TestTightGrove_CompletionAwardsForestPotentialOnly(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
-	awakenPlanet(w, 1) // echoA = layoutID 0 (Tight Grove)
-	setupEchoForCompletion(t, w, 1)
-
-	checkActivePlanetCompletion(w)
-
-	if !w.System.Planets[1].Completed {
-		t.Fatal("Tight Grove should be marked Completed")
-	}
-	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
-	}
-	if got := w.Economy.Potential[PotentialWater]; got != 1 {
-		t.Errorf("Water Potential after Tight Grove: got %d, want 1", got)
-	}
-}
-
-// TestLakewood_CompletionAwardsForestAndWaterPotential verifies that Lakewood
-// (echoB, layoutID 1) awards +1 Forest Potential and +1 Water Potential.
-func TestLakewood_CompletionAwardsForestAndWaterPotential(t *testing.T) {
-	w := newRevealedWorld()
-	w.Economy.Potential[PotentialForest] = 1
-	awakenPlanet(w, 2) // echoB = layoutID 1 (Lakewood)
+	awakenPlanet(w, 2) // layoutID 1 = Tight Grove
 	setupEchoForCompletion(t, w, 2)
 
 	checkActivePlanetCompletion(w)
 
 	if !w.System.Planets[2].Completed {
+		t.Fatal("Tight Grove should be marked Completed")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 0 {
+		t.Errorf("Water Potential after Tight Grove: got %d, want 0", got)
+	}
+}
+
+// TestLakewood_CompletionAwardsForestAndWaterPotential verifies that Lakewood
+// (layoutID 0, planet index 1) awards +1 Forest Potential and +1 Water Potential.
+func TestLakewood_CompletionAwardsForestAndWaterPotential(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1) // layoutID 0 = Lakewood
+	setupEchoForCompletion(t, w, 1)
+
+	checkActivePlanetCompletion(w)
+
+	if !w.System.Planets[1].Completed {
 		t.Fatal("Lakewood should be marked Completed")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
@@ -1887,8 +1887,8 @@ func TestLakewood_CompletionAwardsForestAndWaterPotential(t *testing.T) {
 func TestLakewood_RequiresIslandSaturation(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
-	awakenPlanet(w, 2)
-	switchToPlanet(w, 2)
+	awakenPlanet(w, 1) // layoutID 0 = Lakewood
+	switchToPlanet(w, 1)
 	enterPlanetView(w)
 	thAngle, ok := findValidBuildingAngle(w)
 	if !ok || !placeBuilding(w, thAngle) {
@@ -1913,7 +1913,7 @@ func TestLakewood_RequiresIslandSaturation(t *testing.T) {
 	}
 
 	checkActivePlanetCompletion(w)
-	if w.System.Planets[2].Completed {
+	if w.System.Planets[1].Completed {
 		t.Error("Lakewood should NOT complete with only main forest saturated")
 	}
 }
@@ -1923,8 +1923,8 @@ func TestLakewood_RequiresIslandSaturation(t *testing.T) {
 func TestLakewood_WaterFieldsDoNotAccrueEXP(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
-	awakenPlanet(w, 2)
-	switchToPlanet(w, 2)
+	awakenPlanet(w, 1) // layoutID 0 = Lakewood
+	switchToPlanet(w, 1)
 	enterPlanetView(w)
 
 	for _, f := range w.Planet.Fields {
@@ -1942,15 +1942,15 @@ func TestLakewood_AwakensWithForestPotential(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
 
-	if !canAwaken(w, 2) {
-		t.Fatal("should be able to awaken echoB with 1 Forest Potential")
+	if !canAwaken(w, 1) {
+		t.Fatal("should be able to awaken Lakewood with 1 Forest Potential")
 	}
-	awakenPlanet(w, 2)
+	awakenPlanet(w, 1) // layoutID 0 = Lakewood
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
 		t.Errorf("Forest Potential after awakening Lakewood: got %d, want 0", got)
 	}
-	if !w.System.Planets[2].Awakened {
-		t.Error("echoB should be awakened")
+	if !w.System.Planets[1].Awakened {
+		t.Error("Lakewood (planet 1) should be awakened")
 	}
 }
 

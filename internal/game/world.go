@@ -240,6 +240,7 @@ type Planet struct {
 	Composition   map[ResourceKind]float64
 	Fields        []*ResourceField
 	FieldProgress map[ResourceKind]*KindProgress // planet-level EXP/Cap per kind; shared across all regions of that kind
+	StartingNodes int                            // override for foundStartingNodes count; 0 means use the global default
 }
 
 // RimPoint returns the world point on the planet's rim at the given angle.
@@ -430,12 +431,16 @@ func spawnNode(w *World, f *ResourceField) growthResult {
 // founded. Two trees flank the Town Hall; the rest spread around the planet
 // using a golden-angle offset from the opposite side.
 func foundStartingNodes(w *World, f *ResourceField, townHallAngle float64) {
+	count := startingNodes
+	if w.Planet.StartingNodes > 0 {
+		count = w.Planet.StartingNodes
+	}
 	const flankCount = 2
 	for range flankCount {
 		spawnNodeNear(w, f, townHallAngle)
 	}
 	const phi = 2.399 // golden angle in radians
-	for i := range startingNodes - flankCount {
+	for i := range count - flankCount {
 		intended := normAngle(townHallAngle + math.Pi + float64(i)*phi)
 		spawnNodeNear(w, f, intended)
 	}
@@ -648,41 +653,35 @@ func newWorldWithSeed(seed int64) *World {
 // newEchoPlanetState returns a freshly initialised durable live state for an
 // awakened echo planet. The planet has pre-spawned trees but no settlement;
 // the player still places the Town Hall on entry.
-// layoutID 0 = Tight Grove, layoutID 1 = Lakewood.
+// layoutID 0 = Lakewood (blue-rim planet), layoutID 1 = Tight Grove (yellow-rim planet).
 func newEchoPlanetState(layoutID int) *PlanetState {
 	center := Vec{X: 160, Y: 120}
 	switch layoutID {
-	case 1:
+	case 0:
 		return newLakewoodState(center)
 	default:
 		return newTightGroveState(center)
 	}
 }
 
-// newTightGroveState builds echoA: a compact planet with a narrow forest arc
-// that fills up quickly, teaching surface-pressure placement decisions.
+// newTightGroveState builds echoB: a compact full-forest planet where TH
+// placement immediately spawns many trees, leaving only 1-2 valid camp spots.
 func newTightGroveState(center Vec) *PlanetState {
-	forest := &ResourceField{
-		Kind:        KindWood,
-		CenterAngle: tightGroveForestAngle,
-		HalfArc:     tightGroveForestArc,
-		Known:       true,
-	}
-	water := &ResourceField{
-		Kind:        KindWater,
-		CenterAngle: tightGroveWaterAngle,
-		HalfArc:     tightGroveWaterArc,
-		Known:       false,
-	}
 	return &PlanetState{
 		Planet: Planet{
 			Center:      center,
 			Radius:      tightGroveRadius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields:      []*ResourceField{forest, water},
+			Fields: []*ResourceField{{
+				Kind:        KindWood,
+				CenterAngle: 0,
+				HalfArc:     forestHalfArc, // full circle
+				Known:       true,
+			}},
 			FieldProgress: map[ResourceKind]*KindProgress{
 				KindWood: {Cap: woodFieldBaseEXP},
 			},
+			StartingNodes: tightGroveStartNodes,
 		},
 		TownGrowthCap: townGrowthBaseCap,
 	}

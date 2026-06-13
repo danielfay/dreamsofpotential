@@ -44,17 +44,13 @@ const (
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
 
-	// ── Tight Grove (echoA, layoutID 0) ─────────────────────────────────────
-	// Smaller radius and narrower forest arc so the rim fills up faster,
-	// teaching that placement decisions matter under surface pressure.
-	// Forest (1.2π) + water (0.8π) tile the full ring with zero gaps/overlaps.
-	tightGroveRadius      = 50.0
-	tightGroveForestAngle = -math.Pi / 2  // top of rim
-	tightGroveForestArc   = math.Pi * 0.6 // 108° half-arc → total 216°
-	tightGroveWaterAngle = math.Pi / 2   // bottom of rim, opposite the forest
-	tightGroveWaterArc   = math.Pi * 0.4 // 72° half-arc → total 144°; forest+water = 360°
+	// ── Tight Grove (echoB, layoutID 1) ─────────────────────────────────────
+	// Compact full-forest planet. TH placement immediately spawns many more trees
+	// than usual, leaving only 1-2 valid camp spots and teaching pressure decisions.
+	tightGroveRadius     = 50.0
+	tightGroveStartNodes = 12 // burst of trees on TH placement — nearly fills the rim
 
-	// ── Lakewood (echoB, layoutID 1) ─────────────────────────────────────────
+	// ── Lakewood (echoA, layoutID 0) ─────────────────────────────────────────
 	// Forest split by a lake arc so workers naturally avoid the island region
 	// until a local camp is built there. Completion awards Water Potential.
 	// The four fields tile the full ring without gaps or overlaps:
