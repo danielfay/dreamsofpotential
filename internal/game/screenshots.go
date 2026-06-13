@@ -61,11 +61,16 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewEchoSelectedScenario(),
 		revealMidpointScenario(),
 		planetViewReturnButtonScenario(),
-		systemViewEchoAwakenabledScenario(),
+		systemViewEchoAwakenablePotentialScenario(),
 		systemViewEchoAwakenedScenario(),
-		echoPlanetFreshScenario(),
+		lakewoodFreshScenario(),
 		systemViewOneEchoCompletedScenario(),
 		systemViewBothEchoesCompletedScenario(),
+		systemViewForestPotentialScenario(),
+		tightGroveFreshScenario(),
+		lakewoodNearCompleteScenario(),
+		systemViewLakewoodCompletedScenario(),
+		systemViewUnknownWaterResonanceScenario(),
 	}
 }
 
@@ -393,15 +398,15 @@ func mustBuildQAWorld(p QAPreset) *World {
 	return w
 }
 
-func systemViewEchoAwakenabledScenario() screenshotScenario {
-	wood := 600.0
+func systemViewEchoAwakenablePotentialScenario() screenshotScenario {
+	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
-		Wood: &wood,
+		SelectPlanet: intPtr(1),
+		Wood:         &wood,
 	})
-	w.System.Selected = 1
-	return screenshotScenario{name: "19-system-view-echo-awakenable", world: w, fullHUD: true}
+	return screenshotScenario{name: "19-system-view-echo-awakenable-potential", world: w, fullHUD: true}
 }
 
 func systemViewEchoAwakenedScenario() screenshotScenario {
@@ -416,17 +421,16 @@ func systemViewEchoAwakenedScenario() screenshotScenario {
 	return screenshotScenario{name: "20-system-view-echo-awakened", world: w, fullHUD: true}
 }
 
-func echoPlanetFreshScenario() screenshotScenario {
+func lakewoodFreshScenario() screenshotScenario {
 	wood := 50.0
-	ep := intPtr(1)
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
 		AwakenEchoes: []int{1},
-		EnterPlanet: ep,
-		Wood: &wood,
+		EnterPlanet:  intPtr(1),
+		Wood:         &wood,
 	})
-	return screenshotScenario{name: "21-echo-planet-fresh", world: w, fullHUD: true}
+	return screenshotScenario{name: "21-lakewood-fresh", world: w, fullHUD: true}
 }
 
 func systemViewOneEchoCompletedScenario() screenshotScenario {
@@ -450,6 +454,68 @@ func systemViewBothEchoesCompletedScenario() screenshotScenario {
 		Wood: &wood,
 	})
 	return screenshotScenario{name: "23-system-view-both-echoes-completed", world: w, fullHUD: true}
+}
+
+func systemViewForestPotentialScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		Wood: &wood,
+	})
+	return screenshotScenario{name: "24-system-view-forest-potential", world: w, fullHUD: true}
+}
+
+func tightGroveFreshScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes:      []int{2},
+		EnterPlanet:       intPtr(2),
+		EchoPlaceTownHall: true,
+		Wood:              &wood,
+	})
+	return screenshotScenario{name: "25-tight-grove-fresh", world: w, fullHUD: true}
+}
+
+func lakewoodNearCompleteScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes:        []int{1},
+		EnterPlanet:         intPtr(1),
+		EchoPlaceTownHall:   true,
+		EchoFillTownCapacity: true,
+		EchoNearSaturate:    true,
+		Wood:                &wood,
+	})
+	return screenshotScenario{name: "26-lakewood-near-complete", world: w, fullHUD: true}
+}
+
+func systemViewLakewoodCompletedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		Wood:           &wood,
+	})
+	return screenshotScenario{name: "27-system-view-lakewood-completed-water-potential", world: w, fullHUD: true}
+}
+
+func systemViewUnknownWaterResonanceScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		Wood:           &wood,
+	})
+	// Advance SimTime to maximize frontier shimmer visibility.
+	w.SimTime = math.Pi / 3
+	return screenshotScenario{name: "28-system-view-unknown-water-resonance", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }
