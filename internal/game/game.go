@@ -599,23 +599,16 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		vector.FillCircle(screen, cx2, cy2, half+float32(scale), glyphCol, false)
 
 		// Cost label to the left of the button: "1" + Forest Potential circle.
+		// Always shown in full colour — dim the button, not the cost.
 		costStr := "1"
 		_, costH := text.Measure(costStr, face, 0)
 		costY := btnY + (btnSize-float32(costH))/2
 		circR := float32(3 * scale)
 		circX := btnX - float32(5*scale) - circR
 		circY := btnY + btnSize/2
-		circCol := colForestPotential
-		if !canAff {
-			circCol = colForestPotentialDim
-		}
-		drawPotentialCircle(screen, circX, circY, circR, circCol)
-		labelCol := colForestPotentialLabel
-		if !canAff {
-			labelCol = colForestPotentialLabelDim
-		}
+		drawPotentialCircle(screen, circX, circY, circR, colForestPotential)
 		costW, _ := text.Measure(costStr, face, 0)
-		drawSysText(screen, costStr, circX-circR-float32(4*scale)-float32(costW), costY, labelCol, face)
+		drawSysText(screen, costStr, circX-circR-float32(4*scale)-float32(costW), costY, colForestPotentialLabel, face)
 		g.sysAwakenRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 
 	} else if p.zoomable() {
