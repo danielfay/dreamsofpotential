@@ -581,9 +581,9 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		rimCol := color.RGBA{R: 160, G: 100, B: 220, A: 200}
 		glyphCol := color.RGBA{R: 200, G: 160, B: 255, A: 220}
 		if !canAff {
-			fillCol = color.RGBA{R: 30, G: 25, B: 45, A: 180}
-			rimCol = color.RGBA{R: 80, G: 60, B: 110, A: 120}
-			glyphCol = color.RGBA{R: 100, G: 80, B: 130, A: 120}
+			fillCol = color.RGBA{R: 15, G: 12, B: 22, A: 160}
+			rimCol = color.RGBA{R: 35, G: 28, B: 50, A: 80}
+			glyphCol = color.RGBA{R: 50, G: 38, B: 65, A: 90}
 		}
 		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, fillCol, false)
 		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, rimCol, false)
