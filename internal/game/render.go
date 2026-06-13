@@ -590,15 +590,13 @@ func drawTownGrowthGauge(scene *ebiten.Image, p Planet, th *Building, growth, ca
 	const halfW = float32(townHallBldHalfW) - 2
 	const halfH = float32(1)
 	// Frame
-	drawOrientedRect(scene, ax, ay, tx, ty, ix, iy, halfW, halfH,
-		color.RGBA{R: 55, G: 55, B: 65, A: 200})
+	drawOrientedRect(scene, ax, ay, tx, ty, ix, iy, halfW, halfH, colTownGrowthGaugeFrame)
 	// Fill (from one end along the tangent)
 	if frac > 0 {
 		fillHW := halfW * frac
 		fcx := ax - tx*(halfW-fillHW)
 		fcy := ay - ty*(halfW-fillHW)
-		drawOrientedRect(scene, fcx, fcy, tx, ty, ix, iy, fillHW, halfH,
-			color.RGBA{R: 220, G: 200, B: 60, A: 200})
+		drawOrientedRect(scene, fcx, fcy, tx, ty, ix, iy, fillHW, halfH, colTownGrowthGaugeFill)
 	}
 }
 

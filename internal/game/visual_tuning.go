@@ -24,6 +24,43 @@ var (
 	colAwakenRimDim   = color.RGBA{R: 35, G: 28, B: 50, A: 80}
 	colAwakenGlyphDim = color.RGBA{R: 50, G: 38, B: 65, A: 90}
 
+	// Enter-planet button (system-view tray, right side).
+	colEnterFill  = color.RGBA{R: 30, G: 80, B: 50, A: 240}
+	colEnterRim   = color.RGBA{R: 80, G: 200, B: 100, A: 200}
+	colEnterGlyph = color.RGBA{R: 60, G: 160, B: 80, A: 220}
+	colEnterOrbit = color.RGBA{R: 200, G: 240, B: 200, A: 160}
+
+	// Return-to-system button (planet view, top-right).
+	colReturnFill  = color.RGBA{R: 15, G: 30, B: 40, A: 220}
+	colReturnRim   = color.RGBA{R: 60, G: 100, B: 140, A: 200}
+	colReturnGlyph = color.RGBA{R: 60, G: 140, B: 180, A: 220}
+	colReturnOrbit = color.RGBA{R: 140, G: 200, B: 220, A: 150}
+	colReturnDot   = color.RGBA{R: 140, G: 200, B: 220, A: 120}
+
+	// System-view tray (bottom panel).
+	colSysTrayFill        = color.RGBA{R: 8, G: 8, B: 18, A: 210}
+	colSysTrayBorder      = color.RGBA{R: 60, G: 60, B: 90, A: 200}
+	colSysUnknownSwatch   = color.RGBA{R: 60, G: 60, B: 80, A: 255} // planet swatch for unknown kind
+
+	// Wood gauge (thin bar below the resource HUD button in planet view).
+	colWoodGaugeFill  = color.RGBA{R: 40, G: 160, B: 60, A: 180}
+	colWoodGaugeFrame = color.RGBA{R: 80, G: 80, B: 80, A: 180}
+
+	// Growth gauge overlays (alpha set per-frame from animation progress).
+	colGrowthGaugeAfterglow = color.RGBA{R: 70, G: 210, B: 90, A: 255}
+	colGrowthGaugeRelease   = color.RGBA{R: 140, G: 255, B: 130, A: 255}
+
+	// Nurture attention pulse and confirm flash (alpha set per-frame).
+	colNurtureAttention = color.RGBA{R: 120, G: 255, B: 150, A: 255}
+	colNurtureConfirm   = color.RGBA{R: 200, G: 255, B: 210, A: 255}
+
+	// Unaffordable-cost flash — red stroke around the button (alpha set per-frame).
+	colCostPulse = color.RGBA{R: 220, G: 60, B: 60, A: 255}
+
+	// Town-hall growth gauge (oriented rect on the rim showing town growth progress).
+	colTownGrowthGaugeFrame = color.RGBA{R: 55, G: 55, B: 65, A: 200}
+	colTownGrowthGaugeFill  = color.RGBA{R: 220, G: 200, B: 60, A: 200}
+
 	// Worker colours.
 	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
 	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty
