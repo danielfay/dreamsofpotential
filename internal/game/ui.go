@@ -292,13 +292,7 @@ func (h *HUD) refreshNormal(w *World) {
 	// Worker HUD: hidden until first worker exists.
 	if len(w.Workers) > 0 {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Show)
-		active := 0
-		for _, wk := range w.Workers {
-			if workerInLoop(wk) {
-				active++
-			}
-		}
-		h.workerRatio.Label = fmt.Sprintf("%d/%d", active, len(w.Workers))
+		h.workerRatio.Label = fmt.Sprintf("%d", len(w.Workers))
 	} else {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}

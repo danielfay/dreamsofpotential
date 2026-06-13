@@ -919,6 +919,7 @@ func checkActivePlanetCompletion(w *World) {
 	if !forestPlanetComplete(w) {
 		return
 	}
+	awardCompletionPotential(w)
 	p.AbstractRate = EstimateRate(w) * completionAmplifier
 	p.Completed = true
 	p.CompletedAt = w.SimTime
@@ -933,21 +934,41 @@ func canAwaken(w *World, idx int) bool {
 		return false
 	}
 	p := w.System.Planets[idx]
-	return p.Kind == PlanetEcho && !p.Awakened && w.Economy.Wood >= awakenCost
+	return p.Kind == PlanetEcho && !p.Awakened && w.Economy.Potential[PotentialForest] >= 1
 }
 
-// awakenPlanet spends global wood to awaken the echo planet at idx, creating
-// its durable live state. The player stays in system view (no auto-zoom).
+// awakenPlanet spends 1 Forest Potential to awaken the echo planet at idx,
+// creating its durable live state. The player stays in system view (no auto-zoom).
 // The echo keeps its original abstract rate until completion.
 func awakenPlanet(w *World, idx int) {
 	if !canAwaken(w, idx) {
 		return
 	}
-	w.Economy.Wood -= awakenCost
+	w.Economy.Potential[PotentialForest]--
 	layoutID := w.System.Planets[idx].RingColorIdx
 	w.System.Planets[idx].Awakened = true
 	w.System.Planets[idx].LayoutID = layoutID
 	w.PlanetStates[idx] = newEchoPlanetState(layoutID)
+}
+
+// awardCompletionPotential grants 1 Potential token per distinct resource kind
+// present on the active planet's fields. Called once on starting-planet unlock
+// and once on each echo completion; the caller's one-shot flags prevent re-fire.
+func awardCompletionPotential(w *World) {
+	if w.Economy.Potential == nil {
+		w.Economy.Potential = make(map[PotentialKind]int)
+	}
+	seen := make(map[ResourceKind]bool)
+	for _, f := range w.Planet.Fields {
+		if seen[f.Kind] {
+			continue
+		}
+		seen[f.Kind] = true
+		switch f.Kind {
+		case KindWood:
+			w.Economy.Potential[PotentialForest]++
+		}
+	}
 }
 
 // triggerUnlock snapshots the starting planet's analytic rate once, marks the
@@ -956,6 +977,7 @@ func awakenPlanet(w *World, idx int) {
 // slight per-planet variance so they feel related but distinct.
 // Must only be called when startingPlanetComplete is true.
 func triggerUnlock(w *World) {
+	awardCompletionPotential(w)
 	base := EstimateRate(w)
 	w.System.Planets[0].AbstractRate = base
 	// Echoes are dormant — produce at a fraction of the completed planet's rate.

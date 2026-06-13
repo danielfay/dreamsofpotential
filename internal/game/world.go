@@ -28,6 +28,16 @@ func kindName(k ResourceKind) string {
 	return "unknown"
 }
 
+// PotentialKind identifies a type of system-tier Potential token.
+// Potential is banked in the global Economy and spent on planet-scale actions.
+// Visual convention: material resources use square swatches; Potential uses circles.
+type PotentialKind int
+
+const (
+	PotentialForest PotentialKind = iota // green circle — spent to awaken forest planets
+	PotentialWater                        // blue circle — hinted by Lakewood; not yet spendable
+)
+
 // WorkerState is the leg of the delivery loop a worker is currently on.
 type WorkerState int
 
@@ -248,11 +258,12 @@ type Economy struct {
 	TownGrowthCap      float64 // spawns a worker when TownGrowth reaches this; grows each arrival
 	TownGrowthOverflow float64 // excess growth banked while capacity-blocked; drains on next open slot
 	LastWorkerSpawnTime float64 // SimTime of most recent spawn; used to enforce workerSpawnCooldown
+	Potential      map[PotentialKind]int // banked system-tier Potential tokens, indexed by kind
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 10
+const SaveVersion = 11
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -535,7 +546,7 @@ func newWorldWithSeed(seed int64) *World {
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{field},
 		},
-		Economy:      Economy{TownGrowthCap: townGrowthBaseCap},
+		Economy:      Economy{TownGrowthCap: townGrowthBaseCap, Potential: make(map[PotentialKind]int)},
 		Active:       0,
 		PlanetStates: make([]*PlanetState, len(planets)),
 		System: System{

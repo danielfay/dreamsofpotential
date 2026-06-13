@@ -373,21 +373,21 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		y := float32(r.Max.Y) + 2
 		w := float32(r.Max.X - r.Min.X)
 		const h = float32(3)
-		colFill := color.RGBA{R: 40, G: 160, B: 60, A: 180}
-		colFrame := color.RGBA{R: 80, G: 80, B: 80, A: 180}
-		vector.StrokeRect(screen, x, y, w, h, 1, colFrame, false)
+		vector.StrokeRect(screen, x, y, w, h, 1, colWoodGaugeFrame, false)
 		if frac > 0 {
-			vector.FillRect(screen, x, y, w*frac, h, colFill, false)
+			vector.FillRect(screen, x, y, w*frac, h, colWoodGaugeFill, false)
 		}
 		if g.world.growthCue.GaugeAfterglow > 0 {
 			t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
-			alpha := uint8(120 * t)
-			vector.FillRect(screen, x, y, w, h, color.RGBA{R: 70, G: 210, B: 90, A: alpha}, false)
+			col := colGrowthGaugeAfterglow
+			col.A = uint8(120 * t)
+			vector.FillRect(screen, x, y, w, h, col, false)
 		}
 		if g.world.growthCue.GaugeRelease > 0 {
 			t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
-			alpha := uint8(210 * t)
-			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, color.RGBA{R: 140, G: 255, B: 130, A: alpha}, false)
+			col := colGrowthGaugeRelease
+			col.A = uint8(210 * t)
+			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, col, false)
 		}
 
 		sr := g.hud.resourceSquare.GetWidget().Rect
@@ -405,22 +405,23 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			halfW := srw / 2 * expand * 1.35
 			halfH := srh / 2 * expand * 1.35
 			if halfW > 0.5 {
-				alpha := uint8(220 * t)
-				col := color.RGBA{R: 120, G: 255, B: 150, A: alpha}
+				col := colNurtureAttention
+				col.A = uint8(220 * t)
 				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
 			}
 		}
 		if g.nurtureConfirmLeft > 0 {
 			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
-			alpha := uint8(210 * t)
-			vector.FillRect(screen, srx, sry, srw, srh, color.RGBA{R: 200, G: 255, B: 210, A: alpha}, false)
+			col := colNurtureConfirm
+			col.A = uint8(210 * t)
+			vector.FillRect(screen, srx, sry, srw, srh, col, false)
 		}
 	}
 
 	// Unaffordable-cost pulse flash: fades out over pulseDuration seconds.
 	if g.pulseTime > 0 {
-		alpha := uint8(200 * g.pulseTime / pulseDuration)
-		colPulse := color.RGBA{R: 220, G: 60, B: 60, A: alpha}
+		colPulse := colCostPulse
+		colPulse.A = uint8(200 * g.pulseTime / pulseDuration)
 		switch g.pulseTarget {
 		case 1:
 			pr := g.hud.buildCampBtn.GetWidget().Rect
@@ -507,6 +508,30 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		_, textH := text.Measure(hudStr, face, 0)
 		textY := swY + swSize - float32(textH)
 		drawSysText(screen, hudStr, textX, textY, colWoodLabel, face)
+
+		// Earned Potential circles — one per kind, shown only after first award.
+		// Rendered in enum order so layout is deterministic.
+		potRow := swY + swSize + float32(3*scale)
+		potR := float32(4 * scale)
+		potCols := []struct {
+			kind PotentialKind
+			col  color.RGBA
+		}{
+			{PotentialForest, colForestPotential},
+			{PotentialWater, colWaterPotential},
+		}
+		potX := swX + potR
+		for _, pk := range potCols {
+			count, earned := g.world.Economy.Potential[pk.kind]
+			if !earned {
+				continue
+			}
+			drawPotentialCircle(screen, potX, potRow+potR, potR, pk.col)
+			countStr := fmt.Sprintf("%d", count)
+			cw, ch := text.Measure(countStr, face, 0)
+			drawSysText(screen, countStr, potX+potR+float32(2*scale), potRow+potR-float32(ch)/2, pk.col, face)
+			potX += potR*2 + float32(cw) + float32(8*scale)
+		}
 	}
 
 	// Bottom tray for selected planet.
@@ -527,8 +552,8 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	tw, th := float32(trayVW*scale), float32(trayVH*scale)
 	tx := float32(g.screenW)/2 - tw/2
 	ty := float32(g.screenH) - th - float32(4*scale)
-	vector.FillRect(screen, tx, ty, tw, th, color.RGBA{R: 8, G: 8, B: 18, A: 210}, false)
-	vector.StrokeRect(screen, tx, ty, tw, th, 1, color.RGBA{R: 60, G: 60, B: 90, A: 200}, false)
+	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
+	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
 
 	// Planet swatch — small colored square.
 	swSize := float32(10 * scale)
@@ -553,13 +578,9 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	if p.Kind == PlanetEcho && !p.Awakened {
 		// Awaken button: burst/sparkle glyph, enabled or greyed by affordability.
 		canAff := canAwaken(g.world, sel)
-		fillCol := color.RGBA{R: 60, G: 40, B: 100, A: 240}
-		rimCol := color.RGBA{R: 160, G: 100, B: 220, A: 200}
-		glyphCol := color.RGBA{R: 200, G: 160, B: 255, A: 220}
+		fillCol, rimCol, glyphCol := colAwakenFill, colAwakenRim, colAwakenGlyph
 		if !canAff {
-			fillCol = color.RGBA{R: 30, G: 25, B: 45, A: 180}
-			rimCol = color.RGBA{R: 80, G: 60, B: 110, A: 120}
-			glyphCol = color.RGBA{R: 100, G: 80, B: 130, A: 120}
+			fillCol, rimCol, glyphCol = colAwakenFillDim, colAwakenRimDim, colAwakenGlyphDim
 		}
 		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, fillCol, false)
 		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, rimCol, false)
@@ -574,37 +595,35 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		vector.StrokeLine(screen, cx2+ray, cy2-ray, cx2-ray, cy2+ray, half, glyphCol, false)
 		vector.FillCircle(screen, cx2, cy2, half+float32(scale), glyphCol, false)
 
-		// Cost label to the left of the button.
-		costStr := fmt.Sprintf("%.0f", awakenCost)
+		// Cost label to the left of the button: "1" + Forest Potential circle.
+		// Always shown in full colour — dim the button, not the cost.
+		costStr := "1"
 		_, costH := text.Measure(costStr, face, 0)
 		costY := btnY + (btnSize-float32(costH))/2
-		swSz := float32(6 * scale)
-		swX2 := btnX - float32(5*scale) - swSz
-		swY2 := btnY + (btnSize-swSz)/2
-		swCol := colWoodResource
-		if !canAff {
-			swCol = color.RGBA{R: 80, G: 60, B: 30, A: 120}
-		}
-		vector.FillRect(screen, swX2, swY2, swSz, swSz, swCol, false)
-		labelCol := colWoodLabel
-		if !canAff {
-			labelCol = color.RGBA{R: 100, G: 90, B: 80, A: 150}
-		}
+		circR := float32(3 * scale)
+		circX := btnX - float32(5*scale) - circR
+		circY := btnY + btnSize/2
+		drawPotentialCircle(screen, circX, circY, circR, colForestPotential)
 		costW, _ := text.Measure(costStr, face, 0)
-		drawSysText(screen, costStr, swX2-float32(4*scale)-float32(costW), costY, labelCol, face)
+		drawSysText(screen, costStr, circX-circR-float32(4*scale)-float32(costW), costY, colForestPotentialLabel, face)
 		g.sysAwakenRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 
 	} else if p.zoomable() {
 		// Enter button: planet circle glyph.
-		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 30, G: 80, B: 50, A: 240}, false)
-		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 80, G: 200, B: 100, A: 200}, false)
+		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, colEnterFill, false)
+		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, colEnterRim, false)
 		bCx := btnX + btnSize/2
 		bCy := btnY + btnSize/2
 		bR := float32(4 * scale)
-		vector.FillCircle(screen, bCx, bCy, bR, color.RGBA{R: 60, G: 160, B: 80, A: 220}, false)
-		drawSystemOrbitRing(screen, bCx, bCy, bR+float32(2*scale), 1, color.RGBA{R: 200, G: 240, B: 200, A: 160})
+		vector.FillCircle(screen, bCx, bCy, bR, colEnterGlyph, false)
+		drawSystemOrbitRing(screen, bCx, bCy, bR+float32(2*scale), 1, colEnterOrbit)
 		g.sysEnterRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 	}
+}
+
+// drawPotentialCircle draws a single Potential token circle centered at (cx, cy).
+func drawPotentialCircle(dst *ebiten.Image, cx, cy, r float32, col color.RGBA) {
+	vector.FillCircle(dst, cx, cy, r, col, false)
 }
 
 func sysSwatchColor(p SystemPlanet) color.RGBA {
@@ -612,7 +631,7 @@ func sysSwatchColor(p SystemPlanet) color.RGBA {
 	case PlanetStarting, PlanetEcho:
 		return colWoodResource
 	default:
-		return color.RGBA{R: 60, G: 60, B: 80, A: 255}
+		return colSysUnknownSwatch
 	}
 }
 
@@ -644,19 +663,19 @@ func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
 	btnX := float32(g.screenW) - btnSize - float32(4*scale)
 	btnY := float32(3 * scale)
 
-	vector.FillRect(screen, btnX, btnY, btnSize, btnSize, color.RGBA{R: 15, G: 30, B: 40, A: 220}, false)
-	vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, color.RGBA{R: 60, G: 100, B: 140, A: 200}, false)
+	vector.FillRect(screen, btnX, btnY, btnSize, btnSize, colReturnFill, false)
+	vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, colReturnRim, false)
 	// Small planet with outward dots.
 	bCx := btnX + btnSize/2
 	bCy := btnY + btnSize/2
 	bR := float32(4 * sp)
-	vector.FillCircle(screen, bCx, bCy, bR, color.RGBA{R: 60, G: 140, B: 180, A: 220}, false)
-	drawSystemOrbitRing(screen, bCx, bCy, bR+float32(3*sp), 1, color.RGBA{R: 140, G: 200, B: 220, A: 150})
+	vector.FillCircle(screen, bCx, bCy, bR, colReturnGlyph, false)
+	drawSystemOrbitRing(screen, bCx, bCy, bR+float32(3*sp), 1, colReturnOrbit)
 	// Outward tick marks.
 	for _, a := range []float64{0, math.Pi / 2, math.Pi, 3 * math.Pi / 2} {
 		ox := bCx + (bR+float32(6*sp))*float32(math.Cos(a))
 		oy := bCy + (bR+float32(6*sp))*float32(math.Sin(a))
-		vector.FillRect(screen, ox-sp/2, oy-sp/2, sp, sp, color.RGBA{R: 140, G: 200, B: 220, A: 120}, false)
+		vector.FillRect(screen, ox-sp/2, oy-sp/2, sp, sp, colReturnDot, false)
 	}
 
 	g.sysReturnRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}

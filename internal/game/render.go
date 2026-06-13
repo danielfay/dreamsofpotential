@@ -590,15 +590,13 @@ func drawTownGrowthGauge(scene *ebiten.Image, p Planet, th *Building, growth, ca
 	const halfW = float32(townHallBldHalfW) - 2
 	const halfH = float32(1)
 	// Frame
-	drawOrientedRect(scene, ax, ay, tx, ty, ix, iy, halfW, halfH,
-		color.RGBA{R: 55, G: 55, B: 65, A: 200})
+	drawOrientedRect(scene, ax, ay, tx, ty, ix, iy, halfW, halfH, colTownGrowthGaugeFrame)
 	// Fill (from one end along the tangent)
 	if frac > 0 {
 		fillHW := halfW * frac
 		fcx := ax - tx*(halfW-fillHW)
 		fcy := ay - ty*(halfW-fillHW)
-		drawOrientedRect(scene, fcx, fcy, tx, ty, ix, iy, fillHW, halfH,
-			color.RGBA{R: 220, G: 200, B: 60, A: 200})
+		drawOrientedRect(scene, fcx, fcy, tx, ty, ix, iy, fillHW, halfH, colTownGrowthGaugeFill)
 	}
 }
 
@@ -928,12 +926,12 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 	case PlanetUnknown:
 		vector.FillCircle(scene, cx, cy, r, colSysUnknown, false)
 		vector.FillCircle(scene, cx, cy, r, colSysUnknownRim, false)
-		// When both echoes are complete, add a faint sinusoidal shimmer.
-		if allEchoesComplete(w) {
+		// Water Potential earned → blue-leaning shimmer hints at the frontier without unlocking it.
+		if w.Economy.Potential[PotentialWater] > 0 {
 			shimmer := float32(0.5 + 0.5*math.Sin(simTime*1.5))
 			shimAlpha := uint8(float32(28) * shimmer * brightness)
 			if shimAlpha > 0 {
-				vector.FillCircle(scene, cx, cy, r+1, color.RGBA{R: 180, G: 180, B: 220, A: shimAlpha}, false)
+				vector.FillCircle(scene, cx, cy, r+1, color.RGBA{R: 120, G: 160, B: 240, A: shimAlpha}, false)
 			}
 		}
 	}

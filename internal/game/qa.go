@@ -183,12 +183,8 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			return nil, fmt.Errorf("awakenEchoes: planet %d is not an echo", idx)
 		}
 		if !w.System.Planets[idx].Awakened {
-			saved := w.Economy.Wood
-			if w.Economy.Wood < awakenCost {
-				w.Economy.Wood = awakenCost
-			}
+			w.Economy.Potential[PotentialForest]++
 			awakenPlanet(w, idx)
-			w.Economy.Wood = saved
 		}
 	}
 
@@ -200,12 +196,8 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			return nil, fmt.Errorf("completeEchoes: planet %d is not an echo", idx)
 		}
 		if !w.System.Planets[idx].Awakened {
-			saved := w.Economy.Wood
-			if w.Economy.Wood < awakenCost {
-				w.Economy.Wood = awakenCost
-			}
+			w.Economy.Potential[PotentialForest]++
 			awakenPlanet(w, idx)
-			w.Economy.Wood = saved
 		}
 		// Build out the echo to meet the completion gate.
 		switchToPlanet(w, idx)

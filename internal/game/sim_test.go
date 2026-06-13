@@ -1607,7 +1607,7 @@ func TestAbstractIncome_AwakenedEchoUnviewed(t *testing.T) {
 	w := newRevealedWorld()
 	// Awaken echo 1 — its AbstractRate should remain the pre-awakened fraction.
 	originalRate := w.System.Planets[1].AbstractRate
-	w.Economy.Wood = awakenCost
+	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, 1)
 
 	// Enter echo 1 (planet view on the echo).
@@ -1637,7 +1637,7 @@ func TestAbstractIncome_AwakenedEchoUnviewed(t *testing.T) {
 
 func TestEchoCompletion_AmplifiedRate(t *testing.T) {
 	w := newRevealedWorld()
-	w.Economy.Wood = awakenCost
+	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, 1)
 
 	// Enter echo 1 and build it to completion gates.
@@ -1683,7 +1683,7 @@ func TestAwakenEitherEchoFirst(t *testing.T) {
 		t.Run(fmt.Sprintf("echo%d_first", first), func(t *testing.T) {
 			w := newRevealedWorld()
 			second := 3 - first // if first=1 → second=2 and vice versa
-			w.Economy.Wood = awakenCost * 2
+			w.Economy.Potential[PotentialForest] = 2
 
 			awakenPlanet(w, first)
 			awakenPlanet(w, second)
@@ -1725,6 +1725,92 @@ func TestAllEchoesComplete(t *testing.T) {
 	w.System.Planets[2].Completed = true
 	if !allEchoesComplete(w) {
 		t.Error("allEchoesComplete should be true when both echoes are completed")
+	}
+}
+
+// ── Potential currency tests ──────────────────────────────────────────────────
+
+func TestCanAwaken_RequiresForestPotential(t *testing.T) {
+	w := newRevealedWorld()
+	// Clear any Potential awarded by unlock so we can test the zero case.
+	w.Economy.Potential[PotentialForest] = 0
+	if canAwaken(w, 1) {
+		t.Error("canAwaken should return false with 0 Forest Potential")
+	}
+	// Wood alone does not satisfy the gate.
+	w.Economy.Wood = 9999
+	if canAwaken(w, 1) {
+		t.Error("canAwaken should not be satisfied by wood")
+	}
+	w.Economy.Potential[PotentialForest] = 1
+	if !canAwaken(w, 1) {
+		t.Error("canAwaken should return true with 1 Forest Potential")
+	}
+}
+
+func TestAwakenPlanet_SpendsPotentialNotWood(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	startWood := w.Economy.Wood
+	awakenPlanet(w, 1)
+	if !w.System.Planets[1].Awakened {
+		t.Fatal("echo 1 should be awakened after awakenPlanet")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 0 {
+		t.Errorf("Forest Potential after awaken: got %d, want 0", got)
+	}
+	if w.Economy.Wood != startWood {
+		t.Errorf("Wood changed after awaken: got %.2f, want %.2f", w.Economy.Wood, startWood)
+	}
+}
+
+func TestTriggerUnlock_AwardsForestPotential(t *testing.T) {
+	w := newMasteredWorld()
+	addWorker(w)
+	runSim(w, 2)
+	if got := w.Economy.Potential[PotentialForest]; got != 0 {
+		t.Errorf("Forest Potential before unlock: got %d, want 0", got)
+	}
+	Tick(w, dt) // triggers unlock → awards Potential
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after starting completion: got %d, want 1", got)
+	}
+}
+
+func TestEchoCompletion_AwardsForestPotential(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1) // spends 1 → Potential now 0
+
+	switchToPlanet(w, 1)
+	enterPlanetView(w)
+	f := fieldForKind(w, KindWood)
+	if f == nil {
+		t.Fatal("setup: no wood field on echo")
+	}
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		t.Fatal("setup: cannot place echo TH")
+	}
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+	fillWoodFieldNodes(w, false)
+
+	if got := w.Economy.Potential[PotentialForest]; got != 0 {
+		t.Errorf("Forest Potential before echo completion: got %d, want 0", got)
+	}
+	checkActivePlanetCompletion(w)
+	if !w.System.Planets[1].Completed {
+		t.Fatal("echo 1 should be marked Completed")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after echo completion: got %d, want 1", got)
+	}
+	// Must not double-award.
+	checkActivePlanetCompletion(w)
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential double-award guard: got %d, want 1", got)
 	}
 }
 
@@ -1807,7 +1893,7 @@ func TestAbstractRateWindow_MonotonicRaiseOnly(t *testing.T) {
 
 func TestAbstractRateWindow_ResetsOnPlanetSwitch(t *testing.T) {
 	w := newRevealedWorld()
-	w.Economy.Wood = awakenCost
+	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, 1)
 
 	enterPlanetView(w)
