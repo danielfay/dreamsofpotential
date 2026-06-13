@@ -1,0 +1,11 @@
+{
+  "name": "system-view-unknown-water-resonance",
+  "description": "Water Potential earned (Lakewood complete); frontier planet shows blue shimmer hint. Expected read: frontier silhouette pulses with a faint blue resonance while remaining locked; Forest and Water Potential circles both lit in HUD.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "completeEchoes": [1],
+  "wood": 50
+}

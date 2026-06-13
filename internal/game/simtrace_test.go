@@ -411,6 +411,66 @@ func (r *echoCompletionRunner) Summary(w *World) string {
 		rate, r.nurturePressed)
 }
 
+// ── Tight Grove completion ────────────────────────────────────────────────────
+
+// TestSimTraceTightGroveCompletion runs Tight Grove (layoutID 1, planet 2)
+// from awakening to completion, verifying Forest Potential is awarded and
+// Water Potential is not (Tight Grove has no water field).
+func TestSimTraceTightGroveCompletion(t *testing.T) {
+	const echoIdx = 2
+	runner := &echoCompletionRunner{echoIdx: echoIdx}
+	w := runSimTrace(t, "Tight Grove completion (layoutID 1)", 30, runner)
+	if !w.System.Planets[echoIdx].Completed {
+		t.Errorf("Tight Grove: expected Completed=true after trace")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 0 {
+		t.Errorf("Water Potential after Tight Grove: got %d, want 0 (no water field)", got)
+	}
+	t.Logf("Tight Grove completed — AbstractRate: %.4f wood/sec", w.System.Planets[echoIdx].AbstractRate)
+}
+
+// ── Lakewood completion ───────────────────────────────────────────────────────
+
+// TestSimTraceLakewoodCompletion runs Lakewood (layoutID 0, planet 1) from
+// awakening to completion, asserting Water Potential is earned and that workers
+// reached island forest nodes via the lake-aware router.
+func TestSimTraceLakewoodCompletion(t *testing.T) {
+	const echoIdx = 1
+	runner := &echoCompletionRunner{echoIdx: echoIdx}
+	w := runSimTrace(t, "Lakewood completion (layoutID 0)", 45, runner)
+	if !w.System.Planets[echoIdx].Completed {
+		t.Errorf("Lakewood: expected Completed=true after trace")
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 1 {
+		t.Errorf("Water Potential after Lakewood: got %d, want 1", got)
+	}
+	// Verify lake-aware routing enabled workers to reach the island forest.
+	var islandField *ResourceField
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWood && math.Abs(normAngle(f.CenterAngle-lakewoodIslandForestAngle)) < 0.01 {
+			islandField = f
+			break
+		}
+	}
+	if islandField == nil {
+		t.Fatal("island field not found on Lakewood after completion")
+	}
+	islandCount := 0
+	for _, n := range w.Nodes {
+		if n.Kind == KindWood && angleWithinField(islandField, n.Angle) {
+			islandCount++
+		}
+	}
+	if islandCount == 0 {
+		t.Error("no island forest nodes found — lake-aware routing may be broken")
+	}
+	t.Logf("Lakewood completed — island nodes: %d, AbstractRate: %.4f wood/sec",
+		islandCount, w.System.Planets[echoIdx].AbstractRate)
+}
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 func woodTreeCount(w *World) int {

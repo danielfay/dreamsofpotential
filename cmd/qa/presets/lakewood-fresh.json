@@ -1,0 +1,12 @@
+{
+  "name": "lakewood-fresh",
+  "description": "Lakewood awakened and entered before founding. Lake terrain arcs and island forest region visible. Expected read: main forest arc and island arc separated by two lake arcs; no Town Hall yet; TH placement is the first action.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "awakenEchoes": [1],
+  "enterPlanet": 1,
+  "wood": 50
+}

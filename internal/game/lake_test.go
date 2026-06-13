@@ -142,3 +142,68 @@ func TestNodeSpawnRejectedInLake(t *testing.T) {
 		t.Error("node spawn outside lake should be valid")
 	}
 }
+
+// TestLakeRoute_BestFreeNodePrefersLandNode verifies that bestFreeNode picks a
+// node accessible without a lake crossing over a geometrically closer node that
+// requires crossing the lake.
+func TestLakeRoute_BestFreeNodePrefersLandNode(t *testing.T) {
+	w := newLakeFixtureWorld()
+	// Lake spans [π/4, 3π/4]. Camp (Town Hall) at angle 0.
+	th := &Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}
+	w.Buildings = []*Building{th}
+	w.ResourceDiscovered = true
+
+	// Node A at π/2 (centre of lake): any route from the camp crosses the lake.
+	// Effective cost ≈ 4.7 × R (lake penalty at 0.2× speed makes the short arc expensive).
+	nodeA := newNode(w, KindWood, math.Pi/2)
+	nodeA.Size = 1
+	// Node B at -1.0 rad: clear land, geometrically farther but no lake penalty → cost = 1.0 × R.
+	nodeB := newNode(w, KindWood, -1.0)
+	nodeB.Size = 1
+	w.Nodes = []*ResourceNode{nodeA, nodeB}
+
+	best := bestFreeNode(w)
+	if best == nil {
+		t.Fatal("bestFreeNode returned nil")
+	}
+	if best.ID != nodeB.ID {
+		t.Errorf("bestFreeNode should prefer land node (B) over lake-crossing node (A); got ID %d", best.ID)
+	}
+}
+
+// TestLakeRoute_EstimateRateDropsWithLakeCrossing verifies that EstimateRate is
+// lower when a worker's node is accessible only via a lake crossing compared to
+// the same node layout without a lake.
+func TestLakeRoute_EstimateRateDropsWithLakeCrossing(t *testing.T) {
+	nodeAngle := math.Pi / 2 // centre of the lake zone [π/4, 3π/4] — any route crosses the lake
+	campAngle := 0.0
+
+	// Without lake: direct geometric arc.
+	wLand := NewWorld()
+	wLand.Nodes = nil
+	wLand.NextNodeID = 0
+	wLand.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: wLand.Planet.RimPoint(campAngle)}}
+	nodeLand := newNode(wLand, KindWood, nodeAngle)
+	nodeLand.Size = 1
+	wLand.Nodes = []*ResourceNode{nodeLand}
+	wkLand := &Worker{ID: 0, State: StateToForest, NodeID: nodeLand.ID, TargetNodeID: -1, PendingNodeID: -1}
+	wLand.Workers = []*Worker{wkLand}
+	rateLand := EstimateRate(wLand)
+
+	// With lake spanning the route: same geometry, added penalty.
+	wLake := newLakeFixtureWorld()
+	wLake.Nodes = nil
+	wLake.NextNodeID = 0
+	wLake.Buildings = []*Building{{Kind: KindTownHall, Angle: campAngle, Pos: wLake.Planet.RimPoint(campAngle)}}
+	nodeLake := newNode(wLake, KindWood, nodeAngle)
+	nodeLake.Size = 1
+	wLake.Nodes = []*ResourceNode{nodeLake}
+	wkLake := &Worker{ID: 0, State: StateToForest, NodeID: nodeLake.ID, TargetNodeID: -1, PendingNodeID: -1}
+	wLake.Workers = []*Worker{wkLake}
+	rateLake := EstimateRate(wLake)
+
+	if rateLake >= rateLand {
+		t.Errorf("EstimateRate with lake crossing (%.6f) should be lower than without lake (%.6f)",
+			rateLake, rateLand)
+	}
+}
