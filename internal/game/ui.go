@@ -163,12 +163,17 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 
 	if len(w.Planet.Fields) > 0 {
 		f := w.Planet.Fields[0]
+		fp := w.Planet.FieldProgress[f.Kind]
 		fullStr := ""
 		if townFieldFull(w) {
 			fullStr = "  FULL"
 		}
+		var fpEXP, fpCap float64
+		if fp != nil {
+			fpEXP, fpCap = fp.EXP, fp.Cap
+		}
 		h.fieldText.Label = fmt.Sprintf("EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\nnurture: %d trees/press  cue pending: %v\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
-			f.EXP, f.Cap, woodFieldReturnRatio*100,
+			fpEXP, fpCap, woodFieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
 			nurtureTreesPerPress, nurtureGrowthCuePending(w),
 			w.Economy.TownGrowth, w.Economy.TownGrowthCap,

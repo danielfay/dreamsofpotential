@@ -224,9 +224,11 @@ func newTestWorld(campDist float64) *World {
 	for _, n := range w.Nodes {
 		n.Size = 1.0
 	}
-	for _, field := range w.Planet.Fields {
-		field.EXP = 0
-		field.Cap = math.MaxFloat64
+	for _, f := range w.Planet.Fields {
+		if fp := w.Planet.FieldProgress[f.Kind]; fp != nil {
+			fp.EXP = 0
+			fp.Cap = math.MaxFloat64
+		}
 	}
 	return w
 }
@@ -476,21 +478,22 @@ func TestNodeSpawning(t *testing.T) {
 	if len(w.Nodes) <= initialNodes {
 		t.Errorf("expected new node after deliveries; still have %d nodes", len(w.Nodes))
 	}
-	if field.EXP >= field.Cap {
-		t.Errorf("field EXP should have reset after spawn, got %.2f / %.2f", field.EXP, field.Cap)
+	fp := w.Planet.FieldProgress[field.Kind]
+	if fp.EXP >= fp.Cap {
+		t.Errorf("field EXP should have reset after spawn, got %.2f / %.2f", fp.EXP, fp.Cap)
 	}
 }
 
 func TestFieldEXPAdvanceBelowCapRecordsNoGrowthCue(t *testing.T) {
 	w := NewWorld()
-	field := w.Planet.Fields[0]
-	field.EXP = 3
-	field.Cap = 20
+	fp := w.Planet.FieldProgress[KindWood]
+	fp.EXP = 3
+	fp.Cap = 20
 
 	depositToField(w, KindWood, 2)
 
-	if field.EXP != 5 {
-		t.Fatalf("field EXP got %.2f, want 5", field.EXP)
+	if fp.EXP != 5 {
+		t.Fatalf("field EXP got %.2f, want 5", fp.EXP)
 	}
 	if w.growthCue.Outcome != growthOutcomeNone ||
 		w.growthCue.GaugeRelease != 0 ||
@@ -504,9 +507,9 @@ func TestFieldGrowthCueRecordsSpawnedNode(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := w.Planet.Fields[0]
-	field.EXP = 19
-	field.Cap = 20
+	fp := w.Planet.FieldProgress[KindWood]
+	fp.EXP = 19
+	fp.Cap = 20
 
 	depositToField(w, KindWood, 1)
 
@@ -690,8 +693,9 @@ func TestSpawnNodeSaturatedFieldUpgradesNearestNode(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 
 	near := newNode(w, KindWood, 0.009)
 	near.Size = 1
@@ -719,8 +723,9 @@ func TestUpgradeNodeSizeClamped(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 
 	n := newNode(w, KindWood, 0)
 	n.Size = 1.95
@@ -753,8 +758,10 @@ func TestFieldEXPAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, EXP: 19, Cap: 20}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {EXP: 19, Cap: 20}}
+	fp := w.Planet.FieldProgress[KindWood]
 
 	n := newNode(w, KindWood, 0)
 	n.Size = 1
@@ -765,13 +772,13 @@ func TestFieldEXPAndCapAdvanceAfterUpgradeFallback(t *testing.T) {
 	if len(w.Nodes) != 1 {
 		t.Fatalf("expected upgrade fallback without append, got %d nodes", len(w.Nodes))
 	}
-	if math.Abs(field.EXP-1) > 1e-9 {
-		t.Fatalf("field EXP got %.2f, want 1", field.EXP)
+	if math.Abs(fp.EXP-1) > 1e-9 {
+		t.Fatalf("field EXP got %.2f, want 1", fp.EXP)
 	}
 	// With woodFieldEXPMaxStep=10 the step from cap 20 (=20) exceeds max, so additive: 20+10=30.
 	wantCap := math.Min(20*woodFieldEXPGrowth, 20+woodFieldEXPMaxStep)
-	if math.Abs(field.Cap-wantCap) > 1e-9 {
-		t.Fatalf("cap got %.2f, want %.2f", field.Cap, wantCap)
+	if math.Abs(fp.Cap-wantCap) > 1e-9 {
+		t.Fatalf("cap got %.2f, want %.2f", fp.Cap, wantCap)
 	}
 	if math.Abs(n.Size-1.15) > 1e-9 {
 		t.Fatalf("node size got %.2f, want 1.15", n.Size)
@@ -791,9 +798,9 @@ func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := w.Planet.Fields[0]
-	field.EXP = 7
-	field.Cap = 20
+	fp := w.Planet.FieldProgress[KindWood]
+	fp.EXP = 7
+	fp.Cap = 20
 
 	if !upgradeFirstFieldForDebug(w) {
 		t.Fatal("expected debug field upgrade to run")
@@ -801,12 +808,12 @@ func TestUpgradeFirstFieldForDebugTriggersOneGrowth(t *testing.T) {
 	if len(w.Nodes) != 1 {
 		t.Fatalf("expected one spawned node, got %d", len(w.Nodes))
 	}
-	if field.EXP != 0 {
-		t.Fatalf("field EXP got %.2f, want 0", field.EXP)
+	if fp.EXP != 0 {
+		t.Fatalf("field EXP got %.2f, want 0", fp.EXP)
 	}
 	wantCap := math.Min(20*woodFieldEXPGrowth, 20+woodFieldEXPMaxStep)
-	if math.Abs(field.Cap-wantCap) > 1e-9 {
-		t.Fatalf("field cap got %.2f, want %.2f", field.Cap, wantCap)
+	if math.Abs(fp.Cap-wantCap) > 1e-9 {
+		t.Fatalf("field cap got %.2f, want %.2f", fp.Cap, wantCap)
 	}
 }
 
@@ -814,8 +821,9 @@ func TestGrowFirstFieldUntilBlockedForDebugStopsOnUpgrade(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 
 	n := newNode(w, KindWood, 0)
 	n.Size = 1
@@ -1172,8 +1180,9 @@ func TestCompleteUnloadSplitsDelivery(t *testing.T) {
 	if math.Abs(w.Economy.Wood-wantBanked) > 1e-9 {
 		t.Errorf("Economy.Wood got %.4f, want %.4f (80%% of gross)", w.Economy.Wood, wantBanked)
 	}
-	if math.Abs(w.Planet.Fields[0].EXP-wantReturned) > 1e-9 {
-		t.Errorf("field EXP got %.4f, want %.4f (20%% of gross)", w.Planet.Fields[0].EXP, wantReturned)
+	fp := w.Planet.FieldProgress[w.Planet.Fields[0].Kind]
+	if math.Abs(fp.EXP-wantReturned) > 1e-9 {
+		t.Errorf("field EXP got %.4f, want %.4f (20%% of gross)", fp.EXP, wantReturned)
 	}
 	if math.Abs(w.Buildings[0].DeliveredWood-gross) > 1e-9 {
 		t.Errorf("DeliveredWood got %.4f, want %.4f (gross)", w.Buildings[0].DeliveredWood, gross)
@@ -1190,7 +1199,7 @@ func TestFieldEXPCapTriggersCycle(t *testing.T) {
 	w.Nodes = nil
 	w.NextNodeID = 0
 
-	field := w.Planet.Fields[0]
+	fp := w.Planet.FieldProgress[KindWood]
 	initialCap := woodFieldBaseEXP
 
 	depositToField(w, KindWood, woodFieldBaseEXP)
@@ -1199,11 +1208,11 @@ func TestFieldEXPCapTriggersCycle(t *testing.T) {
 		t.Fatalf("expected one spawned node after crossing woodFieldBaseEXP, got %d", len(w.Nodes))
 	}
 	wantCap := initialCap * woodFieldEXPGrowth
-	if math.Abs(field.Cap-wantCap) > 1e-9 {
-		t.Fatalf("cap after first cycle got %.2f, want %.2f (×woodFieldEXPGrowth)", field.Cap, wantCap)
+	if math.Abs(fp.Cap-wantCap) > 1e-9 {
+		t.Fatalf("cap after first cycle got %.2f, want %.2f (×woodFieldEXPGrowth)", fp.Cap, wantCap)
 	}
-	if field.EXP != 0 {
-		t.Fatalf("field EXP after exact cap deposit got %.2f, want 0", field.EXP)
+	if fp.EXP != 0 {
+		t.Fatalf("field EXP after exact cap deposit got %.2f, want 0", fp.EXP)
 	}
 }
 
@@ -1244,8 +1253,9 @@ func TestNurtureFieldBlockedWhenFieldSaturated(t *testing.T) {
 	w.Nodes = nil
 	w.NextNodeID = 0
 	w.ResourceDiscovered = true
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 
 	node := newNode(w, KindWood, 0)
 	node.Size = 1
@@ -1278,8 +1288,9 @@ func TestNurtureSpawnsUpToCapacity(t *testing.T) {
 	w.Nodes = nil
 	w.NextNodeID = 0
 	w.ResourceDiscovered = true
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.25, Cap: woodFieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.25, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 
 	// Fill the field until exactly 1 slot remains.
 	for fieldCanSpawnNode(w, field) {
@@ -1351,8 +1362,9 @@ func TestNurtureAttentionInactiveWhenFieldSaturated(t *testing.T) {
 	w.ResourceDiscovered = true
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
 	w.Economy.WorkerCapacity = maxTownSlots(w)
-	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Cap: woodFieldBaseEXP}
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 
 	node := newNode(w, KindWood, 0)
 	node.Size = 1
@@ -1937,5 +1949,129 @@ func TestAbstractRateWindow_SystemViewDoesNotUpdate(t *testing.T) {
 	if w.System.Planets[0].AbstractRate != initialRate {
 		t.Errorf("AbstractRate changed during system view: got %f, want %f",
 			w.System.Planets[0].AbstractRate, initialRate)
+	}
+}
+
+// ── Multi-region field model tests ───────────────────────────────────────────
+
+// newTwoRegionWorld builds a world with two disjoint KindWood regions and one
+// shared FieldProgress entry. Regions are placed at opposite sides of the rim
+// with tight arcs so each can hold exactly a few nodes before saturation.
+func newTwoRegionWorld() *World {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	regionA := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.25, Known: true}
+	regionB := &ResourceField{Kind: KindWood, CenterAngle: math.Pi, HalfArc: 0.25, Known: true}
+	w.Planet.Fields = []*ResourceField{regionA, regionB}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
+	return w
+}
+
+func TestMultiRegion_SpawnStaysWithinChosenRegion(t *testing.T) {
+	w := newTwoRegionWorld()
+	regionA := w.Planet.Fields[0]
+
+	result := spawnNode(w, regionA)
+	if result.Outcome == growthOutcomeNone {
+		t.Fatal("expected spawn in region A")
+	}
+	n := w.Nodes[len(w.Nodes)-1]
+	if !angleWithinField(regionA, n.Angle) {
+		t.Errorf("node spawned outside region A: angle %.4f, center %.4f, halfArc %.4f",
+			n.Angle, regionA.CenterAngle, regionA.HalfArc)
+	}
+}
+
+func TestMultiRegion_GrowthDistributesAcrossEligibleRegions(t *testing.T) {
+	w := newTwoRegionWorld()
+
+	// Deposit enough to trigger many spawns; collect which regions each lands in.
+	regionA := w.Planet.Fields[0]
+	regionB := w.Planet.Fields[1]
+	for range 20 {
+		depositToField(w, KindWood, w.Planet.FieldProgress[KindWood].Cap)
+	}
+
+	inA, inB := 0, 0
+	for _, n := range w.Nodes {
+		switch {
+		case angleWithinField(regionA, n.Angle):
+			inA++
+		case angleWithinField(regionB, n.Angle):
+			inB++
+		}
+	}
+	if inA == 0 || inB == 0 {
+		t.Errorf("expected both regions to receive nodes; inA=%d inB=%d total=%d",
+			inA, inB, len(w.Nodes))
+	}
+}
+
+func TestMultiRegion_CompletionRequiresAllKnownRegionsSaturated(t *testing.T) {
+	w := newTwoRegionWorld()
+	_ = placeBuilding(w, math.Pi/2) // Town Hall off to the side
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+
+	// Saturate only region A.
+	regionA := w.Planet.Fields[0]
+	for fieldCanSpawnNode(w, regionA) {
+		spawnNode(w, regionA)
+	}
+
+	// forestPlanetComplete must be false while region B still has capacity.
+	if forestPlanetComplete(w) {
+		t.Error("forestPlanetComplete should be false when region B is not saturated")
+	}
+
+	// Saturate region B.
+	regionB := w.Planet.Fields[1]
+	for fieldCanSpawnNode(w, regionB) {
+		spawnNode(w, regionB)
+	}
+
+	// Both regions saturated — now complete.
+	if !forestPlanetComplete(w) {
+		t.Error("forestPlanetComplete should be true when all known regions are saturated")
+	}
+}
+
+func TestMultiRegion_UnknownRegionDoesNotGateCompletion(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	known := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.25, Known: true}
+	unknown := &ResourceField{Kind: KindWater, CenterAngle: math.Pi, HalfArc: 0.25, Known: false}
+	w.Planet.Fields = []*ResourceField{known, unknown}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
+	_ = placeBuilding(w, math.Pi/2)
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+
+	for fieldCanSpawnNode(w, known) {
+		spawnNode(w, known)
+	}
+
+	// Unknown water region must not block completion.
+	if !forestPlanetComplete(w) {
+		t.Error("unknown region should not gate forestPlanetComplete")
+	}
+}
+
+func TestMultiRegion_SingleRegionBehaviourUnchanged(t *testing.T) {
+	// Verify a single-region planet behaves identically to the pre-refactor design.
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: math.Pi * 0.75, Known: true}
+	w.Planet.Fields = []*ResourceField{field}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
+
+	// Deposit exactly one cap worth — should spawn exactly one node.
+	depositToField(w, KindWood, woodFieldBaseEXP)
+	if len(w.Nodes) != 1 {
+		t.Fatalf("single-region: expected 1 node after one cap deposit, got %d", len(w.Nodes))
+	}
+	if !angleWithinField(field, w.Nodes[0].Angle) {
+		t.Error("single-region: spawned node is outside the only region")
 	}
 }

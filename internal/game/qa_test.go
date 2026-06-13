@@ -31,9 +31,10 @@ func TestBuildQAWorld_NearCapLevelCharge(t *testing.T) {
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
-	wantEXP := f.Cap - 2.0
-	if math.Abs(f.EXP-wantEXP) > 0.01 {
-		t.Errorf("field EXP = %.2f, want %.2f (Cap - 2)", f.EXP, wantEXP)
+	fp := w.Planet.FieldProgress[f.Kind]
+	wantEXP := fp.Cap - 2.0
+	if math.Abs(fp.EXP-wantEXP) > 0.01 {
+		t.Errorf("field EXP = %.2f, want %.2f (Cap - 2)", fp.EXP, wantEXP)
 	}
 	if w.Economy.Wood != 100 {
 		t.Errorf("wood = %.1f, want 100", w.Economy.Wood)
@@ -63,8 +64,9 @@ func TestBuildQAWorld_FarCapLevelCharge(t *testing.T) {
 	}
 	assertAtLeastOneIdleWorker(t, w)
 	f := w.Planet.Fields[0]
-	if f.EXP >= f.Cap/2 {
-		t.Errorf("field EXP = %.2f should be clearly below Cap/2 = %.2f for far-cap scenario", f.EXP, f.Cap/2)
+	fp := w.Planet.FieldProgress[f.Kind]
+	if fp.EXP >= fp.Cap/2 {
+		t.Errorf("field EXP = %.2f should be clearly below Cap/2 = %.2f for far-cap scenario", fp.EXP, fp.Cap/2)
 	}
 	if w.Economy.Wood != 100 {
 		t.Errorf("wood = %.1f, want 100", w.Economy.Wood)

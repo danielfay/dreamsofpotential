@@ -120,9 +120,9 @@ func runSimTrace(t *testing.T, desc string, maxMinutes float64, runner SimTraceR
 func TestSimTrace(t *testing.T) {
 	runner := &startingPlanetRunner{}
 	w := runSimTrace(t, "starting planet (wood)", 20, runner)
-	fld := fieldForKind(w, KindWood)
+	fp := w.Planet.FieldProgress[KindWood]
 	t.Logf("max town slots: %d  |  field cap at end: %.0f  |  trees: %d",
-		maxTownSlots(w), fld.Cap, woodTreeCount(w))
+		maxTownSlots(w), fp.Cap, woodTreeCount(w))
 }
 
 // startingPlanetRunner implements SimTraceRunner for the single-resource
@@ -172,10 +172,9 @@ func (r *startingPlanetRunner) ColHeader() string {
 
 func (r *startingPlanetRunner) ColRow(w *World) string {
 	trees := woodTreeCount(w)
-	fld := fieldForKind(w, KindWood)
 	var expStr string
-	if fld != nil {
-		expStr = fmt.Sprintf("%.0f/%.0f", fld.EXP, fld.Cap)
+	if fp := w.Planet.FieldProgress[KindWood]; fp != nil {
+		expStr = fmt.Sprintf("%.0f/%.0f", fp.EXP, fp.Cap)
 	}
 	return fmt.Sprintf("%-6d  %-8.0f  %-14s", trees, w.Economy.Wood, expStr)
 }
@@ -339,10 +338,9 @@ func (r *echoCompletionRunner) ColHeader() string {
 }
 
 func (r *echoCompletionRunner) ColRow(w *World) string {
-	fld := fieldForKind(w, KindWood)
 	var expStr string
-	if fld != nil {
-		expStr = fmt.Sprintf("%.0f/%.0f", fld.EXP, fld.Cap)
+	if fp := w.Planet.FieldProgress[KindWood]; fp != nil {
+		expStr = fmt.Sprintf("%.0f/%.0f", fp.EXP, fp.Cap)
 	}
 	return fmt.Sprintf("%-6d  %-8.0f  %-14s", woodTreeCount(w), w.Economy.Wood, expStr)
 }

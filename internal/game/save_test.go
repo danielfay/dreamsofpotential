@@ -403,6 +403,34 @@ func TestSavePotentialRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFieldProgressRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	// Manually set non-default EXP/Cap on the wood field progress.
+	fp := w.Planet.FieldProgress[KindWood]
+	fp.EXP = 7.5
+	fp.Cap = 40.0
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	gfp := got.Planet.FieldProgress[KindWood]
+	if gfp == nil {
+		t.Fatal("FieldProgress[KindWood] is nil after load")
+	}
+	if gfp.EXP != fp.EXP {
+		t.Errorf("EXP: got %f, want %f", gfp.EXP, fp.EXP)
+	}
+	if gfp.Cap != fp.Cap {
+		t.Errorf("Cap: got %f, want %f", gfp.Cap, fp.Cap)
+	}
+}
+
 // TestLoadVersionMismatch verifies that a save with a different version is
 // treated as missing (returns os.ErrNotExist) so the caller starts fresh.
 func TestLoadVersionMismatch(t *testing.T) {
