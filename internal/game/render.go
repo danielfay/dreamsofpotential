@@ -4,6 +4,9 @@ import (
 	"image/color"
 	"math"
 
+	colorful "github.com/lucasb-eyer/go-colorful"
+	"github.com/mazznoer/colorgrad"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -96,6 +99,35 @@ func activePlanetPalette(w *World) planetViewPalette {
 	}
 }
 
+// atmosphereGrads holds per-planet-type alpha-falloff gradients for the
+// completion glow. Built once at init; keyed by atmosphere colour variant.
+var (
+	gradAtmosphereStart colorgrad.Gradient
+	gradAtmosphereA     colorgrad.Gradient
+	gradAtmosphereB     colorgrad.Gradient
+)
+
+func init() {
+	gradAtmosphereStart = buildAtmosphereGrad(colAtmosphereStart)
+	gradAtmosphereA = buildAtmosphereGrad(colAtmosphereA)
+	gradAtmosphereB = buildAtmosphereGrad(colAtmosphereB)
+}
+
+// buildAtmosphereGrad returns a gradient from base@alpha30 (inner rim) to
+// base@alpha0 (outer edge) for sampling ring opacities in drawPlanetAtmosphere.
+func buildAtmosphereGrad(base color.RGBA) colorgrad.Gradient {
+	g, err := colorgrad.NewGradient().
+		Colors(
+			colorgrad.Rgb8(base.R, base.G, base.B, 30),
+			colorgrad.Rgb8(base.R, base.G, base.B, 0),
+		).
+		Build()
+	if err != nil {
+		panic(err)
+	}
+	return g
+}
+
 // drawPlanetAtmosphere draws a wide coloured glow behind the planet when it is
 // complete. Multiple concentric transparent circles accumulate into a soft
 // gradient that fills much of the screen. The glow expands from the rim during
@@ -113,15 +145,21 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 		return
 	}
 
-	// Choose atmosphere colour by planet type / layout.
-	var base color.RGBA
+	// Choose atmosphere colour and gradient by planet type / layout.
+	var (
+		base      color.RGBA
+		atmosGrad colorgrad.Gradient
+	)
 	switch {
 	case p.Kind == PlanetEcho && p.LayoutID == 1:
 		base = colAtmosphereB
+		atmosGrad = gradAtmosphereB
 	case p.Kind == PlanetEcho:
 		base = colAtmosphereA
+		atmosGrad = gradAtmosphereA
 	default:
 		base = colAtmosphereStart
+		atmosGrad = gradAtmosphereStart
 	}
 
 	// Intro progress: 0→1 over atmosphereIntroDur seconds, quadratic ease-out.
@@ -140,24 +178,21 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 	// be premultiplied by alpha — otherwise even a small alpha renders at full
 	// colour. Premultiplying keeps each layer faint; they accumulate to ~40%
 	// of the base colour at the rim and fade to near-zero at the screen edge.
-	type layer struct{ offset, alpha float32 }
-	layers := [10]layer{
-		{115, 4},
-		{95,  6},
-		{77,  9},
-		{61,  12},
-		{47,  15},
-		{35,  18},
-		{25,  21},
-		{16,  24},
-		{9,   27},
-		{3,   30},
-	}
-
-	for _, l := range layers {
-		a := l.alpha * progress * breath
+	//
+	// Alpha at each ring is sampled from a smooth gradient (inner=opaque →
+	// outer=transparent), giving a cleaner falloff than a hard-coded table.
+	const innerOff, outerOff = float32(3), float32(115)
+	offsets := [10]float32{115, 95, 77, 61, 47, 35, 25, 16, 9, 3}
+	for _, offset := range offsets {
+		tNorm := float64((offset - innerOff) / (outerOff - innerOff))
+		_, _, _, a32 := atmosGrad.At(tNorm).RGBA()
+		rawA := float32(uint8(a32 >> 8))
+		a := rawA * progress * breath
+		if a <= 0 {
+			continue
+		}
 		// Premultiply so FillCircle's premultiplied-alpha path works correctly.
-		vector.FillCircle(scene, cx, cy, r+l.offset*progress, color.RGBA{
+		vector.FillCircle(scene, cx, cy, r+offset*progress, color.RGBA{
 			R: uint8(float32(base.R) * a / 255),
 			G: uint8(float32(base.G) * a / 255),
 			B: uint8(float32(base.B) * a / 255),
@@ -395,13 +430,13 @@ func workerColor(w *World, wk *Worker) color.RGBA {
 }
 
 func brighten(col color.RGBA, amount uint8) color.RGBA {
-	add := func(v uint8) uint8 {
-		if int(v)+int(amount) > 255 {
-			return 255
-		}
-		return v + amount
+	if amount == 0 {
+		return col
 	}
-	return color.RGBA{R: add(col.R), G: add(col.G), B: add(col.B), A: col.A}
+	c, _ := colorful.MakeColor(color.RGBA{R: col.R, G: col.G, B: col.B, A: 255})
+	result := c.BlendLab(colorful.Color{R: 1, G: 1, B: 1}, float64(amount)/255.0).Clamped()
+	r8, g8, b8 := result.RGB255()
+	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
 
 // drawRimArc strokes an arc from angle a to b along planet's rim with the
@@ -901,7 +936,8 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 	}
 }
 
-// scaleColor multiplies a color's RGB channels by brightness (clamped to [0,1]).
+// scaleColor dims a colour toward black by brightness (0=black, 1=unchanged),
+// blending in Lab space for perceptually even darkening.
 func scaleColor(col color.RGBA, brightness float32) color.RGBA {
 	if brightness >= 1 {
 		return col
@@ -909,12 +945,10 @@ func scaleColor(col color.RGBA, brightness float32) color.RGBA {
 	if brightness <= 0 {
 		return color.RGBA{A: col.A}
 	}
-	return color.RGBA{
-		R: uint8(float32(col.R) * brightness),
-		G: uint8(float32(col.G) * brightness),
-		B: uint8(float32(col.B) * brightness),
-		A: col.A,
-	}
+	c, _ := colorful.MakeColor(color.RGBA{R: col.R, G: col.G, B: col.B, A: 255})
+	result := c.BlendLab(colorful.Color{}, float64(1-brightness)).Clamped()
+	r8, g8, b8 := result.RGB255()
+	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
 
 func drawSystemOrbitRing(scene *ebiten.Image, cx, cy, radius, width float32, col color.RGBA) {

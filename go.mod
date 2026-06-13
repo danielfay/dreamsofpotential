@@ -5,6 +5,8 @@ go 1.24.0
 require (
 	github.com/ebitenui/ebitenui v0.7.3
 	github.com/hajimehoshi/ebiten/v2 v2.9.9
+	github.com/lucasb-eyer/go-colorful v1.4.0
+	github.com/mazznoer/colorgrad v0.11.1
 	golang.org/x/image v0.31.0
 )
 
@@ -18,6 +20,7 @@ require (
 	github.com/go-text/typesetting v0.3.0 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/josephspurrier/goversioninfo v1.4.1 // indirect
+	github.com/mazznoer/csscolorparser v0.1.8 // indirect
 	github.com/ncruces/zenity v0.10.14 // indirect
 	github.com/randall77/makefat v0.0.0-20210315173500-7ddd0e42c844 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
