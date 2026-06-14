@@ -56,16 +56,23 @@ func (g *Game) handleSystemInput() {
 			continue // non-interactive
 		}
 		if wp.Dist(p.Pos) <= p.Radius+3 {
-			if p.zoomable() &&
-				i == g.sysDoubleClickPlanet &&
+			if i == g.sysDoubleClickPlanet &&
 				time.Since(g.sysDoubleClickTime) < sysDoubleClickWindow {
-				// Double-click on a zoomable planet — enter it.
-				switchToPlanet(g.world, i)
-				enterPlanetView(g.world)
-				g.world.System.Selected = i
-				clearTransientUI(g)
-				g.sysDoubleClickPlanet = -1
-				return
+				if p.zoomable() {
+					// Double-click on an awakened/starting planet — enter it.
+					switchToPlanet(g.world, i)
+					enterPlanetView(g.world)
+					g.world.System.Selected = i
+					clearTransientUI(g)
+					g.sysDoubleClickPlanet = -1
+					return
+				}
+				if canAwaken(g.world, i) {
+					// Double-click on an affordable dormant echo — awaken it.
+					awakenPlanet(g.world, i)
+					g.sysDoubleClickPlanet = -1
+					return
+				}
 			}
 			g.world.System.Selected = i
 			g.sysDoubleClickPlanet = i

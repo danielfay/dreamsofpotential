@@ -64,6 +64,9 @@ var (
 	colRouteClaimed  = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
 	colPreviewLens   = color.RGBA{R: 125, G: 145, B: 170, A: 16}
 	colPreviewDebug  = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
+
+	colInfluenceDebugFill = color.RGBA{R: 20, G: 60, B: 160, A: 28}  // debug-only: transparent blue wedge for KindWaterInfluence
+	colInfluenceDebugEdge = color.RGBA{R: 55, G: 130, B: 215, A: 80} // debug-only: water-blue rim
 )
 
 // planetViewPalette holds the planet-view colors that vary by planet identity.
@@ -223,6 +226,12 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// Resource field interior fill: stable composition, not node-spawn progress.
 	for _, f := range w.Planet.Fields {
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
+		if debug && f.Kind == KindWaterInfluence {
+			start := f.CenterAngle - f.HalfArc
+			end := f.CenterAngle + f.HalfArc
+			drawFilledSector(scene, cx, cy, r-rimWidth, start, end, colInfluenceDebugFill)
+			drawFieldSectorBand(scene, cx, cy, r-rimWidth-0.5, 1.5, start, end, colInfluenceDebugEdge)
+		}
 		if len(w.Buildings) == 0 {
 			drawPreFoundingPulse(scene, w.Planet, f, r, w.SimTime)
 		}
@@ -246,7 +255,12 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		if pulseActive(w, n.Pulse) {
 			col = brighten(col, 45)
 		}
-		drawPineTree(scene, n, col, growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n))
+		alpha := growthNodeVisualAlpha(w, n)
+		if alpha > 0 && w.growthCue.WaterInfluenced {
+			col = blendColor(col, colWaterGrowthTint, alpha)
+			alpha = 0
+		}
+		drawPineTree(scene, n, col, growthNodeVisualScale(w, n), alpha)
 	}
 
 	// placement preview — route lines and ghost, drawn above nodes/below buildings
@@ -436,6 +450,18 @@ func brighten(col color.RGBA, amount uint8) color.RGBA {
 	}
 	c, _ := colorful.MakeColor(color.RGBA{R: col.R, G: col.G, B: col.B, A: 255})
 	result := c.BlendLab(colorful.Color{R: 1, G: 1, B: 1}, float64(amount)/255.0).Clamped()
+	r8, g8, b8 := result.RGB255()
+	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
+}
+
+// blendColor blends col toward target in Lab space by amount/255.
+func blendColor(col color.RGBA, target color.RGBA, amount uint8) color.RGBA {
+	if amount == 0 {
+		return col
+	}
+	c, _ := colorful.MakeColor(color.RGBA{R: col.R, G: col.G, B: col.B, A: 255})
+	t, _ := colorful.MakeColor(color.RGBA{R: target.R, G: target.G, B: target.B, A: 255})
+	result := c.BlendLab(t, float64(amount)/255.0).Clamped()
 	r8, g8, b8 := result.RGB255()
 	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
@@ -669,6 +695,9 @@ func drawResourceFieldFill(scene *ebiten.Image, planet Planet, f *ResourceField,
 	start := f.CenterAngle - f.HalfArc
 	end := f.CenterAngle + f.HalfArc
 
+	if f.Kind == KindWaterInfluence {
+		return
+	}
 	if f.Kind == KindWood {
 		drawForestFieldFill(scene, cx, cy, radius, start, end)
 		return
@@ -704,15 +733,24 @@ func drawResourceFieldPulse(scene *ebiten.Image, w *World, f *ResourceField, rad
 
 	outer := radius * (0.18 + 0.80*progress)
 	inner := outer - radius*0.16
-	if inner > 0 {
-		drawFieldSectorBand(scene, cx, cy, inner, 1, start, end, color.RGBA{R: 95, G: 210, B: 108, A: uint8(float32(ringAlpha) * 0.55)})
+	innerCol := color.RGBA{R: 95, G: 210, B: 108, A: uint8(float32(ringAlpha) * 0.55)}
+	outerCol := color.RGBA{R: 118, G: 235, B: 124, A: ringAlpha}
+	if w.growthCue.WaterInfluenced {
+		innerCol = color.RGBA{R: 45, G: 185, B: 140, A: uint8(float32(ringAlpha) * 0.55)}
+		outerCol = color.RGBA{R: 60, G: 200, B: 150, A: ringAlpha}
 	}
-	drawFieldSectorBand(scene, cx, cy, outer, 2, start, end, color.RGBA{R: 118, G: 235, B: 124, A: ringAlpha})
+	if inner > 0 {
+		drawFieldSectorBand(scene, cx, cy, inner, 1, start, end, innerCol)
+	}
+	drawFieldSectorBand(scene, cx, cy, outer, 2, start, end, outerCol)
 }
 
 // drawPreFoundingPulse draws a slow breathing ring on the field rim to signal
 // wood potential before the Town Hall is placed. Fades in/out on a ~3 s cycle.
 func drawPreFoundingPulse(scene *ebiten.Image, planet Planet, f *ResourceField, radius float32, simTime float64) {
+	if f.Kind == KindWaterInfluence {
+		return
+	}
 	intensity := float32(0.4 + 0.6*math.Cos(simTime*1.5))
 	alpha := uint8(38 * intensity)
 	if alpha == 0 {

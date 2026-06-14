@@ -439,17 +439,18 @@ func activateGrowthCue(w *World, result growthResult) {
 		return
 	}
 	cue := growthCueState{
-		Outcome:        result.Outcome,
-		Kind:           result.Kind,
-		CenterAngle:    result.CenterAngle,
-		HalfArc:        result.HalfArc,
-		NodeID:         result.NodeID,
-		GaugeRelease:   growthGaugeReleaseTime,
-		GaugeAfterglow: growthGaugeAfterglowTime,
-		FieldDelay:     growthFieldPulseDelay,
-		FieldPulse:     growthFieldPulseTime,
-		NodeDelay:      growthNodeCueDelay,
-		NodeCue:        growthNodeCueTime,
+		Outcome:         result.Outcome,
+		Kind:            result.Kind,
+		CenterAngle:     result.CenterAngle,
+		HalfArc:         result.HalfArc,
+		NodeID:          result.NodeID,
+		WaterInfluenced: result.WaterInfluenced,
+		GaugeRelease:    growthGaugeReleaseTime,
+		GaugeAfterglow:  growthGaugeAfterglowTime,
+		FieldDelay:      growthFieldPulseDelay,
+		FieldPulse:      growthFieldPulseTime,
+		NodeDelay:       growthNodeCueDelay,
+		NodeCue:         growthNodeCueTime,
 	}
 	if growthCueActive(w.growthCue) {
 		w.pendingGrowthCues = append(w.pendingGrowthCues, cue)

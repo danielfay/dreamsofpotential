@@ -58,7 +58,7 @@ const (
 	lakewoodRadius = 65.0
 
 	// Main forest: upper arc where the town hall gets placed. 140° total.
-	lakewoodMainForestAngle = -math.Pi / 2    // top of rim (-90°)
+	lakewoodMainForestAngle = -math.Pi / 2     // top of rim (-90°)
 	lakewoodMainForestArc   = 7 * math.Pi / 18 // 70° half-arc → spans -160° to -20°
 
 	// Large lake: clockwise from main forest. 100° total — a real barrier.
@@ -68,18 +68,24 @@ const (
 
 	// Island forest: across the large lake. 60° total — tempting but expensive.
 	lakewoodIslandForestAngle = 11 * math.Pi / 18 // lower-right (110°)
-	lakewoodIslandForestArc   = math.Pi / 6        // 30° half-arc → spans 80° to 140°
+	lakewoodIslandForestArc   = math.Pi / 6       // 30° half-arc → spans 80° to 140°
 
 	// Small lake: completes the ring on the left side. 60° total.
 	// Partially penalises the CCW detour, but less than the large lake CW.
 	lakewoodSmallLakeAngle = 17 * math.Pi / 18 // left side (170°)
-	lakewoodSmallLakeArc   = math.Pi / 6        // 30° half-arc → spans 140° to -160°
+	lakewoodSmallLakeArc   = math.Pi / 6       // 30° half-arc → spans 140° to -160°
 
+	// ── Water-to-forest field influence ──────────────────────────────────────
+	// KindWaterInfluence fields are authored co-centered with each lake but wider,
+	// so they reach into adjacent forest. Influence is a boolean — no stacking.
+	waterInfluenceArcPadding    = 0.4  // radians an influence field extends past its lake into forest (~23°)
+	waterForestSpawnSizeBonus   = 0.25 // fixed size added to a forest node spawned inside water influence
+	waterForestUpgradeSizeBonus = 0.10 // extra size on top of the normal +0.15 upgrade when influenced
 
 	// ── system view / abstract production
-	echoRateFracA  = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
-	echoRateFracB  = 0.45  // echo B rate — slightly lower for variance
-	revealDuration = 3.5   // seconds for the one-time unlock reveal animation
+	echoRateFracA       = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
+	echoRateFracB       = 0.45  // echo B rate — slightly lower for variance
+	revealDuration      = 3.5   // seconds for the one-time unlock reveal animation
 	awakenCost          = 500.0 // global wood to awaken a dormant echo planet
 	completionAmplifier = 1.25  // echo AbstractRate multiplier on completion
 
