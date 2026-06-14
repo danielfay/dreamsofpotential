@@ -41,7 +41,8 @@ var (
 	// System-view tray (bottom panel).
 	colSysTrayFill        = color.RGBA{R: 8, G: 8, B: 18, A: 210}
 	colSysTrayBorder      = color.RGBA{R: 60, G: 60, B: 90, A: 200}
-	colSysUnknownSwatch   = color.RGBA{R: 60, G: 60, B: 80, A: 255} // planet swatch for unknown kind
+	colSysUnknownSwatch   = color.RGBA{R: 60, G: 60, B: 80, A: 255}  // planet swatch for unknown kind (dormant)
+	colSysFrontierSwatch  = color.RGBA{R: 40, G: 100, B: 190, A: 255} // planet swatch for awakened water frontier
 
 	// Wood gauge (thin bar below the resource HUD button in planet view).
 	colWoodGaugeFill  = color.RGBA{R: 40, G: 160, B: 60, A: 180}

@@ -914,8 +914,10 @@ var (
 	colSysEchoRimB   = color.RGBA{R: 155, G: 220, B: 70, A: 200}  // muted warm yellow-green rim — layout 1
 	colSysEchoActiveRimA = color.RGBA{R: 80, G: 215, B: 145, A: 255} // bright cool blue-green — awakened/completed layout 0
 	colSysEchoActiveRimB = color.RGBA{R: 155, G: 225, B: 70, A: 255} // bright warm yellow-green — awakened/completed layout 1
-	colSysUnknown    = color.RGBA{R: 28, G: 28, B: 38, A: 255}    // dark silhouette
-	colSysUnknownRim = color.RGBA{R: 50, G: 50, B: 70, A: 180}    // faint orbit tint
+	colSysUnknown      = color.RGBA{R: 28, G: 28, B: 38, A: 255}    // dark silhouette
+	colSysUnknownRim   = color.RGBA{R: 50, G: 50, B: 70, A: 180}    // faint orbit tint
+	colSysFrontierBody = color.RGBA{R: 20, G: 55, B: 115, A: 255}   // deep blue — awakened water frontier
+	colSysFrontierRim  = color.RGBA{R: 60, G: 140, B: 230, A: 255}  // bright blue rim
 	colSysOrbit      = color.RGBA{R: 40, G: 40, B: 60, A: 80}     // faint orbit ellipse
 	colSysSelect     = color.RGBA{R: 255, G: 240, B: 130, A: 255} // gold selection ring
 	colRevealPulse   = color.RGBA{R: 240, G: 210, B: 80, A: 255}  // warm gold reveal pulse
@@ -1009,14 +1011,23 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 		}
 
 	case PlanetUnknown:
-		vector.FillCircle(scene, cx, cy, r, colSysUnknown, false)
-		vector.FillCircle(scene, cx, cy, r, colSysUnknownRim, false)
-		// Water Potential earned → blue-leaning shimmer hints at the frontier without unlocking it.
-		if w.Economy.Potential[PotentialWater] > 0 {
-			shimmer := float32(0.5 + 0.5*math.Sin(simTime*1.5))
-			shimAlpha := uint8(float32(28) * shimmer * brightness)
-			if shimAlpha > 0 {
-				vector.FillCircle(scene, cx, cy, r+1, color.RGBA{R: 120, G: 160, B: 240, A: shimAlpha}, false)
+		if p.Awakened {
+			body := scaleColor(colSysFrontierBody, brightness)
+			vector.FillCircle(scene, cx, cy, r, body, false)
+			rimCol := scaleColor(colSysFrontierRim, brightness)
+			drawSystemOrbitRing(scene, cx, cy, r, 2.0, rimCol)
+			glowAlpha := uint8(float32(18) * brightness)
+			vector.FillCircle(scene, cx, cy, r+3, color.RGBA{R: colSysFrontierRim.R, G: colSysFrontierRim.G, B: colSysFrontierRim.B, A: glowAlpha}, false)
+		} else {
+			vector.FillCircle(scene, cx, cy, r, colSysUnknown, false)
+			vector.FillCircle(scene, cx, cy, r, colSysUnknownRim, false)
+			// Water Potential earned → blue-leaning shimmer hints at the frontier without unlocking it.
+			if w.Economy.Potential[PotentialWater] > 0 {
+				shimmer := float32(0.5 + 0.5*math.Sin(simTime*1.5))
+				shimAlpha := uint8(float32(28) * shimmer * brightness)
+				if shimAlpha > 0 {
+					vector.FillCircle(scene, cx, cy, r+1, color.RGBA{R: 120, G: 160, B: 240, A: shimAlpha}, false)
+				}
 			}
 		}
 	}

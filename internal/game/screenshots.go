@@ -75,6 +75,7 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewFrontierPreAwakenable(),
 		systemViewFrontierAwakenableScenario(),
 		waterFrontierFreshScenario(),
+		systemViewFrontierAwakenedScenario(),
 	}
 }
 
@@ -573,6 +574,19 @@ func waterFrontierFreshScenario() screenshotScenario {
 		Wood:           &wood,
 	})
 	return screenshotScenario{name: "31-water-frontier-fresh", world: w, fullHUD: true}
+}
+
+func systemViewFrontierAwakenedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		AwakenFrontier: true,
+		SelectPlanet:   intPtr(3),
+		Wood:           &wood,
+	})
+	return screenshotScenario{name: "32-system-view-frontier-awakened", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }

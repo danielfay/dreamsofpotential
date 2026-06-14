@@ -644,6 +644,11 @@ func sysSwatchColor(p SystemPlanet) color.RGBA {
 	switch p.Kind {
 	case PlanetStarting, PlanetEcho:
 		return colWoodResource
+	case PlanetUnknown:
+		if p.Awakened {
+			return colSysFrontierSwatch
+		}
+		return colSysUnknownSwatch
 	default:
 		return colSysUnknownSwatch
 	}
