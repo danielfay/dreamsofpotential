@@ -672,8 +672,8 @@ func newWorldWithSeed(seed int64) *World {
 // ── Echo planet layouts ───────────────────────────────────────────────────────
 
 // newEchoPlanetState returns a freshly initialised durable live state for an
-// awakened echo planet. The planet has pre-spawned trees but no settlement;
-// the player still places the Town Hall on entry.
+// awakened echo planet. The planet has field geometry but no settlement or
+// harvestable nodes; founding with a Town Hall spawns its starting nodes.
 // layoutID 0 = Lakewood (blue-rim planet), layoutID 1 = Tight Grove (yellow-rim planet).
 func newEchoPlanetState(layoutID int) *PlanetState {
 	center := Vec{X: 160, Y: 120}

@@ -208,7 +208,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		if ef == nil {
 			return nil, fmt.Errorf("completeEchoes: echo %d has no wood field", idx)
 		}
-		// Find a clear TH angle (pre-spawned echo nodes may block obvious candidates).
+		// Find a clear TH angle for the authored echo layout.
 		thAngle, ok := findValidBuildingAngle(w)
 		if !ok || !placeBuilding(w, thAngle) {
 			return nil, fmt.Errorf("completeEchoes: failed to place Town Hall on echo %d", idx)
@@ -265,8 +265,8 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 }
 
 // findValidBuildingAngle searches the rim for the first angle where a building
-// (TH or camp) can legally be placed. Used for echo planets whose pre-spawned
-// nodes may block obvious candidate angles.
+// (TH or camp) can legally be placed. Used for authored echo layouts whose
+// lakes or field geometry make simple angles invalid.
 func findValidBuildingAngle(w *World) (float64, bool) {
 	const steps = 120
 	for i := 0; i < steps; i++ {
