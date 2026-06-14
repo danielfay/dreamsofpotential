@@ -18,8 +18,9 @@ func (a Vec) Dist(b Vec) float64 {
 type ResourceKind int
 
 const (
-	KindWood  ResourceKind = iota
-	KindWater              // future lake terrain; unknown fields carry this kind
+	KindWood           ResourceKind = iota
+	KindWater                       // lake terrain; unknown fields carry this kind
+	KindWaterInfluence              // invisible, overlap-allowed; widens a lake's reach into adjacent forest
 )
 
 func kindName(k ResourceKind) string {
@@ -28,6 +29,8 @@ func kindName(k ResourceKind) string {
 		return "wood"
 	case KindWater:
 		return "water"
+	case KindWaterInfluence:
+		return "water-influence"
 	}
 	return "unknown"
 }
@@ -212,25 +215,27 @@ const (
 )
 
 type growthResult struct {
-	Outcome     growthOutcome
-	Kind        ResourceKind
-	CenterAngle float64
-	HalfArc     float64
-	NodeID      int
-}
-
-type growthCueState struct {
 	Outcome        growthOutcome
 	Kind           ResourceKind
 	CenterAngle    float64
 	HalfArc        float64
 	NodeID         int
-	GaugeRelease   float64
-	GaugeAfterglow float64
-	FieldDelay     float64
-	FieldPulse     float64
-	NodeDelay      float64
-	NodeCue        float64
+	WaterInfluenced bool
+}
+
+type growthCueState struct {
+	Outcome         growthOutcome
+	Kind            ResourceKind
+	CenterAngle     float64
+	HalfArc         float64
+	NodeID          int
+	WaterInfluenced bool
+	GaugeRelease    float64
+	GaugeAfterglow  float64
+	FieldDelay      float64
+	FieldPulse      float64
+	NodeDelay       float64
+	NodeCue         float64
 }
 
 // Planet is the disc the player operates on.
@@ -276,7 +281,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 12
+const SaveVersion = 13
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -398,6 +403,10 @@ func spawnNodeNear(w *World, f *ResourceField, intended float64) growthResult {
 	if angle, ok := findValidNodeSpawnAngle(w, f, candidate, intended); ok {
 		candidate.Angle = angle
 		candidate.Pos = w.Planet.RimPoint(angle)
+		if f.Kind == KindWood && waterInfluenced(w, angle) {
+			candidate.Size = math.Min(candidate.Size+waterForestSpawnSizeBonus, 2.0)
+			result.WaterInfluenced = true
+		}
 		w.Nodes = append(w.Nodes, candidate)
 		activatePulse(w, &candidate.Pulse)
 		result.Outcome = growthOutcomeSpawnedNode
@@ -407,6 +416,7 @@ func spawnNodeNear(w *World, f *ResourceField, intended float64) growthResult {
 	if upgraded := upgradeNearestFieldNode(w, f, intended); upgraded != nil {
 		result.Outcome = growthOutcomeUpgradedNode
 		result.NodeID = upgraded.ID
+		result.WaterInfluenced = upgraded.Kind == KindWood && waterInfluenced(w, upgraded.Angle)
 	}
 	return result
 }
@@ -586,6 +596,19 @@ func hasAnyLake(w *World) bool {
 	return false
 }
 
+// waterInfluenced reports whether the given rim angle falls within any
+// KindWaterInfluence field. Influence fields are authored co-centered with
+// lakes but wider, are Known:false (so they project before discovery),
+// overlap-allowed, and non-stacking (boolean OR).
+func waterInfluenced(w *World, angle float64) bool {
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWaterInfluence && angleWithinField(f, angle) {
+			return true
+		}
+	}
+	return false
+}
+
 func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *ResourceNode {
 	var best *ResourceNode
 	bestDist := math.MaxFloat64
@@ -601,7 +624,11 @@ func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *Reso
 	if best == nil {
 		return nil
 	}
-	best.Size += 0.15
+	inc := 0.15
+	if best.Kind == KindWood && waterInfluenced(w, best.Angle) {
+		inc += waterForestUpgradeSizeBonus
+	}
+	best.Size += inc
 	if best.Size > 2.0 {
 		best.Size = 2.0
 	}
@@ -736,12 +763,27 @@ func newLakewoodState(center Vec) *PlanetState {
 		HalfArc:     lakewoodSmallLakeArc,
 		Known:       false,
 	}
+	// Invisible influence fields — co-centered with each lake but wider by
+	// waterInfluenceArcPadding so they reach into neighboring forest. Overlap-
+	// allowed; unknown (so they project influence before discovery).
+	largeLakeInfluence := &ResourceField{
+		Kind:        KindWaterInfluence,
+		CenterAngle: lakewoodLargeLakeAngle,
+		HalfArc:     lakewoodLargeLakeArc + waterInfluenceArcPadding,
+		Known:       false,
+	}
+	smallLakeInfluence := &ResourceField{
+		Kind:        KindWaterInfluence,
+		CenterAngle: lakewoodSmallLakeAngle,
+		HalfArc:     lakewoodSmallLakeArc + waterInfluenceArcPadding,
+		Known:       false,
+	}
 	return &PlanetState{
 		Planet: Planet{
 			Center:      center,
 			Radius:      lakewoodRadius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields:      []*ResourceField{mainForest, islandForest, largeLake, smallLake},
+			Fields:      []*ResourceField{mainForest, islandForest, largeLake, smallLake, largeLakeInfluence, smallLakeInfluence},
 			FieldProgress: map[ResourceKind]*KindProgress{
 				KindWood: {Cap: woodFieldBaseEXP},
 			},

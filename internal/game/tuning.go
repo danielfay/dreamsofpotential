@@ -76,6 +76,13 @@ const (
 	lakewoodSmallLakeArc   = math.Pi / 6        // 30° half-arc → spans 140° to -160°
 
 
+	// ── Water-to-forest field influence ──────────────────────────────────────
+	// KindWaterInfluence fields are authored co-centered with each lake but wider,
+	// so they reach into adjacent forest. Influence is a boolean — no stacking.
+	waterInfluenceArcPadding    = 0.20 // radians an influence field extends past its lake into forest (~11°)
+	waterForestSpawnSizeBonus   = 0.25 // fixed size added to a forest node spawned inside water influence
+	waterForestUpgradeSizeBonus = 0.10 // extra size on top of the normal +0.15 upgrade when influenced
+
 	// ── system view / abstract production
 	echoRateFracA  = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
 	echoRateFracB  = 0.45  // echo B rate — slightly lower for variance

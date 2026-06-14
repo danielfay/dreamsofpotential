@@ -2203,3 +2203,185 @@ func TestMultiRegion_SingleRegionBehaviourUnchanged(t *testing.T) {
 		t.Error("single-region: spawned node is outside the only region")
 	}
 }
+
+// ── Water influence tests ─────────────────────────────────────────────────────
+
+// influenceWorld builds a minimal world with one KindWood field at center 0
+// and one KindWaterInfluence field at the same center (wider than the wood
+// field so the whole forest arc is influenced).
+func influenceWorld() (*World, *ResourceField) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	inf := &ResourceField{Kind: KindWaterInfluence, CenterAngle: 0, HalfArc: 1.0, Known: false}
+	forest := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.5, Known: true}
+	w.Planet.Fields = []*ResourceField{forest, inf}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
+	return w, forest
+}
+
+func TestWaterInfluence_SpawnSizeBonus(t *testing.T) {
+	w, forest := influenceWorld()
+
+	result := spawnNodeNear(w, forest, 0)
+
+	if result.Outcome != growthOutcomeSpawnedNode {
+		t.Fatalf("expected spawned node, got %v", result.Outcome)
+	}
+	if !result.WaterInfluenced {
+		t.Fatal("result.WaterInfluenced should be true")
+	}
+	node := w.Nodes[0]
+	if node.Size < waterForestSpawnSizeBonus+0.6 {
+		t.Errorf("influenced node size %.3f is below minimum expected (base+bonus=%.3f)", node.Size, 0.6+waterForestSpawnSizeBonus)
+	}
+}
+
+func TestWaterInfluence_NoBonus_WhenUninfluenced(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	forest := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.5, Known: true}
+	w.Planet.Fields = []*ResourceField{forest} // no influence field
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
+
+	result := spawnNodeNear(w, forest, 0)
+
+	if result.WaterInfluenced {
+		t.Fatal("result.WaterInfluenced should be false with no influence field")
+	}
+	node := w.Nodes[0]
+	if node.Size >= 1.4+waterForestSpawnSizeBonus {
+		t.Errorf("uninfluenced node size %.3f is suspiciously large", node.Size)
+	}
+}
+
+func TestWaterInfluence_FoundingSpawnBonus(t *testing.T) {
+	w, _ := influenceWorld()
+	// Make both fields cover the full ring so every founding node is influenced.
+	w.Planet.Fields[0].HalfArc = math.Pi
+	w.Planet.Fields[1].HalfArc = math.Pi
+
+	beforeCount := len(w.Nodes)
+	foundStartingNodes(w, 0)
+	newNodes := w.Nodes[beforeCount:]
+
+	if len(newNodes) == 0 {
+		t.Fatal("foundStartingNodes should have created nodes")
+	}
+	for _, n := range newNodes {
+		if n.Size < waterForestSpawnSizeBonus+0.6 {
+			t.Errorf("founding node size %.3f below minimum expected (base+bonus=%.3f)", n.Size, 0.6+waterForestSpawnSizeBonus)
+		}
+	}
+}
+
+func TestWaterInfluence_UpgradeSizeBonus(t *testing.T) {
+	w, forest := influenceWorld()
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1.0
+	w.Nodes = []*ResourceNode{n}
+
+	upgraded := upgradeNearestFieldNode(w, forest, 0)
+
+	if upgraded == nil {
+		t.Fatal("expected upgrade, got nil")
+	}
+	wantSize := 1.0 + 0.15 + waterForestUpgradeSizeBonus
+	if math.Abs(upgraded.Size-wantSize) > 1e-9 {
+		t.Errorf("influenced upgrade size got %.4f, want %.4f", upgraded.Size, wantSize)
+	}
+}
+
+func TestWaterInfluence_UpgradeCueFlag(t *testing.T) {
+	w, forest := influenceWorld()
+
+	// Saturate the field by spawning until the first upgrade result.
+	var upgradeResult growthResult
+	for range 200 {
+		r := spawnNode(w, forest)
+		if r.Outcome == growthOutcomeUpgradedNode {
+			upgradeResult = r
+			break
+		}
+	}
+
+	if upgradeResult.Outcome != growthOutcomeUpgradedNode {
+		t.Fatalf("expected upgrade outcome after saturation, got %v", upgradeResult.Outcome)
+	}
+	if !upgradeResult.WaterInfluenced {
+		t.Fatal("upgrade result.WaterInfluenced should be true")
+	}
+}
+
+func TestWaterInfluence_UnknownFieldStillInfluences(t *testing.T) {
+	w, forest := influenceWorld()
+	w.Planet.Fields[1].Known = false // already false, but be explicit
+
+	result := spawnNodeNear(w, forest, 0)
+
+	if !result.WaterInfluenced {
+		t.Fatal("unknown KindWaterInfluence field should still influence")
+	}
+}
+
+func TestWaterInfluence_NonStacking_TwoOverlappingArcs(t *testing.T) {
+	w := NewWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	inf1 := &ResourceField{Kind: KindWaterInfluence, CenterAngle: 0, HalfArc: 0.6, Known: false}
+	inf2 := &ResourceField{Kind: KindWaterInfluence, CenterAngle: 0.1, HalfArc: 0.6, Known: false}
+	forest := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.3, Known: true}
+	w.Planet.Fields = []*ResourceField{forest, inf1, inf2}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
+
+	result := spawnNodeNear(w, forest, 0)
+
+	if !result.WaterInfluenced {
+		t.Fatal("expected influenced result")
+	}
+	// Only one bonus regardless of two overlapping arcs.
+	node := w.Nodes[0]
+	maxExpected := 1.4 + waterForestSpawnSizeBonus + 1e-9 // base max + one bonus
+	if node.Size > maxExpected {
+		t.Errorf("non-stacking: node size %.4f exceeds one-bonus maximum %.4f", node.Size, maxExpected)
+	}
+}
+
+func TestWaterInfluence_UpgradeClampAt2(t *testing.T) {
+	w, forest := influenceWorld()
+
+	n := newNode(w, KindWood, 0)
+	n.Size = 1.95
+	w.Nodes = []*ResourceNode{n}
+
+	upgraded := upgradeNearestFieldNode(w, forest, 0)
+
+	if upgraded.Size != 2.0 {
+		t.Errorf("influenced upgrade should clamp at 2.0, got %.4f", upgraded.Size)
+	}
+}
+
+func TestWaterInfluence_DoesNotBlockSpawning(t *testing.T) {
+	w, forest := influenceWorld()
+
+	result := spawnNodeNear(w, forest, 0)
+
+	if result.Outcome == growthOutcomeNone {
+		t.Fatal("KindWaterInfluence should not block spawning (inLake should ignore it)")
+	}
+}
+
+func TestWaterInfluence_NoSpuriousWaterPotential(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1) // Lakewood (has KindWaterInfluence fields)
+	setupEchoForCompletion(t, w, 1)
+
+	checkActivePlanetCompletion(w)
+
+	if got := w.Economy.Potential[PotentialWater]; got != 1 {
+		t.Errorf("Water Potential: got %d, want exactly 1 (from KindWater only, not KindWaterInfluence)", got)
+	}
+}

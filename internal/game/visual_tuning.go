@@ -50,6 +50,9 @@ var (
 	colGrowthGaugeAfterglow = color.RGBA{R: 70, G: 210, B: 90, A: 255}
 	colGrowthGaugeRelease   = color.RGBA{R: 140, G: 255, B: 130, A: 255}
 
+	// Water-influenced growth cue tint — blue-green, event-local only.
+	colWaterGrowthTint = color.RGBA{R: 60, G: 200, B: 150, A: 255}
+
 	// Nurture attention pulse and confirm flash (alpha set per-frame).
 	colNurtureAttention = color.RGBA{R: 120, G: 255, B: 150, A: 255}
 	colNurtureConfirm   = color.RGBA{R: 200, G: 255, B: 210, A: 255}
