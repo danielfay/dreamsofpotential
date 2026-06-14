@@ -312,7 +312,7 @@ func (r *echoCompletionRunner) Setup(w *World) {
 	switchToPlanet(w, r.echoIdx)
 	enterPlanetView(w)
 
-	// Find a valid TH angle (pre-spawned nodes may block obvious angles).
+	// Find a valid TH angle for the authored echo layout.
 	r.field = fieldForKind(w, KindWood)
 	if r.field == nil {
 		panic("echoCompletionRunner: no wood field on echo")
