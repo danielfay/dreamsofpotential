@@ -72,6 +72,10 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewLakewoodCompletedScenario(),
 		lakewoodDebugInfluenceScenario(),
 		systemViewUnknownWaterResonanceScenario(),
+		systemViewFrontierPreAwakenable(),
+		systemViewFrontierAwakenableScenario(),
+		waterFrontierFreshScenario(),
+		systemViewFrontierAwakenedScenario(),
 	}
 }
 
@@ -529,6 +533,60 @@ func systemViewUnknownWaterResonanceScenario() screenshotScenario {
 	// Advance SimTime to maximize frontier shimmer visibility.
 	w.SimTime = math.Pi / 3
 	return screenshotScenario{name: "28-system-view-unknown-water-resonance", world: w, fullHUD: true}
+}
+
+func systemViewFrontierPreAwakenable() screenshotScenario {
+	wood := 50.0
+	sel := 3
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		SelectPlanet: &sel,
+		Wood:         &wood,
+	})
+	return screenshotScenario{name: "29-system-view-frontier-pre-awakenable", world: w, fullHUD: true}
+}
+
+func systemViewFrontierAwakenableScenario() screenshotScenario {
+	wood := 50.0
+	forestPot := 1
+	sel := 3
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:  []int{1},
+		ForestPotential: &forestPot,
+		SelectPlanet:    &sel,
+		Wood:            &wood,
+	})
+	return screenshotScenario{name: "30-system-view-frontier-awakenable", world: w, fullHUD: true}
+}
+
+func waterFrontierFreshScenario() screenshotScenario {
+	wood := 50.0
+	enter := 3
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		AwakenFrontier: true,
+		EnterPlanet:    &enter,
+		Wood:           &wood,
+	})
+	return screenshotScenario{name: "31-water-frontier-fresh", world: w, fullHUD: true}
+}
+
+func systemViewFrontierAwakenedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		AwakenFrontier: true,
+		SelectPlanet:   intPtr(3),
+		Wood:           &wood,
+	})
+	return screenshotScenario{name: "32-system-view-frontier-awakened", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }

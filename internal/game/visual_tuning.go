@@ -10,9 +10,10 @@ var (
 	colWoodLabel    = color.RGBA{R: 140, G: 210, B: 140, A: 230} // text labels for wood amounts and rates
 
 	// Potential token colours. Circles (not squares) are the visual convention for Potential.
-	colForestPotential      = color.RGBA{R: 40, G: 160, B: 60, A: 255}  // green circle — same identity as wood
+	colForestPotential      = color.RGBA{R: 40, G: 160, B: 60, A: 255}   // green circle — same identity as wood
 	colForestPotentialLabel = color.RGBA{R: 140, G: 210, B: 140, A: 230} // cost numeric label
 	colWaterPotential       = color.RGBA{R: 60, G: 140, B: 220, A: 255}  // blue circle — water resonance
+	colWaterPotentialLabel  = color.RGBA{R: 140, G: 180, B: 230, A: 230} // cost numeric label for water
 
 	// Awaken button — enabled state (purple burst).
 	colAwakenFill  = color.RGBA{R: 60, G: 40, B: 100, A: 240}
@@ -40,7 +41,8 @@ var (
 	// System-view tray (bottom panel).
 	colSysTrayFill        = color.RGBA{R: 8, G: 8, B: 18, A: 210}
 	colSysTrayBorder      = color.RGBA{R: 60, G: 60, B: 90, A: 200}
-	colSysUnknownSwatch   = color.RGBA{R: 60, G: 60, B: 80, A: 255} // planet swatch for unknown kind
+	colSysUnknownSwatch   = color.RGBA{R: 60, G: 60, B: 80, A: 255}  // planet swatch for unknown kind (dormant)
+	colSysFrontierSwatch  = color.RGBA{R: 40, G: 100, B: 190, A: 255} // planet swatch for awakened water frontier
 
 	// Wood gauge (thin bar below the resource HUD button in planet view).
 	colWoodGaugeFill  = color.RGBA{R: 40, G: 160, B: 60, A: 180}

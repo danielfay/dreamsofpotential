@@ -541,10 +541,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		return
 	}
 	p := g.world.System.Planets[sel]
-	if p.Kind == PlanetUnknown {
-		g.sysEnterRect = sysRect{}
-		return
-	}
 
 	// Tray background.
 	const trayVH = float64(20)
@@ -575,7 +571,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	btnX := tx + tw - btnSize - float32(5*scale)
 	btnY := ty + (th-btnSize)/2
 
-	if p.Kind == PlanetEcho && !p.Awakened {
+	if (p.Kind == PlanetEcho || p.Kind == PlanetUnknown) && !p.Awakened {
 		// Awaken button: burst/sparkle glyph, enabled or greyed by affordability.
 		canAff := canAwaken(g.world, sel)
 		fillCol, rimCol, glyphCol := colAwakenFill, colAwakenRim, colAwakenGlyph
@@ -590,22 +586,40 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		cy2 := btnY + btnSize/2
 		ray := float32(4 * scale)
 		half := float32(1.5 * scale)
-		// Four diagonal rays from center.
 		vector.StrokeLine(screen, cx2-ray, cy2-ray, cx2+ray, cy2+ray, half, glyphCol, false)
 		vector.StrokeLine(screen, cx2+ray, cy2-ray, cx2-ray, cy2+ray, half, glyphCol, false)
 		vector.FillCircle(screen, cx2, cy2, half+float32(scale), glyphCol, false)
 
-		// Cost label to the left of the button: "1" + Forest Potential circle.
-		// Always shown in full colour — dim the button, not the cost.
+		// Cost labels to the left of the button: one circle+number per required Potential.
+		// Items are drawn right-to-left from the button edge; the cost map is iterated in
+		// a fixed display order so layout is deterministic.
+		type potCostItem struct {
+			kind     PotentialKind
+			col      color.RGBA
+			labelCol color.RGBA
+		}
+		potOrder := []potCostItem{
+			{PotentialWater, colWaterPotential, colWaterPotentialLabel},
+			{PotentialForest, colForestPotential, colForestPotentialLabel},
+		}
 		costStr := "1"
 		_, costH := text.Measure(costStr, face, 0)
 		costY := btnY + (btnSize-float32(costH))/2
 		circR := float32(3 * scale)
-		circX := btnX - float32(5*scale) - circR
 		circY := btnY + btnSize/2
-		drawPotentialCircle(screen, circX, circY, circR, colForestPotential)
-		costW, _ := text.Measure(costStr, face, 0)
-		drawSysText(screen, costStr, circX-circR-float32(4*scale)-float32(costW), costY, colForestPotentialLabel, face)
+		awakenCostMap := planetAwakenCost(g.world, sel)
+		curRight := btnX - float32(5*scale) // right edge of next item, working leftward
+		for _, pk := range potOrder {
+			if awakenCostMap[pk.kind] == 0 {
+				continue
+			}
+			// Draw circle just left of curRight.
+			circX := curRight - circR
+			drawPotentialCircle(screen, circX, circY, circR, pk.col)
+			costW, _ := text.Measure(costStr, face, 0)
+			drawSysText(screen, costStr, circX-circR-float32(3*scale)-float32(costW), costY, pk.labelCol, face)
+			curRight = circX - circR - float32(costW) - float32(6*scale)
+		}
 		g.sysAwakenRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 
 	} else if p.zoomable() {
@@ -630,6 +644,11 @@ func sysSwatchColor(p SystemPlanet) color.RGBA {
 	switch p.Kind {
 	case PlanetStarting, PlanetEcho:
 		return colWoodResource
+	case PlanetUnknown:
+		if p.Awakened {
+			return colSysFrontierSwatch
+		}
+		return colSysUnknownSwatch
 	default:
 		return colSysUnknownSwatch
 	}

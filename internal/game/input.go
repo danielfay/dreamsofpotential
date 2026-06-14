@@ -52,9 +52,6 @@ func (g *Game) handleSystemInput() {
 	// Planet selection: convert to virtual world coords and check disks.
 	wp := g.screenToWorld(mx, my)
 	for i, p := range g.world.System.Planets {
-		if p.Kind == PlanetUnknown {
-			continue // non-interactive
-		}
 		if wp.Dist(p.Pos) <= p.Radius+3 {
 			if i == g.sysDoubleClickPlanet &&
 				time.Since(g.sysDoubleClickTime) < sysDoubleClickWindow {

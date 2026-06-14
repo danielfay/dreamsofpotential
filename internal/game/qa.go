@@ -48,8 +48,19 @@ type QAPreset struct {
 	// SelectPlanet sets System.Selected after echo lifecycle processing.
 	SelectPlanet *int `json:"selectPlanet"`
 
+	// AwakenFrontier awakens the unknown frontier (Planets index 3) regardless of
+	// current Potential balance — it grants the required Potential before awakening.
+	// Applied after CompleteEchoes and before SelectPlanet/EnterPlanet.
+	AwakenFrontier bool `json:"awakenFrontier"`
+
+	// ForestPotential / WaterPotential stamp exact Potential balances after all
+	// other overrides (including AwakenEchoes, CompleteEchoes, AwakenFrontier).
+	// Use to set precise amounts for QA scenarios without relying on the growth path.
+	ForestPotential *int `json:"forestPotential"`
+	WaterPotential  *int `json:"waterPotential"`
+
 	// EnterPlanet switches the active planet and enters planet view.
-	// Applied after AwakenEchoes and CompleteEchoes.
+	// Applied after AwakenEchoes, CompleteEchoes, and AwakenFrontier.
 	EnterPlanet *int `json:"enterPlanet"`
 
 	// Echo setup — applied to the entered planet when EnterPlanet is set.
@@ -224,6 +235,26 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		// Restore starting planet as active and return to system view.
 		switchToPlanet(w, 0)
 		enterSystemView(w)
+	}
+
+	// Frontier awakening — grant required Potential and awaken the frontier.
+	if p.AwakenFrontier {
+		const frontierIdx = 3
+		if !w.System.Planets[frontierIdx].Awakened {
+			for kind, cost := range planetAwakenCost(w, frontierIdx) {
+				w.Economy.Potential[kind] += cost
+			}
+			awakenPlanet(w, frontierIdx)
+		}
+	}
+
+	// Potential stamps — applied after all lifecycle overrides so callers can set
+	// exact balances regardless of what the growth path happened to award.
+	if p.ForestPotential != nil {
+		w.Economy.Potential[PotentialForest] = *p.ForestPotential
+	}
+	if p.WaterPotential != nil {
+		w.Economy.Potential[PotentialWater] = *p.WaterPotential
 	}
 
 	// Select a specific planet in system view.

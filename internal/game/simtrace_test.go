@@ -118,6 +118,9 @@ func runSimTrace(t *testing.T, desc string, maxMinutes float64, runner SimTraceR
 // Useful for checking that economy constants produce the intended play-session
 // length without needing to run the game manually.
 func TestSimTrace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
 	runner := &startingPlanetRunner{}
 	w := runSimTrace(t, "starting planet (wood)", 20, runner)
 	fp := w.Planet.FieldProgress[KindWood]
@@ -269,6 +272,9 @@ func (r *startingPlanetRunner) Summary(w *World) string {
 // TestSimTraceEchoCompletion runs an echo planet from fresh entry to completion,
 // verifying that the completion gate fires and the amplified rate is snapshotted.
 func TestSimTraceEchoCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
 	const echoIdx = 1
 	runner := &echoCompletionRunner{echoIdx: echoIdx}
 	w := runSimTrace(t, "echo planet completion (layout 0)", 25, runner)
@@ -417,6 +423,9 @@ func (r *echoCompletionRunner) Summary(w *World) string {
 // from awakening to completion, verifying Forest Potential is awarded and
 // Water Potential is not (Tight Grove has no water field).
 func TestSimTraceTightGroveCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
 	const echoIdx = 2
 	runner := &echoCompletionRunner{echoIdx: echoIdx}
 	w := runSimTrace(t, "Tight Grove completion (layoutID 1)", 30, runner)
@@ -438,6 +447,9 @@ func TestSimTraceTightGroveCompletion(t *testing.T) {
 // awakening to completion, asserting Water Potential is earned and that workers
 // reached island forest nodes via the lake-aware router.
 func TestSimTraceLakewoodCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
 	const echoIdx = 1
 	runner := &echoCompletionRunner{echoIdx: echoIdx}
 	w := runSimTrace(t, "Lakewood completion (layoutID 0)", 45, runner)

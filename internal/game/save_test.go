@@ -431,6 +431,88 @@ func TestFieldProgressRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSaveLoadRoundTripWaterEconomy verifies that Economy.Water and
+// Economy.WaterDiscovered survive a save/load cycle unchanged.
+func TestSaveLoadRoundTripWaterEconomy(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	w.Economy.Water = 12.5
+	w.Economy.WaterDiscovered = true
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Economy.Water != w.Economy.Water {
+		t.Errorf("Economy.Water: got %.4f, want %.4f", got.Economy.Water, w.Economy.Water)
+	}
+	if got.Economy.WaterDiscovered != w.Economy.WaterDiscovered {
+		t.Errorf("Economy.WaterDiscovered: got %v, want %v", got.Economy.WaterDiscovered, w.Economy.WaterDiscovered)
+	}
+}
+
+// TestSaveLoadRoundTripAbstractWaterRate verifies that SystemPlanet.AbstractWaterRate
+// survives a save/load cycle.
+func TestSaveLoadRoundTripAbstractWaterRate(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	w.System.Planets[1].AbstractWaterRate = 1.75
+	w.System.Planets[2].AbstractWaterRate = 0.9
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.System.Planets[1].AbstractWaterRate != w.System.Planets[1].AbstractWaterRate {
+		t.Errorf("Planets[1].AbstractWaterRate: got %f, want %f",
+			got.System.Planets[1].AbstractWaterRate, w.System.Planets[1].AbstractWaterRate)
+	}
+	if got.System.Planets[2].AbstractWaterRate != w.System.Planets[2].AbstractWaterRate {
+		t.Errorf("Planets[2].AbstractWaterRate: got %f, want %f",
+			got.System.Planets[2].AbstractWaterRate, w.System.Planets[2].AbstractWaterRate)
+	}
+}
+
+// TestSaveLoadRoundTripFrontierAwakened verifies that awakening the frontier
+// (Planets[3], PlanetUnknown) and its PlanetState survive a save/load cycle.
+func TestSaveLoadRoundTripFrontierAwakened(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	awakenPlanet(w, 3)
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !got.System.Planets[3].Awakened {
+		t.Error("Planets[3].Awakened should survive round-trip")
+	}
+	if got.PlanetStates[3] == nil {
+		t.Error("PlanetStates[3] should be non-nil after round-trip")
+	}
+	if got.Economy.Potential[PotentialForest] != 0 {
+		t.Errorf("Forest Potential after frontier awaken: got %d, want 0", got.Economy.Potential[PotentialForest])
+	}
+	if got.Economy.Potential[PotentialWater] != 0 {
+		t.Errorf("Water Potential after frontier awaken: got %d, want 0", got.Economy.Potential[PotentialWater])
+	}
+}
+
 // TestLoadVersionMismatch verifies that a save with a different version is
 // treated as missing (returns os.ErrNotExist) so the caller starts fresh.
 func TestLoadVersionMismatch(t *testing.T) {
