@@ -795,9 +795,10 @@ func newLakewoodState(center Vec) *PlanetState {
 	}
 }
 
-// newWaterFrontierState returns the initial durable live state for the awakened
-// water frontier planet. Phase 1 provides a minimal loadable placeholder; the full
-// authored layout (shore angles, lake arcs, exact field sizes) is fleshed out in Phase 2.
+// newWaterFrontierState returns the authored live state for the awakened water
+// frontier planet: a tiny forest shore (90°) and a dominant water field (270°).
+// The water field is Known so Phase 4 saturation/sparkle plumbing can target it;
+// StartingNodes is kept small so founding fills only the shore.
 func newWaterFrontierState() *PlanetState {
 	center := Vec{X: 160, Y: 120}
 	return &PlanetState{
@@ -816,15 +817,23 @@ func newWaterFrontierState() *PlanetState {
 					Kind:        KindWater,
 					CenterAngle: waterFrontierLakeAngle,
 					HalfArc:     waterFrontierLakeArc,
-					Known:       false, // not harvestable until Phase 2/4
+					Known:       true,
 				},
 			},
 			FieldProgress: map[ResourceKind]*KindProgress{
-				KindWood: {Cap: woodFieldBaseEXP},
+				KindWood:  {Cap: woodFieldBaseEXP},
+				KindWater: {Cap: waterFieldBaseEXP},
 			},
+			StartingNodes: waterFrontierStartNodes,
 		},
 		TownGrowthCap: townGrowthBaseCap,
 	}
+}
+
+// waterFieldCanSpawnSparkle reports whether the water field is ready to receive
+// a sparkle node. Always false until Phase 4 implements interior placement rules.
+func waterFieldCanSpawnSparkle(_ *World, _ *ResourceField) bool {
+	return false
 }
 
 // ── Multi-planet park / load / switch ────────────────────────────────────────

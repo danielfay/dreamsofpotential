@@ -568,10 +568,11 @@ func waterFrontierFreshScenario() screenshotScenario {
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
-		CompleteEchoes: []int{1},
-		AwakenFrontier: true,
-		EnterPlanet:    &enter,
-		Wood:           &wood,
+		CompleteEchoes:    []int{1},
+		AwakenFrontier:    true,
+		EnterPlanet:       &enter,
+		EchoPlaceTownHall: true,
+		Wood:              &wood,
 	})
 	return screenshotScenario{name: "31-water-frontier-fresh", world: w, fullHUD: true}
 }
