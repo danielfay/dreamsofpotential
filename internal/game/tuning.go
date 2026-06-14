@@ -87,7 +87,7 @@ const (
 	waterFrontierRadius     = lakewoodRadius    // reuse echo radius as initial placeholder
 	waterFrontierShoreAngle = -math.Pi / 2     // top of rim (–90°) — tiny forest shore
 	waterFrontierShoreArc   = math.Pi / 4      // 45° half-arc
-	waterFrontierLakeAngle  = math.Pi / 4      // quarter-turn CW from shore
+	waterFrontierLakeAngle  = math.Pi / 2      // 90° — tiles edge-to-edge with shore (shore ends at -π/4, lake ends at -3π/4)
 	waterFrontierLakeArc    = 3 * math.Pi / 4  // 135° half-arc — large water interior
 
 	// ── system view / abstract production
