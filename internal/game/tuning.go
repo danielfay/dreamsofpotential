@@ -83,12 +83,15 @@ const (
 	waterForestUpgradeSizeBonus = 0.10 // extra size on top of the normal +0.15 upgrade when influenced
 
 	// ── Water Frontier (PlanetUnknown awakened) ──────────────────────────────────
-	// Phase 1 placeholder geometry; full authored layout with exact arcs in Phase 2.
-	waterFrontierRadius     = lakewoodRadius    // reuse echo radius as initial placeholder
-	waterFrontierShoreAngle = -math.Pi / 2     // top of rim (–90°) — tiny forest shore
-	waterFrontierShoreArc   = math.Pi / 4      // 45° half-arc
-	waterFrontierLakeAngle  = math.Pi / 2      // 90° — tiles edge-to-edge with shore (shore ends at -π/4, lake ends at -3π/4)
-	waterFrontierLakeArc    = 3 * math.Pi / 4  // 135° half-arc — large water interior
+	// Shore (90° arc) + lake (270° arc) tile the full ring. Shore is at the top,
+	// lake wraps the bottom/sides. Fields edge-to-edge: shore ends at ±135°, lake starts there.
+	waterFrontierRadius     = lakewoodRadius
+	waterFrontierShoreAngle = -math.Pi / 2    // top of rim (–90°) — tiny forest shore
+	waterFrontierShoreArc   = math.Pi / 4     // 45° half-arc → 90° arc total
+	waterFrontierLakeAngle  = math.Pi / 2     // 90° — tiles edge-to-edge with shore
+	waterFrontierLakeArc    = 3 * math.Pi / 4 // 135° half-arc → 270° arc total (dominant water field)
+	waterFrontierStartNodes = 2               // TH + flanking pair only — tiny shore leaves minimal camp room
+	waterFieldBaseEXP       = woodFieldBaseEXP // placeholder cap; Phase 4 will tune water-field growth rate
 
 	// ── system view / abstract production
 	echoRateFracA       = 0.55 // echo A rate as fraction of starting planet's snapshotted rate

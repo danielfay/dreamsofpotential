@@ -1,0 +1,14 @@
+{
+  "name": "water-planet-fresh",
+  "description": "Water frontier awakened, entered, and founded. Tiny shore forest with Town Hall and two flanking trees; dominant water field visible but not harvestable (no sparkles or docks until Phase 4). Expected read: compact shore arc with TH + 2 trees; large water arc wraps the rest of the rim; one worker on shore.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "completeEchoes": [1],
+  "awakenFrontier": true,
+  "enterPlanet": 3,
+  "echoPlaceTownHall": true,
+  "wood": 50
+}
