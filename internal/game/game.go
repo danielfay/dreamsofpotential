@@ -64,6 +64,9 @@ type Game struct {
 	// double-click tracking for system-view planet zoom
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
+
+	// planet-view selected building (dock-only scaffold for Phase 6 upgrade slot)
+	selectedBuildingID int // index into w.Buildings; -1 = none
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -86,6 +89,7 @@ func New() (*Game, error) {
 		nurtureAttentionCooldown: nurtureAttentionInterval,
 		importCh:                 make(chan *World, 1),
 		sysDoubleClickPlanet:     -1,
+		selectedBuildingID:       -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -418,6 +422,9 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		}
 	}
 
+	// Selected-building dock tray.
+	g.drawDockTray(screen)
+
 	// Unaffordable-cost pulse flash: fades out over pulseDuration seconds.
 	if g.pulseTime > 0 {
 		colPulse := colCostPulse
@@ -672,6 +679,7 @@ func clearTransientUI(g *Game) {
 	g.holdAction = holdNone
 	g.holdDuration = 0
 	g.showMenu = false
+	g.selectedBuildingID = -1
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
@@ -698,4 +706,47 @@ func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
 	}
 
 	g.sysReturnRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
+}
+
+// drawDockTray draws a bottom tray when a dock building is selected.
+// The upgrade action slot is empty in Phase 3 — wired in Phase 6.
+func (g *Game) drawDockTray(screen *ebiten.Image) {
+	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
+		return
+	}
+	b := g.world.Buildings[g.selectedBuildingID]
+	if b.Kind != KindDock {
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	face := g.hud.sysface
+	if face == nil {
+		return
+	}
+
+	const trayVH = float64(20)
+	const trayVW = float64(90)
+	tw, th := float32(trayVH*scale), float32(trayVH*scale)
+	tw = float32(trayVW * scale)
+	tx := float32(g.screenW)/2 - tw/2
+	ty := float32(g.screenH) - th - float32(4*scale)
+
+	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
+	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
+
+	// Dock color swatch.
+	swSize := float32(10 * scale)
+	swX := tx + float32(5*scale)
+	swY := ty + (th-swSize)/2
+	vector.FillRect(screen, swX, swY, swSize, swSize, colDock, false)
+
+	// Building name label.
+	label := "Dock"
+	if b.Extension {
+		label = "Dock (ext)"
+	}
+	_, lH := text.Measure(label, face, 0)
+	lY := swY + swSize - float32(lH)
+	drawSysText(screen, label, swX+swSize+float32(4*scale), lY, colWoodLabel, face)
 }

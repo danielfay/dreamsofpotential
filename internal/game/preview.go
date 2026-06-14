@@ -27,15 +27,17 @@ type previewRoute struct {
 }
 
 // placementPreview holds all data needed to render the building placement preview
-// and enforce validity. Kind indicates whether the ghost is a Town Hall or a
-// logging camp, which controls ghost art and validity rules.
+// and enforce validity. Kind indicates whether the ghost is a Town Hall, logging
+// camp, or dock, which controls ghost art and validity rules.
+// Extension is true when the dock variant is a water-extension (not a shore dock).
 type placementPreview struct {
 	Kind             BuildingKind
+	Extension        bool            // dock only: extension dock connected to an existing dock
 	Angle            float64
 	Pos              Vec
-	Valid      bool
-	Affordable bool
-	Free       []previewRoute  // capped free nodes within previewArc
+	Valid            bool
+	Affordable       bool
+	Free             []previewRoute  // capped free nodes within previewArc
 	FreeTotal        int             // all free nodes within previewArc
 	Claimed          []*ResourceNode // capped claimed nodes within previewArc
 	ClaimedTotal     int             // all claimed nodes within previewArc
@@ -121,19 +123,40 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 	reservedTotal := len(reserved)
 	free, claimed, reserved = capPreviewRoutes(angle, free, claimed, reserved)
 	hasTownHall := len(w.Buildings) > 0
-	affordable := true
-	if hasTownHall && !freePlacement {
-		affordable = w.Economy.Wood >= CampCost(w)
+
+	// Town Hall placement.
+	if !hasTownHall {
+		blocked := placementBlockedNodes(w, KindTownHall, angle)
+		blockedBuildings := placementBlockedBuildings(w, KindTownHall, angle)
+		return placementPreview{
+			Kind:             KindTownHall,
+			Angle:            angle,
+			Pos:              w.Planet.RimPoint(angle),
+			Valid:            len(blocked) == 0 && len(blockedBuildings) == 0 && !inLake(w, angle),
+			Affordable:       true,
+			Free:             free,
+			FreeTotal:        freeTotal,
+			Claimed:          claimed,
+			ClaimedTotal:     claimedTotal,
+			Reserved:         reserved,
+			ReservedTotal:    reservedTotal,
+			Blocked:          blocked,
+			BlockedBuildings: blockedBuildings,
+		}
 	}
-	kind := KindTownHall
-	if hasTownHall {
-		kind = KindLoggingCamp
+
+	// After Town Hall: contextual placement — dock on water edge, camp on land.
+	if inLake(w, angle) {
+		return dockPreview(w, angle, freePlacement, free, freeTotal, claimed, claimedTotal, reserved, reservedTotal)
 	}
-	blocked := placementBlockedNodes(w, kind, angle)
-	blockedBuildings := placementBlockedBuildings(w, kind, angle)
-	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0 && !inLake(w, angle)
+
+	// Land / forest → logging camp.
+	affordable := freePlacement || w.Economy.Wood >= CampCost(w)
+	blocked := placementBlockedNodes(w, KindLoggingCamp, angle)
+	blockedBuildings := placementBlockedBuildings(w, KindLoggingCamp, angle)
+	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0
 	return placementPreview{
-		Kind:             kind,
+		Kind:             KindLoggingCamp,
 		Angle:            angle,
 		Pos:              w.Planet.RimPoint(angle),
 		Valid:            valid,
@@ -147,6 +170,97 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 		Blocked:          blocked,
 		BlockedBuildings: blockedBuildings,
 	}
+}
+
+// dockPreview builds a placement preview for an angle that is in a water field.
+// Shore docks (footprint touches non-water) cost Wood only; extension docks
+// (connected to an existing dock over water) cost Wood + Water.
+// Placement in open water with no shore or dock connection is invalid.
+func dockPreview(w *World, angle float64, freePlacement bool,
+	free []previewRoute, freeTotal int,
+	claimed []*ResourceNode, claimedTotal int,
+	reserved []*ResourceNode, reservedTotal int,
+) placementPreview {
+	half := buildingHardHalfArc(KindDock, w.Planet.Radius)
+	blocked := placementBlockedNodes(w, KindDock, angle)
+	blockedBuildings := placementBlockedBuildings(w, KindDock, angle)
+
+	extension := false
+	var affordable bool
+
+	switch {
+	case isShore(w, angle, half):
+		// Shore dock: footprint straddles water/land boundary.
+		affordable = freePlacement || w.Economy.Wood >= dockShoreCost
+	case nearDock(w, angle, half):
+		// Extension dock: water-only, connected to an existing dock.
+		extension = true
+		affordable = freePlacement || (w.Economy.Wood >= dockExtWoodCost && w.Economy.Water >= dockExtWaterCost)
+	default:
+		// Open water with no shore or dock connection: always invalid.
+		return placementPreview{
+			Kind:             KindDock,
+			Angle:            angle,
+			Pos:              w.Planet.RimPoint(angle),
+			Valid:            false,
+			Affordable:       false,
+			Free:             free,
+			FreeTotal:        freeTotal,
+			Claimed:          claimed,
+			ClaimedTotal:     claimedTotal,
+			Reserved:         reserved,
+			ReservedTotal:    reservedTotal,
+			Blocked:          blocked,
+			BlockedBuildings: blockedBuildings,
+		}
+	}
+
+	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0
+	return placementPreview{
+		Kind:             KindDock,
+		Extension:        extension,
+		Angle:            angle,
+		Pos:              w.Planet.RimPoint(angle),
+		Valid:            valid,
+		Affordable:       affordable,
+		Free:             free,
+		FreeTotal:        freeTotal,
+		Claimed:          claimed,
+		ClaimedTotal:     claimedTotal,
+		Reserved:         reserved,
+		ReservedTotal:    reservedTotal,
+		Blocked:          blocked,
+		BlockedBuildings: blockedBuildings,
+	}
+}
+
+// isShore reports whether angle's dock footprint [angle-half, angle+half] straddles
+// the water/land boundary: the angle itself is in water but at least one sampled
+// point in the footprint is outside any water field.
+func isShore(w *World, angle, halfArc float64) bool {
+	const steps = 8
+	for i := 0; i <= steps; i++ {
+		a := normAngle(angle - halfArc + float64(i)*2*halfArc/float64(steps))
+		if !inLake(w, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// nearDock reports whether any existing KindDock building is within the
+// dockConnectionPx reach of angle, allowing extension docks to chain off
+// an existing dock without requiring footprint overlap. The connection radius
+// is intentionally larger than the hard-footprint exclusion radius so an
+// extension can sit just outside the shore dock's physical footprint.
+func nearDock(w *World, angle, _ float64) bool {
+	connHalf := dockConnectionPx / w.Planet.Radius
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock && math.Abs(normAngle(angle-b.Angle)) <= connHalf {
+			return true
+		}
+	}
+	return false
 }
 
 func placementBlockedNodes(w *World, kind BuildingKind, angle float64) []*ResourceNode {

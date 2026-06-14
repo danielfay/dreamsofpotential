@@ -109,6 +109,7 @@ type BuildingKind int
 const (
 	KindTownHall    BuildingKind = iota // 0 — settlement anchor and delivery point
 	KindLoggingCamp                     // 1 — resource harvesting camp
+	KindDock                            // 2 — water-edge pier; shore or extension
 )
 
 // ViewMode distinguishes the system-level view from the planet-level view.
@@ -160,6 +161,7 @@ type PlanetState struct {
 	Workers            []*Worker
 	NextNodeID         int
 	NextWorkerID       int
+	NextBuildingID     int
 	ResourceDiscovered bool
 	SimTime            float64
 	WorkerCapacity     int
@@ -181,11 +183,15 @@ type System struct {
 }
 
 // Building is a player-placed structure on the planet rim.
-// Pos is the rim point at Angle; Kind distinguishes the Town Hall from camps.
+// Pos is the rim point at Angle; Kind distinguishes TH, camps, and docks.
+// Extension marks a dock placed over water connected to an existing dock.
 type Building struct {
+	ID            int
 	Kind          BuildingKind
 	Pos           Vec
 	Angle         float64
+	Level         int
+	Extension     bool
 	DeliveredWood float64
 	DeliveryCount int
 	Pulse         PulseState
@@ -284,7 +290,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 14
+const SaveVersion = 15
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -296,6 +302,7 @@ type World struct {
 	Economy            Economy
 	NextNodeID         int
 	NextWorkerID       int
+	NextBuildingID     int
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 	System             System // system-view unlock state; persisted
@@ -575,13 +582,15 @@ func effectiveArc(w *World, a, b float64) float64 {
 
 // arcCost integrates the effective travel cost along a signed arc of `arc`
 // radians starting from angle `a`. Positive arc = clockwise, negative = CCW.
+// Dock-covered lake segments pay no lake penalty — they count as regular rim.
 func arcCost(w *World, a, arc float64) float64 {
 	totalLen := math.Abs(arc) * w.Planet.Radius
 	const steps = 64
 	var lakeAngle float64
 	for i := 0; i < steps; i++ {
 		frac := (float64(i) + 0.5) / float64(steps)
-		if inLake(w, normAngle(a+arc*frac)) {
+		sample := normAngle(a + arc*frac)
+		if inLake(w, sample) && !dockCoversAngle(w, sample) {
 			lakeAngle += math.Abs(arc) / float64(steps)
 		}
 	}
@@ -849,6 +858,7 @@ func parkActive(w *World) {
 		Workers:            w.Workers,
 		NextNodeID:         w.NextNodeID,
 		NextWorkerID:       w.NextWorkerID,
+		NextBuildingID:     w.NextBuildingID,
 		ResourceDiscovered: w.ResourceDiscovered,
 		SimTime:            w.SimTime,
 		WorkerCapacity:     w.Economy.WorkerCapacity,
@@ -873,6 +883,7 @@ func loadPlanet(w *World, idx int) {
 	w.Workers            = ps.Workers
 	w.NextNodeID         = ps.NextNodeID
 	w.NextWorkerID       = ps.NextWorkerID
+	w.NextBuildingID     = ps.NextBuildingID
 	w.ResourceDiscovered = ps.ResourceDiscovered
 	w.SimTime            = ps.SimTime
 	w.Economy.WorkerCapacity = ps.WorkerCapacity

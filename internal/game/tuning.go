@@ -93,6 +93,27 @@ const (
 	waterFrontierStartNodes = 2               // TH + flanking pair only — tiny shore leaves minimal camp room
 	waterFieldBaseEXP       = woodFieldBaseEXP // placeholder cap; Phase 4 will tune water-field growth rate
 
+	// ── Dock buildings ───────────────────────────────────────────────────────────
+	// Shore dock cost (wood only) and extension dock costs (wood + water).
+	dockShoreCost    = 200.0 // wood cost to place a shore dock
+	dockExtWoodCost  = 100.0 // wood cost for an extension dock
+	dockExtWaterCost = 30.0  // water cost for an extension dock
+
+	// Dock art geometry (virtual pixels).
+	dockPlankHW  = float32(1.5) // half-width of the central plank (tangential)
+	dockPlankLen = float32(4.5) // half-length of the plank along outward radial
+	dockCapHW    = float32(3.0) // half-width of the T-cap at the outward end
+
+	// dockConnectionPx is the rim-arc pixel reach used by nearDock to decide whether
+	// a candidate angle is "connected" to an existing dock. It is larger than the hard
+	// footprint exclusion radius (6 px) so an extension can be placed just outside the
+	// physical footprint of a shore dock while still being considered connected.
+	dockConnectionPx = 14.0
+
+	// Dive-reach wedge shown in dock placement preview.
+	dockWedgeHalfArc = 0.22         // angular half-width of the wedge (radians)
+	dockWedgeDepth   = float32(16)  // inward extent of the wedge from the rim (px)
+
 	// ── system view / abstract production
 	echoRateFracA       = 0.55 // echo A rate as fraction of starting planet's snapshotted rate
 	echoRateFracB       = 0.45 // echo B rate — slightly lower for variance

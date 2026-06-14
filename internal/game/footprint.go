@@ -9,6 +9,18 @@ func buildingHardHalfArc(kind BuildingKind, radius float64) float64 {
 	return 6 / radius
 }
 
+// dockCoversAngle reports whether any placed dock building's footprint covers angle.
+// Used by arcCost to skip the lake-speed penalty on docked water-rim segments.
+func dockCoversAngle(w *World, angle float64) bool {
+	half := buildingHardHalfArc(KindDock, w.Planet.Radius)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock && math.Abs(normAngle(b.Angle-angle)) <= half {
+			return true
+		}
+	}
+	return false
+}
+
 func nodeBuildingBlockHalfArc(node *ResourceNode, radius float64) float64 {
 	return (4*node.Size + 2) / radius
 }
