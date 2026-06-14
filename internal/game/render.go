@@ -64,6 +64,9 @@ var (
 	colRouteClaimed  = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
 	colPreviewLens   = color.RGBA{R: 125, G: 145, B: 170, A: 16}
 	colPreviewDebug  = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
+
+	colInfluenceDebugFill = color.RGBA{R: 20, G: 60, B: 160, A: 28}  // debug-only: transparent blue wedge for KindWaterInfluence
+	colInfluenceDebugEdge = color.RGBA{R: 55, G: 130, B: 215, A: 80} // debug-only: water-blue rim
 )
 
 // planetViewPalette holds the planet-view colors that vary by planet identity.
@@ -223,6 +226,12 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// Resource field interior fill: stable composition, not node-spawn progress.
 	for _, f := range w.Planet.Fields {
 		drawResourceFieldFill(scene, w.Planet, f, r-rimWidth)
+		if debug && f.Kind == KindWaterInfluence {
+			start := f.CenterAngle - f.HalfArc
+			end := f.CenterAngle + f.HalfArc
+			drawFilledSector(scene, cx, cy, r-rimWidth, start, end, colInfluenceDebugFill)
+			drawFieldSectorBand(scene, cx, cy, r-rimWidth-0.5, 1.5, start, end, colInfluenceDebugEdge)
+		}
 		if len(w.Buildings) == 0 {
 			drawPreFoundingPulse(scene, w.Planet, f, r, w.SimTime)
 		}

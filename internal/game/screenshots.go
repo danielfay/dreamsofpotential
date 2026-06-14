@@ -70,6 +70,7 @@ func screenshotScenarios() []screenshotScenario {
 		tightGroveFreshScenario(),
 		lakewoodNearCompleteScenario(),
 		systemViewLakewoodCompletedScenario(),
+		lakewoodDebugInfluenceScenario(),
 		systemViewUnknownWaterResonanceScenario(),
 	}
 }
@@ -492,6 +493,18 @@ func lakewoodNearCompleteScenario() screenshotScenario {
 		Wood:                &wood,
 	})
 	return screenshotScenario{name: "26-lakewood-near-complete", world: w, fullHUD: true}
+}
+
+func lakewoodDebugInfluenceScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes: []int{1},
+		EnterPlanet:  intPtr(1),
+		Wood:         &wood,
+	})
+	return screenshotScenario{name: "28-lakewood-debug-influence", world: w, fullHUD: true, debug: true}
 }
 
 func systemViewLakewoodCompletedScenario() screenshotScenario {
