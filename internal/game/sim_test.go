@@ -2373,6 +2373,151 @@ func TestWaterInfluence_DoesNotBlockSpawning(t *testing.T) {
 	}
 }
 
+// ── Frontier awakening tests ──────────────────────────────────────────────────
+
+func TestCanAwaken_FrontierRequiresBothPotentials(t *testing.T) {
+	w := newRevealedWorld()
+
+	// Neither potential — cannot awaken.
+	w.Economy.Potential[PotentialForest] = 0
+	w.Economy.Potential[PotentialWater] = 0
+	if canAwaken(w, 3) {
+		t.Error("canAwaken(frontier): should be false with 0 Forest and 0 Water")
+	}
+
+	// Only Forest — still cannot awaken (missing Water).
+	w.Economy.Potential[PotentialForest] = 1
+	if canAwaken(w, 3) {
+		t.Error("canAwaken(frontier): should be false with only Forest Potential")
+	}
+
+	// Only Water — still cannot awaken (missing Forest).
+	w.Economy.Potential[PotentialForest] = 0
+	w.Economy.Potential[PotentialWater] = 1
+	if canAwaken(w, 3) {
+		t.Error("canAwaken(frontier): should be false with only Water Potential")
+	}
+
+	// Both present — can awaken.
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	if !canAwaken(w, 3) {
+		t.Error("canAwaken(frontier): should be true with 1 Forest and 1 Water Potential")
+	}
+}
+
+func TestAwakenPlanet_FrontierSpendsBothPotentials(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	startWood := w.Economy.Wood
+
+	awakenPlanet(w, 3)
+
+	if !w.System.Planets[3].Awakened {
+		t.Fatal("frontier (Planets[3]) should be Awakened after awakenPlanet")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 0 {
+		t.Errorf("Forest Potential after frontier awaken: got %d, want 0", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 0 {
+		t.Errorf("Water Potential after frontier awaken: got %d, want 0", got)
+	}
+	if w.Economy.Wood != startWood {
+		t.Errorf("Wood changed after frontier awaken: got %.2f, want %.2f", w.Economy.Wood, startWood)
+	}
+	if w.PlanetStates[3] == nil {
+		t.Fatal("PlanetStates[3] should be non-nil after awakening the frontier")
+	}
+}
+
+func TestAwakenPlanet_FrontierZoomableWhenAwakened(t *testing.T) {
+	w := newRevealedWorld()
+	if w.System.Planets[3].zoomable() {
+		t.Error("frontier should not be zoomable before awakening")
+	}
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	awakenPlanet(w, 3)
+	if !w.System.Planets[3].zoomable() {
+		t.Error("frontier should be zoomable after awakening")
+	}
+}
+
+func TestCanAwaken_EchoUnchangedByFrontierLogic(t *testing.T) {
+	w := newRevealedWorld()
+	// Echo (idx 1) still requires only Forest Potential — Water should not affect it.
+	w.Economy.Potential[PotentialForest] = 0
+	w.Economy.Potential[PotentialWater] = 5 // Water present but irrelevant for echoes
+	if canAwaken(w, 1) {
+		t.Error("canAwaken(echo): should be false with 0 Forest Potential even if Water is present")
+	}
+	w.Economy.Potential[PotentialForest] = 1
+	if !canAwaken(w, 1) {
+		t.Error("canAwaken(echo): should be true with 1 Forest Potential")
+	}
+}
+
+func TestAwakenPlanet_FrontierCreatesValidPlanetState(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	awakenPlanet(w, 3)
+
+	ps := w.PlanetStates[3]
+	if ps == nil {
+		t.Fatal("PlanetStates[3] is nil")
+	}
+	if ps.Planet.Radius <= 0 {
+		t.Errorf("frontier planet radius: got %f, want > 0", ps.Planet.Radius)
+	}
+	hasForest := false
+	hasWater := false
+	for _, f := range ps.Planet.Fields {
+		switch f.Kind {
+		case KindWood:
+			hasForest = true
+		case KindWater:
+			hasWater = true
+		}
+	}
+	if !hasForest {
+		t.Error("frontier planet state should have a KindWood field")
+	}
+	if !hasWater {
+		t.Error("frontier planet state should have a KindWater field")
+	}
+}
+
+func TestAbstractWaterIncome_ZeroWhenNoPlanetProduces(t *testing.T) {
+	w := newRevealedWorld()
+	// No planet has AbstractWaterRate set; income must be 0.
+	if got := abstractWaterIncome(w); got != 0 {
+		t.Errorf("abstractWaterIncome: got %f, want 0 when no rates set", got)
+	}
+}
+
+func TestAbstractWaterIncome_SumsNonActivePlanets(t *testing.T) {
+	w := newRevealedWorld()
+	w.System.Planets[1].AbstractWaterRate = 2.5
+	w.System.Planets[2].AbstractWaterRate = 1.5
+
+	// In system view both contribute.
+	w.System.View = ViewSystem
+	got := abstractWaterIncome(w)
+	if math.Abs(got-4.0) > 1e-9 {
+		t.Errorf("abstractWaterIncome (system view): got %f, want 4.0", got)
+	}
+
+	// In planet view with planet 1 active, planet 1 is excluded.
+	w.System.View = ViewPlanet
+	w.Active = 1
+	got = abstractWaterIncome(w)
+	if math.Abs(got-1.5) > 1e-9 {
+		t.Errorf("abstractWaterIncome (planet view, active=1): got %f, want 1.5", got)
+	}
+}
+
 func TestWaterInfluence_NoSpuriousWaterPotential(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1

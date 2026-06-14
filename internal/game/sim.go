@@ -551,6 +551,12 @@ func EstimateRate(w *World) float64 {
 	return rate
 }
 
+// EstimateWaterRate returns the analytic water/sec for active water workers.
+// Stub returning 0 until water harvesting workers are implemented in Phase 5.
+func EstimateWaterRate(_ *World) float64 {
+	return 0
+}
+
 func activeWorkerCount(w *World) int {
 	active := 0
 	for _, wk := range w.Workers {
@@ -954,6 +960,22 @@ func abstractIncome(w *World) float64 {
 	return total
 }
 
+// abstractWaterIncome returns total abstract water/sec from all non-active producing planets.
+// Mirrors abstractIncome but sums AbstractWaterRate instead of AbstractRate.
+func abstractWaterIncome(w *World) float64 {
+	var total float64
+	for i, p := range w.System.Planets {
+		if p.Kind == PlanetUnknown {
+			continue
+		}
+		if w.System.View == ViewPlanet && i == w.Active {
+			continue
+		}
+		total += p.AbstractWaterRate
+	}
+	return total
+}
+
 // allEchoesComplete reports whether every echo planet in the system is completed.
 func allEchoesComplete(w *World) bool {
 	for _, p := range w.System.Planets {
@@ -983,27 +1005,53 @@ func checkActivePlanetCompletion(w *World) {
 	}
 }
 
-// canAwaken reports whether the echo planet at idx can be awakened right now.
+// planetAwakenCost returns the Potential cost to awaken the planet at idx.
+// Echo planets cost 1 Forest Potential; the unknown frontier costs 1 Forest + 1 Water Potential.
+func planetAwakenCost(w *World, idx int) map[PotentialKind]int {
+	if idx >= 0 && idx < len(w.System.Planets) && w.System.Planets[idx].Kind == PlanetUnknown {
+		return map[PotentialKind]int{PotentialForest: 1, PotentialWater: 1}
+	}
+	return map[PotentialKind]int{PotentialForest: 1}
+}
+
+// canAwaken reports whether the planet at idx can be awakened right now.
+// Echoes require 1 Forest Potential; the unknown frontier requires 1 Forest + 1 Water Potential.
 func canAwaken(w *World, idx int) bool {
 	if idx < 0 || idx >= len(w.System.Planets) {
 		return false
 	}
 	p := w.System.Planets[idx]
-	return p.Kind == PlanetEcho && !p.Awakened && w.Economy.Potential[PotentialForest] >= 1
+	if p.Awakened {
+		return false
+	}
+	if p.Kind != PlanetEcho && p.Kind != PlanetUnknown {
+		return false
+	}
+	for kind, cost := range planetAwakenCost(w, idx) {
+		if w.Economy.Potential[kind] < cost {
+			return false
+		}
+	}
+	return true
 }
 
-// awakenPlanet spends 1 Forest Potential to awaken the echo planet at idx,
+// awakenPlanet spends the required Potential to awaken the planet at idx,
 // creating its durable live state. The player stays in system view (no auto-zoom).
-// The echo keeps its original abstract rate until completion.
 func awakenPlanet(w *World, idx int) {
 	if !canAwaken(w, idx) {
 		return
 	}
-	w.Economy.Potential[PotentialForest]--
-	layoutID := w.System.Planets[idx].RingColorIdx
-	w.System.Planets[idx].Awakened = true
-	w.System.Planets[idx].LayoutID = layoutID
-	w.PlanetStates[idx] = newEchoPlanetState(layoutID)
+	for kind, cost := range planetAwakenCost(w, idx) {
+		w.Economy.Potential[kind] -= cost
+	}
+	p := &w.System.Planets[idx]
+	p.Awakened = true
+	if p.Kind == PlanetUnknown {
+		w.PlanetStates[idx] = newWaterFrontierState()
+	} else {
+		p.LayoutID = p.RingColorIdx
+		w.PlanetStates[idx] = newEchoPlanetState(p.LayoutID)
+	}
 }
 
 // awardCompletionPotential grants 1 Potential token per distinct resource kind
@@ -1066,8 +1114,9 @@ func enterPlanetView(w *World) {
 // Returns true exactly once: on the tick that triggers the unlock reveal.
 func Tick(w *World, dt float64) (justUnlocked bool) {
 	if w.System.Unlocked && w.System.View == ViewSystem {
-		// System view: live sim is frozen; abstract producers add wood.
+		// System view: live sim is frozen; abstract producers add wood and water.
 		w.Economy.Wood += abstractIncome(w) * dt
+		w.Economy.Water += abstractWaterIncome(w) * dt
 		return false
 	}
 	// Planet view (or pre-unlock): run the live sim.
@@ -1075,6 +1124,7 @@ func Tick(w *World, dt float64) (justUnlocked bool) {
 	if w.System.Unlocked {
 		// Post-unlock planet view: abstract income + check for echo completion + rate ratchet.
 		w.Economy.Wood += abstractIncome(w) * dt
+		w.Economy.Water += abstractWaterIncome(w) * dt
 		checkActivePlanetCompletion(w)
 		updateActiveAbstractRate(w, dt)
 		return false

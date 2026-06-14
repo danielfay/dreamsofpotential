@@ -82,12 +82,19 @@ const (
 	waterForestSpawnSizeBonus   = 0.25 // fixed size added to a forest node spawned inside water influence
 	waterForestUpgradeSizeBonus = 0.10 // extra size on top of the normal +0.15 upgrade when influenced
 
+	// ── Water Frontier (PlanetUnknown awakened) ──────────────────────────────────
+	// Phase 1 placeholder geometry; full authored layout with exact arcs in Phase 2.
+	waterFrontierRadius     = lakewoodRadius    // reuse echo radius as initial placeholder
+	waterFrontierShoreAngle = -math.Pi / 2     // top of rim (–90°) — tiny forest shore
+	waterFrontierShoreArc   = math.Pi / 4      // 45° half-arc
+	waterFrontierLakeAngle  = math.Pi / 4      // quarter-turn CW from shore
+	waterFrontierLakeArc    = 3 * math.Pi / 4  // 135° half-arc — large water interior
+
 	// ── system view / abstract production
-	echoRateFracA       = 0.55  // echo A rate as fraction of starting planet's snapshotted rate
-	echoRateFracB       = 0.45  // echo B rate — slightly lower for variance
-	revealDuration      = 3.5   // seconds for the one-time unlock reveal animation
-	awakenCost          = 500.0 // global wood to awaken a dormant echo planet
-	completionAmplifier = 1.25  // echo AbstractRate multiplier on completion
+	echoRateFracA       = 0.55 // echo A rate as fraction of starting planet's snapshotted rate
+	echoRateFracB       = 0.45 // echo B rate — slightly lower for variance
+	revealDuration      = 3.5  // seconds for the one-time unlock reveal animation
+	completionAmplifier = 1.25 // echo AbstractRate multiplier on completion
 
 	// Rolling window that ratchets AbstractRate upward at runtime (monotonic, raise-only).
 	// The window prevents enter/exit fishing: the sustained floor must exceed the stored rate

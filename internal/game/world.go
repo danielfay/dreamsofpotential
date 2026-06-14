@@ -133,21 +133,22 @@ const (
 // set at first completion for the starting planet, fixed at boot for echoes.
 // Seed is reserved for future world generation. Pos/Radius are in 320×240 virtual space.
 type SystemPlanet struct {
-	Kind         PlanetKind
-	Pos          Vec
-	Radius       float64
-	AbstractRate float64
-	RingColorIdx int   // 0 or 1 — slight visual variation between the two echoes
-	Seed         int64 // future world-generation hook
-	Awakened     bool    // echo has been awoken (has a durable live PlanetState)
-	Completed    bool    // echo reached its completion gate
-	CompletedAt  float64 // planet SimTime when completion triggered; drives atmosphere intro
-	LayoutID     int     // which authored echo layout (0 or 1)
+	Kind              PlanetKind
+	Pos               Vec
+	Radius            float64
+	AbstractRate      float64
+	AbstractWaterRate float64 // water/sec contributed to the global bank; set on completion
+	RingColorIdx      int     // 0 or 1 — slight visual variation between the two echoes
+	Seed              int64   // future world-generation hook
+	Awakened          bool    // echo or frontier has been awoken (has a durable live PlanetState)
+	Completed         bool    // reached its completion gate
+	CompletedAt       float64 // planet SimTime when completion triggered; drives atmosphere intro
+	LayoutID          int     // which authored layout (0 or 1)
 }
 
 // zoomable reports whether this planet has a live sim the player can zoom into.
 func (p SystemPlanet) zoomable() bool {
-	return p.Kind == PlanetStarting || (p.Kind == PlanetEcho && p.Awakened)
+	return p.Kind == PlanetStarting || (p.Awakened && (p.Kind == PlanetEcho || p.Kind == PlanetUnknown))
 }
 
 // PlanetState is one planet's durable live sim state when it is NOT the active
@@ -268,7 +269,9 @@ func normAngle(a float64) float64 {
 
 // Economy tracks global resource counts and purchase history.
 type Economy struct {
-	Wood           float64
+	Wood            float64
+	Water           float64 // harvested blue water material; revealed on first dock delivery
+	WaterDiscovered bool    // true after the first water delivery (controls HUD visibility)
 	WorkerCapacity int // total worker slots unlocked (founding slot + paid capacity)
 	CapacityBought int // paid capacity purchases; drives the cost curve
 	CampsBought    int
@@ -281,7 +284,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 13
+const SaveVersion = 14
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -784,6 +787,38 @@ func newLakewoodState(center Vec) *PlanetState {
 			Radius:      lakewoodRadius,
 			Composition: map[ResourceKind]float64{KindWood: 1.0},
 			Fields:      []*ResourceField{mainForest, islandForest, largeLake, smallLake, largeLakeInfluence, smallLakeInfluence},
+			FieldProgress: map[ResourceKind]*KindProgress{
+				KindWood: {Cap: woodFieldBaseEXP},
+			},
+		},
+		TownGrowthCap: townGrowthBaseCap,
+	}
+}
+
+// newWaterFrontierState returns the initial durable live state for the awakened
+// water frontier planet. Phase 1 provides a minimal loadable placeholder; the full
+// authored layout (shore angles, lake arcs, exact field sizes) is fleshed out in Phase 2.
+func newWaterFrontierState() *PlanetState {
+	center := Vec{X: 160, Y: 120}
+	return &PlanetState{
+		Planet: Planet{
+			Center:      center,
+			Radius:      waterFrontierRadius,
+			Composition: map[ResourceKind]float64{KindWood: 0.4, KindWater: 0.6},
+			Fields: []*ResourceField{
+				{
+					Kind:        KindWood,
+					CenterAngle: waterFrontierShoreAngle,
+					HalfArc:     waterFrontierShoreArc,
+					Known:       true,
+				},
+				{
+					Kind:        KindWater,
+					CenterAngle: waterFrontierLakeAngle,
+					HalfArc:     waterFrontierLakeArc,
+					Known:       false, // not harvestable until Phase 2/4
+				},
+			},
 			FieldProgress: map[ResourceKind]*KindProgress{
 				KindWood: {Cap: woodFieldBaseEXP},
 			},
