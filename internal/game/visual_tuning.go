@@ -74,7 +74,7 @@ var (
 	// Building / UI button colours.
 	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // town hall — warm terracotta
 	colBuilding     = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // camp — dark brown
-	colDock         = color.RGBA{R: 90, G: 140, B: 185, A: 255} // dock — blue-grey plank
+	colDock         = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // dock — camp brown
 	colTownCapacity = color.RGBA{R: 205, G: 105, B: 48, A: 255} // town capacity button — lighter orange
 )
 

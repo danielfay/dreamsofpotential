@@ -86,11 +86,11 @@ const (
 	// Shore (90° arc) + lake (270° arc) tile the full ring. Shore is at the top,
 	// lake wraps the bottom/sides. Fields edge-to-edge: shore ends at ±135°, lake starts there.
 	waterFrontierRadius     = lakewoodRadius
-	waterFrontierShoreAngle = -math.Pi / 2    // top of rim (–90°) — tiny forest shore
-	waterFrontierShoreArc   = math.Pi / 4     // 45° half-arc → 90° arc total
-	waterFrontierLakeAngle  = math.Pi / 2     // 90° — tiles edge-to-edge with shore
-	waterFrontierLakeArc    = 3 * math.Pi / 4 // 135° half-arc → 270° arc total (dominant water field)
-	waterFrontierStartNodes = 2               // TH + flanking pair only — tiny shore leaves minimal camp room
+	waterFrontierShoreAngle = -math.Pi / 2     // top of rim (–90°) — tiny forest shore
+	waterFrontierShoreArc   = math.Pi / 4      // 45° half-arc → 90° arc total
+	waterFrontierLakeAngle  = math.Pi / 2      // 90° — tiles edge-to-edge with shore
+	waterFrontierLakeArc    = 3 * math.Pi / 4  // 135° half-arc → 270° arc total (dominant water field)
+	waterFrontierStartNodes = 2                // TH + flanking pair only — tiny shore leaves minimal camp room
 	waterFieldBaseEXP       = woodFieldBaseEXP // placeholder cap; Phase 4 will tune water-field growth rate
 
 	// ── Dock buildings ───────────────────────────────────────────────────────────
@@ -99,10 +99,11 @@ const (
 	dockExtWoodCost  = 100.0 // wood cost for an extension dock
 	dockExtWaterCost = 30.0  // water cost for an extension dock
 
-	// Dock art geometry (virtual pixels).
-	dockPlankHW  = float32(1.5) // half-width of the central plank (tangential)
-	dockPlankLen = float32(4.5) // half-length of the plank along outward radial
-	dockCapHW    = float32(3.0) // half-width of the T-cap at the outward end
+	// Dock art geometry (virtual pixels) — |_| shape on the rim.
+	dockDeckHalfLen = float32(6.5) // half-length of deck along rim tangent — covers gap to adjacent dock (min spacing = 12 px)
+	dockDeckHalfH   = float32(2.5) // half-thickness of deck (5 px total, sits inward from rim)
+	dockPostHalfW   = float32(0.8) // half-width of each end post (tangential)
+	dockPostHalfH   = float32(2.2) // half-height of each end post (outward)
 
 	// dockConnectionPx is the rim-arc pixel reach used by nearDock to decide whether
 	// a candidate angle is "connected" to an existing dock. It is larger than the hard
@@ -111,8 +112,8 @@ const (
 	dockConnectionPx = 14.0
 
 	// Dive-reach wedge shown in dock placement preview.
-	dockWedgeHalfArc = 0.22         // angular half-width of the wedge (radians)
-	dockWedgeDepth   = float32(16)  // inward extent of the wedge from the rim (px)
+	dockWedgeHalfArc = 0.22        // angular half-width of the wedge (radians)
+	dockWedgeDepth   = float32(16) // inward extent of the wedge from the rim (px)
 
 	// ── system view / abstract production
 	echoRateFracA       = 0.55 // echo A rate as fraction of starting planet's snapshotted rate

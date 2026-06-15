@@ -614,22 +614,25 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 		townHallBldHalfW, townHallBldHalfH, col)
 }
 
-// drawDockArt draws a T-shaped pier: a narrow plank along the outward radial with
-// a wider cap at the outward end, centered on the rim point.
+// drawDockArt draws a |_| dock on the rim: a flat deck along the tangent with a
+// short post at each end extending outward.
 func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA) {
 	pos := p.RimPoint(angle)
-	// Outward radial (away from planet center) and tangent along rim.
 	ox := float32(math.Cos(angle))
 	oy := float32(math.Sin(angle))
 	tx := float32(-math.Sin(angle))
 	ty := float32(math.Cos(angle))
 	cx, cy := float32(pos.X), float32(pos.Y)
-	// Central plank from rim outward.
-	drawOrientedRect(scene, cx, cy, tx, ty, ox, oy, dockPlankHW, dockPlankLen, col)
-	// T-cap at the outward tip.
-	tipX := cx + ox*dockPlankLen
-	tipY := cy + oy*dockPlankLen
-	drawOrientedRect(scene, tipX, tipY, tx, ty, ox, oy, dockCapHW, dockPlankHW, col)
+	// Deck along the rim tangent, offset inward so its outward edge is flush with the rim.
+	dcx := cx - ox*dockDeckHalfH
+	dcy := cy - oy*dockDeckHalfH
+	drawOrientedRect(scene, dcx, dcy, tx, ty, ox, oy, dockDeckHalfLen, dockDeckHalfH, col)
+	// Posts at each end, offset outward so they extend above the rim.
+	for _, s := range [...]float32{-1, 1} {
+		px := cx + tx*(s*dockDeckHalfLen) + ox*dockPostHalfH
+		py := cy + ty*(s*dockDeckHalfLen) + oy*dockPostHalfH
+		drawOrientedRect(scene, px, py, tx, ty, ox, oy, dockPostHalfW, dockPostHalfH, col)
+	}
 }
 
 // drawTownGrowthGauge draws a small progress bar below the Town Hall art,
