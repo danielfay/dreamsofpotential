@@ -242,8 +242,16 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// field but under nodes/buildings/workers so it transforms the planet interior.
 	drawTownField(scene, w, r-rimWidth)
 
-	// resource nodes — pine-tree shape; muted when in preview and unavailable
+	// resource nodes — interior sparkles as blue circles; rim nodes as pine trees
 	for _, n := range w.Nodes {
+		if n.Interior {
+			col := colSparkle
+			if pulseActive(w, n.Pulse) {
+				col = brighten(col, 45)
+			}
+			drawSparkle(scene, n, col, growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n))
+			continue
+		}
 		col := colNodeFree
 		if n.OwnerID != -1 {
 			col = colNodeClaimed
@@ -586,6 +594,16 @@ func drawPineTree(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visualSc
 	}
 }
 
+// drawSparkle draws an interior water sparkle as a filled circle at n.Pos.
+// Size and visualScale set the radius; alphaBoost brightens during growth cues.
+func drawSparkle(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visualScale float32, alphaBoost uint8) {
+	if alphaBoost > 0 {
+		col = brighten(col, alphaBoost)
+	}
+	r := float32(n.Size) * sparkleBaseDrawRadius * visualScale
+	vector.FillCircle(scene, float32(n.Pos.X), float32(n.Pos.Y), r, col, false)
+}
+
 // drawOrientedRect fills an axis-oriented-in-world-space rectangle defined by
 // its center (lx,ly), tangent direction (tx,ty), inward direction (ix,iy),
 // half-width hw along the tangent, and half-height hh along inward.
@@ -774,7 +792,10 @@ func drawResourceFieldPulse(scene *ebiten.Image, w *World, f *ResourceField, rad
 	inner := outer - radius*0.16
 	innerCol := color.RGBA{R: 95, G: 210, B: 108, A: uint8(float32(ringAlpha) * 0.55)}
 	outerCol := color.RGBA{R: 118, G: 235, B: 124, A: ringAlpha}
-	if w.growthCue.WaterInfluenced {
+	if w.growthCue.Kind == KindWater {
+		innerCol = color.RGBA{R: 50, G: 160, B: 220, A: uint8(float32(ringAlpha) * 0.55)}
+		outerCol = color.RGBA{R: 80, G: 190, B: 255, A: ringAlpha}
+	} else if w.growthCue.WaterInfluenced {
 		innerCol = color.RGBA{R: 45, G: 185, B: 140, A: uint8(float32(ringAlpha) * 0.55)}
 		outerCol = color.RGBA{R: 60, G: 200, B: 150, A: ringAlpha}
 	}

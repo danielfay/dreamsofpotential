@@ -93,6 +93,15 @@ const (
 	waterFrontierStartNodes = 2                // TH + flanking pair only — tiny shore leaves minimal camp room
 	waterFieldBaseEXP       = woodFieldBaseEXP // placeholder cap; Phase 4 will tune water-field growth rate
 
+	// ── Water sparkles (interior nodes) ─────────────────────────────────────────
+	// Interior water sparkles live in the field's pie-slice, not on the rim.
+	// sparkleInnerFrac / sparkleOuterFrac define the radial band (fraction of
+	// planet radius) available for placement, keeping sparkles off the center
+	// point and away from the rim ring.
+	sparkleInnerFrac        = 0.13  // minimum r as fraction of planet radius
+	sparkleOuterFrac        = 0.80  // maximum r — leaves room for the 4 px rim ring
+	sparkleSoftRadiusFactor = 3.5   // per-unit-Size soft-overlap radius (px)
+
 	// ── Dock buildings ───────────────────────────────────────────────────────────
 	// Shore dock cost (wood only) and extension dock costs (wood + water).
 	dockShoreCost    = 200.0 // wood cost to place a shore dock

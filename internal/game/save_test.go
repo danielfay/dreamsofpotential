@@ -513,6 +513,61 @@ func TestSaveLoadRoundTripFrontierAwakened(t *testing.T) {
 	}
 }
 
+// TestSaveLoadRoundTripInteriorSparkle verifies that Interior and ServicingDockID
+// survive a save/load cycle and that the sparkle's Pos is NOT expected to be on the rim.
+func TestSaveLoadRoundTripInteriorSparkle(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	result := spawnSparkle(w, f)
+	if result.Outcome != growthOutcomeSpawnedNode {
+		t.Fatalf("setup: spawnSparkle failed: outcome=%v", result.Outcome)
+	}
+	sparkle := findNode(w, result.NodeID)
+	if sparkle == nil {
+		t.Fatal("setup: sparkle not found after spawn")
+	}
+	wantPos := sparkle.Pos
+	wantAngle := sparkle.Angle
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	var gotSparkle *ResourceNode
+	for _, n := range got.Nodes {
+		if n.ID == sparkle.ID {
+			gotSparkle = n
+			break
+		}
+	}
+	if gotSparkle == nil {
+		t.Fatal("sparkle not found after load")
+	}
+	if !gotSparkle.Interior {
+		t.Error("Interior should be true after round-trip")
+	}
+	if gotSparkle.ServicingDockID != -1 {
+		t.Errorf("ServicingDockID: got %d, want -1", gotSparkle.ServicingDockID)
+	}
+	if gotSparkle.Pos != wantPos {
+		t.Errorf("Pos: got %v, want %v", gotSparkle.Pos, wantPos)
+	}
+	if gotSparkle.Angle != wantAngle {
+		t.Errorf("Angle: got %v, want %v", gotSparkle.Angle, wantAngle)
+	}
+	// Interior sparkle must NOT be on the rim.
+	dist := gotSparkle.Pos.Dist(got.Planet.Center)
+	if math.Abs(dist-got.Planet.Radius) < 1e-6 {
+		t.Errorf("interior sparkle Pos should not be on the rim (dist=%.4f, radius=%.4f)", dist, got.Planet.Radius)
+	}
+}
+
 // TestLoadVersionMismatch verifies that a save with a different version is
 // treated as missing (returns os.ErrNotExist) so the caller starts fresh.
 func TestLoadVersionMismatch(t *testing.T) {

@@ -55,6 +55,9 @@ var (
 	// Water-influenced growth cue tint — blue-green, event-local only.
 	colWaterGrowthTint = color.RGBA{R: 60, G: 200, B: 150, A: 255}
 
+	// Interior water sparkle node colour.
+	colSparkle = color.RGBA{R: 80, G: 190, B: 255, A: 240}
+
 	// Nurture attention pulse and confirm flash (alpha set per-frame).
 	colNurtureAttention = color.RGBA{R: 120, G: 255, B: 150, A: 255}
 	colNurtureConfirm   = color.RGBA{R: 200, G: 255, B: 210, A: 255}
@@ -79,6 +82,9 @@ var (
 )
 
 const (
+	// sparkleBaseDrawRadius is the visual radius (px) of a size-1 interior water sparkle.
+	sparkleBaseDrawRadius = float32(3.0)
+
 	// pulseDuration is how long (seconds) the unaffordable-cost flash lasts.
 	pulseDuration    = 0.4
 	microPulseTime   = 0.30 // seconds for worker/node/building activity pulse

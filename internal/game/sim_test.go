@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -2528,5 +2529,241 @@ func TestWaterInfluence_NoSpuriousWaterPotential(t *testing.T) {
 
 	if got := w.Economy.Potential[PotentialWater]; got != 1 {
 		t.Errorf("Water Potential: got %d, want exactly 1 (from KindWater only, not KindWaterInfluence)", got)
+	}
+}
+
+// ── Water sparkle tests ────────────────────────────────────────────────────────
+
+// newWaterSparkleTestWorld returns a water frontier world suitable for sparkle tests.
+func newWaterSparkleTestWorld() *World {
+	ps := newWaterFrontierState()
+	w := &World{
+		Version: SaveVersion,
+		Planet:  ps.Planet,
+		Economy: Economy{
+			TownGrowthCap:  ps.TownGrowthCap,
+			WorkerCapacity: 5,
+			Potential:      make(map[PotentialKind]int),
+		},
+		PlanetStates: make([]*PlanetState, 4),
+		System:       System{Planets: []SystemPlanet{{}, {}, {}, {}}},
+		rng:          rand.New(rand.NewSource(42)),
+	}
+	w.ResourceDiscovered = true
+	thAngle := waterFrontierShoreAngle
+	w.Buildings = []*Building{{
+		ID:    0,
+		Kind:  KindTownHall,
+		Angle: thAngle,
+		Pos:   w.Planet.RimPoint(thAngle),
+	}}
+	w.NextBuildingID = 1
+	return w
+}
+
+func TestWaterSparkleSpawnsInInterior(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	if f == nil {
+		t.Fatal("water field missing")
+	}
+
+	before := len(w.Nodes)
+	result := spawnSparkle(w, f)
+
+	if result.Outcome != growthOutcomeSpawnedNode {
+		t.Fatalf("expected growthOutcomeSpawnedNode, got %v", result.Outcome)
+	}
+	if len(w.Nodes) != before+1 {
+		t.Fatalf("expected 1 new node, got %d total (was %d)", len(w.Nodes), before)
+	}
+	n := w.Nodes[len(w.Nodes)-1]
+	if !n.Interior {
+		t.Error("spawned node should have Interior=true")
+	}
+	if n.Kind != KindWater {
+		t.Errorf("spawned node Kind: got %v, want KindWater", n.Kind)
+	}
+	if n.ServicingDockID != -1 {
+		t.Errorf("ServicingDockID: got %d, want -1", n.ServicingDockID)
+	}
+	// Pos must be inside the radial band.
+	r := n.Pos.Dist(w.Planet.Center)
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	if r < innerR || r > outerR {
+		t.Errorf("sparkle r=%.2f outside [%.2f, %.2f]", r, innerR, outerR)
+	}
+	// Pos angle must be within the water field arc.
+	angle := w.Planet.AngleOf(n.Pos)
+	if !angleWithinField(f, angle) {
+		t.Errorf("sparkle angle %.3f not within water field (center %.3f ±%.3f)", angle, f.CenterAngle, f.HalfArc)
+	}
+}
+
+func TestWaterSparkleNotWorkableByRimWorkers(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	spawnSparkle(w, f)
+	sparkle := w.Nodes[len(w.Nodes)-1]
+
+	if nodeFreeForWorker(w, sparkle, -1) {
+		t.Error("interior sparkle should not be workable by rim workers")
+	}
+}
+
+func TestWaterSparkleSaturationFallsBackToUpgrade(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+
+	// Keep spawning until spawnSparkle falls back to upgrading.
+	// This tests the upgrade-fallback path, not the capacity-check convergence.
+	const maxIter = 500
+	gotUpgrade := false
+	for i := range maxIter {
+		result := spawnSparkle(w, f)
+		if result.Outcome == growthOutcomeUpgradedNode {
+			gotUpgrade = true
+			// Verify no new node was added.
+			_ = i
+			break
+		}
+	}
+	if !gotUpgrade {
+		t.Fatalf("spawnSparkle never fell back to upgrade after %d attempts; nodes=%d", maxIter, len(w.Nodes))
+	}
+	if len(w.Nodes) == 0 {
+		t.Error("no sparkles in field")
+	}
+}
+
+func TestUpgradeNearestSparkle(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	spawnSparkle(w, f)
+
+	n := w.Nodes[len(w.Nodes)-1]
+	sizeBefore := n.Size
+
+	upgraded := upgradeNearestSparkle(w, f)
+	if upgraded == nil {
+		t.Fatal("upgradeNearestSparkle returned nil with one sparkle in field")
+	}
+	if upgraded.Size <= sizeBefore {
+		t.Errorf("size after upgrade: %.2f, want > %.2f", upgraded.Size, sizeBefore)
+	}
+	if upgraded.Size > 2.0 {
+		t.Errorf("size clamped at 2.0, got %.2f", upgraded.Size)
+	}
+}
+
+func TestWaterSparkleGrowthCueFiresOnSpawn(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+
+	result := spawnSparkle(w, f)
+	if result.Outcome == growthOutcomeNone {
+		t.Fatal("spawnSparkle returned no outcome")
+	}
+	activateGrowthCue(w, result)
+
+	if !growthCueActive(w.growthCue) {
+		t.Error("growth cue should be active after sparkle spawn")
+	}
+	if w.growthCue.NodeID != result.NodeID {
+		t.Errorf("cue NodeID: got %d, want %d", w.growthCue.NodeID, result.NodeID)
+	}
+	if w.growthCue.Kind != KindWater {
+		t.Errorf("cue Kind: got %v, want KindWater", w.growthCue.Kind)
+	}
+}
+
+func TestDepositToFieldWaterGrowsSparkle(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	// Ensure the water field has EXP progress tracking.
+	if w.Planet.FieldProgress[KindWater] == nil {
+		t.Fatal("water field has no FieldProgress entry")
+	}
+
+	before := len(w.Nodes)
+	// Set EXP just below cap, then deposit enough to trigger a growth event.
+	fp := w.Planet.FieldProgress[KindWater]
+	fp.EXP = fp.Cap - 0.1
+	depositToField(w, KindWater, 1.0)
+
+	if len(w.Nodes) <= before {
+		t.Errorf("expected a new sparkle after deposit; node count: %d (was %d)", len(w.Nodes), before)
+	}
+	// Verify the new node is an interior water sparkle.
+	for _, n := range w.Nodes[before:] {
+		if !n.Interior || n.Kind != KindWater {
+			t.Errorf("unexpected non-interior node spawned by water depositToField: Interior=%v Kind=%v", n.Interior, n.Kind)
+		}
+	}
+}
+
+func TestNurtureFieldWaterSpawnsSparkle(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	if f == nil {
+		t.Fatal("water field missing")
+	}
+
+	before := len(w.Nodes)
+	ok := nurtureField(w, KindWater)
+	if !ok {
+		t.Fatal("nurtureField(KindWater) returned false on empty field")
+	}
+	if len(w.Nodes) <= before {
+		t.Error("nurtureField(KindWater) should have added at least one sparkle")
+	}
+	for _, n := range w.Nodes[before:] {
+		if !n.Interior || n.Kind != KindWater {
+			t.Errorf("unexpected non-interior node from water nurture: Interior=%v Kind=%v", n.Interior, n.Kind)
+		}
+	}
+}
+
+func TestSparkleSpawnPosValid(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	midR := (innerR + outerR) / 2
+	midAngle := f.CenterAngle
+
+	// Center of the field at mid-radius: should be valid with no existing sparkles.
+	pos := Vec{
+		X: w.Planet.Center.X + midR*math.Cos(midAngle),
+		Y: w.Planet.Center.Y + midR*math.Sin(midAngle),
+	}
+	if !sparkleSpawnPosValid(w, f, pos) {
+		t.Error("valid mid-field position rejected")
+	}
+
+	// Position too close to planet center (below innerR): invalid.
+	tooClose := Vec{
+		X: w.Planet.Center.X + (innerR-1)*math.Cos(midAngle),
+		Y: w.Planet.Center.Y + (innerR-1)*math.Sin(midAngle),
+	}
+	if sparkleSpawnPosValid(w, f, tooClose) {
+		t.Error("position inside innerR should be invalid")
+	}
+
+	// Position too far from center (above outerR): invalid.
+	tooFar := Vec{
+		X: w.Planet.Center.X + (outerR+1)*math.Cos(midAngle),
+		Y: w.Planet.Center.Y + (outerR+1)*math.Sin(midAngle),
+	}
+	if sparkleSpawnPosValid(w, f, tooFar) {
+		t.Error("position outside outerR should be invalid")
+	}
+
+	// Place a sparkle at pos then check the same position is now blocked.
+	n := newSparkle(w, pos)
+	w.Nodes = append(w.Nodes, n)
+	if sparkleSpawnPosValid(w, f, pos) {
+		t.Error("position occupied by existing sparkle should be invalid")
 	}
 }

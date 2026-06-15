@@ -268,6 +268,9 @@ func bestFreeNode(w *World) *ResourceNode {
 }
 
 func nodeFreeForWorker(w *World, n *ResourceNode, workerID int) bool {
+	if n.Interior {
+		return false // interior sparkles can't be worked by rim workers until Phase 5
+	}
 	if n.OwnerID != -1 {
 		return false
 	}
@@ -407,13 +410,20 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 		if f == nil {
 			break
 		}
-		activateGrowthCue(w, spawnNode(w, f))
+		var result growthResult
+		if kind == KindWater {
+			result = spawnSparkle(w, f)
+		} else {
+			result = spawnNode(w, f)
+		}
+		activateGrowthCue(w, result)
 	}
 }
 
 // pickGrowthRegion selects a known region of the given kind to receive a new
-// spawn. Prefers regions that can still accept a tree; falls back to any known
-// region when all are saturated (spawnNode will upgrade the nearest node instead).
+// spawn. Prefers regions that can still accept a node/sparkle; falls back to
+// any known region when all are saturated (spawnNode/spawnSparkle handles the
+// upgrade path).
 func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
 	var eligible []*ResourceField
 	var fallback *ResourceField
@@ -424,7 +434,13 @@ func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
 		if fallback == nil {
 			fallback = f
 		}
-		if fieldCanSpawnNode(w, f) {
+		var canSpawn bool
+		if kind == KindWater {
+			canSpawn = waterFieldCanSpawnSparkle(w, f)
+		} else {
+			canSpawn = fieldCanSpawnNode(w, f)
+		}
+		if canSpawn {
 			eligible = append(eligible, f)
 		}
 	}
@@ -493,15 +509,29 @@ func nurtureGrowthCuePending(w *World) bool {
 	return growthCueActive(w.growthCue) || len(w.pendingGrowthCues) > 0
 }
 
-// nurtureField directly spawns up to nurtureTreesPerPress new trees across all
+// nurtureField directly spawns up to nurtureTreesPerPress new nodes across all
 // known regions of the given kind. Returns false if the resource is not yet
-// discovered, no known region can accept a tree, or a growth cue is already playing.
+// discovered, no known region exists, or a growth cue is already playing.
+// For KindWater, spawnSparkle handles interior placement; saturation upgrades.
 func nurtureField(w *World, kind ResourceKind) bool {
 	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
 		return false
 	}
 	f := pickGrowthRegion(w, kind)
-	if f == nil || !fieldCanSpawnNode(w, f) {
+	if f == nil {
+		return false
+	}
+	if kind == KindWater {
+		for range nurtureTreesPerPress {
+			f = pickGrowthRegion(w, kind)
+			if f == nil {
+				break
+			}
+			activateGrowthCue(w, spawnSparkle(w, f))
+		}
+		return true
+	}
+	if !fieldCanSpawnNode(w, f) {
 		return false
 	}
 	for range nurtureTreesPerPress {
