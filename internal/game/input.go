@@ -142,6 +142,21 @@ func (g *Game) handleInput() {
 	g.handlePlanetViewSystemReturn()
 
 	if !g.placing {
+		// Hit-test dock buildings for selection tray.
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			mx, my := ebiten.CursorPosition()
+			if !g.hud.pointInHUD(mx, my, g.debug) {
+				wp := g.screenToWorld(mx, my)
+				newSel := -1
+				for i, b := range g.world.Buildings {
+					if b.Kind == KindDock && wp.Dist(b.Pos) <= 6.0 {
+						newSel = i
+						break
+					}
+				}
+				g.selectedBuildingID = newSel
+			}
+		}
 		return
 	}
 
@@ -199,9 +214,14 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 	if !pv.Valid {
 		return false
 	}
+
+	id := w.NextBuildingID
+	w.NextBuildingID++
+
 	if len(w.Buildings) == 0 {
-		// Free Town Hall — does not consume CampsBought progression.
+		// Free Town Hall — does not consume cost progression.
 		w.Buildings = append(w.Buildings, &Building{
+			ID:    id,
 			Kind:  KindTownHall,
 			Angle: angle,
 			Pos:   w.Planet.RimPoint(angle),
@@ -214,6 +234,26 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		foundStartingNodes(w, angle)
 		return true
 	}
+
+	if pv.Kind == KindDock {
+		if !freePlacement {
+			if pv.Extension {
+				w.Economy.Wood -= dockExtWoodCost
+				w.Economy.Water -= dockExtWaterCost
+			} else {
+				w.Economy.Wood -= dockShoreCost
+			}
+		}
+		w.Buildings = append(w.Buildings, &Building{
+			ID:        id,
+			Kind:      KindDock,
+			Angle:     angle,
+			Pos:       w.Planet.RimPoint(angle),
+			Extension: pv.Extension,
+		})
+		return true
+	}
+
 	// Paid logging camp.
 	cost := CampCost(w)
 	if !freePlacement && w.Economy.Wood < cost {
@@ -224,6 +264,7 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		w.Economy.CampsBought++
 	}
 	w.Buildings = append(w.Buildings, &Building{
+		ID:    id,
 		Kind:  KindLoggingCamp,
 		Angle: angle,
 		Pos:   w.Planet.RimPoint(angle),

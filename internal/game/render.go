@@ -67,6 +67,7 @@ var (
 
 	colInfluenceDebugFill = color.RGBA{R: 20, G: 60, B: 160, A: 28}  // debug-only: transparent blue wedge for KindWaterInfluence
 	colInfluenceDebugEdge = color.RGBA{R: 55, G: 130, B: 215, A: 80} // debug-only: water-blue rim
+	colDockWedge          = color.RGBA{R: 80, G: 160, B: 220, A: 28} // dock placement: dive-reach wedge fill
 )
 
 // planetViewPalette holds the planet-view colors that vary by planet identity.
@@ -270,15 +271,22 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 
 	// buildings
 	for _, b := range w.Buildings {
-		col := colBuilding
-		if b.Kind == KindTownHall {
-			col = colTownHall
+		switch b.Kind {
+		case KindTownHall:
+			col := colTownHall
 			if pulseActive(w, b.Pulse) {
 				col = brighten(col, 40)
 			}
 			drawTownHallArt(scene, w.Planet, b.Angle, col)
 			drawTownGrowthGauge(scene, w.Planet, b, w.Economy.TownGrowth, w.Economy.TownGrowthCap)
-		} else {
+		case KindDock:
+			col := colDock
+			if pulseActive(w, b.Pulse) {
+				col = brighten(col, 40)
+			}
+			drawDockArt(scene, w.Planet, b.Angle, col)
+		default: // KindLoggingCamp
+			col := colBuilding
 			if pulseActive(w, b.Pulse) {
 				col = brighten(col, 40)
 			}
@@ -381,9 +389,19 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 		footprintWidth += float32(2 * pv.Reject)
 	}
 	drawRimArc(scene, planet, float32(pv.Angle-footprintHalf), float32(pv.Angle+footprintHalf), footprintWidth, footprintCol)
-	if pv.Kind == KindTownHall {
+	switch pv.Kind {
+	case KindTownHall:
 		drawTownHallArt(scene, planet, pv.Angle, col)
-	} else {
+	case KindDock:
+		// Dive-reach wedge: narrow inward sector showing worker reach from this dock.
+		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
+		wedgeR := radius - dockWedgeDepth
+		if wedgeR > 0 {
+			drawFilledSector(scene, cx, cy, wedgeR,
+				pv.Angle-dockWedgeHalfArc, pv.Angle+dockWedgeHalfArc, colDockWedge)
+		}
+		drawDockArt(scene, planet, pv.Angle, col)
+	default: // KindLoggingCamp
 		vector.FillRect(scene,
 			float32(pv.Pos.X)-campBldHalf, float32(pv.Pos.Y)-campBldHalf,
 			campBldSize, campBldSize, col, false)
@@ -594,6 +612,27 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 	ty := float32(math.Cos(angle))
 	drawOrientedRect(scene, float32(ip.X), float32(ip.Y), tx, ty, ix, iy,
 		townHallBldHalfW, townHallBldHalfH, col)
+}
+
+// drawDockArt draws a |_| dock on the rim: a flat deck along the tangent with a
+// short post at each end extending outward.
+func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA) {
+	pos := p.RimPoint(angle)
+	ox := float32(math.Cos(angle))
+	oy := float32(math.Sin(angle))
+	tx := float32(-math.Sin(angle))
+	ty := float32(math.Cos(angle))
+	cx, cy := float32(pos.X), float32(pos.Y)
+	// Deck along the rim tangent, offset inward so its outward edge is flush with the rim.
+	dcx := cx - ox*dockDeckHalfH
+	dcy := cy - oy*dockDeckHalfH
+	drawOrientedRect(scene, dcx, dcy, tx, ty, ox, oy, dockDeckHalfLen, dockDeckHalfH, col)
+	// Posts at each end, offset outward so they extend above the rim.
+	for _, s := range [...]float32{-1, 1} {
+		px := cx + tx*(s*dockDeckHalfLen) + ox*dockPostHalfH
+		py := cy + ty*(s*dockDeckHalfLen) + oy*dockPostHalfH
+		drawOrientedRect(scene, px, py, tx, ty, ox, oy, dockPostHalfW, dockPostHalfH, col)
+	}
 }
 
 // drawTownGrowthGauge draws a small progress bar below the Town Hall art,

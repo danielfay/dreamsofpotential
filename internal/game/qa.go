@@ -64,9 +64,10 @@ type QAPreset struct {
 	EnterPlanet *int `json:"enterPlanet"`
 
 	// Echo setup — applied to the entered planet when EnterPlanet is set.
-	EchoPlaceTownHall    bool `json:"echoPlaceTownHall"`
-	EchoFillTownCapacity bool `json:"echoFillTownCapacity"`
-	EchoNearSaturate     bool `json:"echoNearSaturate"` // leave exactly one spawn slot
+	EchoPlaceTownHall    bool      `json:"echoPlaceTownHall"`
+	EchoFillTownCapacity bool      `json:"echoFillTownCapacity"`
+	EchoNearSaturate     bool      `json:"echoNearSaturate"` // leave exactly one spawn slot
+	EchoDocks            []float64 `json:"echoDocks"`         // dock angles placed via free placement after EchoPlaceTownHall
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -284,6 +285,11 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		}
 		if p.EchoNearSaturate {
 			fillWoodFieldNodes(w, true)
+		}
+		for _, a := range p.EchoDocks {
+			if !placeBuildingWithFreePlacement(w, a, true) {
+				return nil, fmt.Errorf("echoDocks: failed to place dock at angle %.3f", a)
+			}
 		}
 	}
 

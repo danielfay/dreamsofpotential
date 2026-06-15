@@ -76,6 +76,7 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewFrontierAwakenableScenario(),
 		waterFrontierFreshScenario(),
 		systemViewFrontierAwakenedScenario(),
+		waterPlanetFirstDockScenario(),
 	}
 }
 
@@ -588,6 +589,32 @@ func systemViewFrontierAwakenedScenario() screenshotScenario {
 		Wood:           &wood,
 	})
 	return screenshotScenario{name: "32-system-view-frontier-awakened", world: w, fullHUD: true}
+}
+
+func waterPlanetFirstDockScenario() screenshotScenario {
+	wood := 500.0
+	enter := 3
+	// Shore boundary on water frontier is at ±waterFrontierShoreArc from waterFrontierShoreAngle.
+	// The shore/water edge is at waterFrontierShoreAngle + waterFrontierShoreArc ≈ -π/2 + π/4 = -π/4.
+	dockAngle := waterFrontierShoreAngle + waterFrontierShoreArc - 0.05 // just inside water at the shore edge
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		AwakenFrontier: true,
+		EnterPlanet:    &enter,
+		EchoPlaceTownHall: true,
+		EchoDocks:      []float64{dockAngle},
+		Wood:           &wood,
+	})
+	// Select the dock so the tray is visible.
+	for i, b := range w.Buildings {
+		if b.Kind == KindDock {
+			_ = i // selectedBuildingID lives in Game, not World — tray not shown in screenshot
+			break
+		}
+	}
+	return screenshotScenario{name: "33-water-planet-first-dock", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }
