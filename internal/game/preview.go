@@ -182,7 +182,7 @@ func dockPreview(w *World, angle float64, freePlacement bool,
 	reserved []*ResourceNode, reservedTotal int,
 ) placementPreview {
 	half := buildingHardHalfArc(KindDock, w.Planet.Radius)
-	blocked := placementBlockedNodes(w, KindDock, angle)
+	// Docks are terrain — node footprints never block them.
 	blockedBuildings := placementBlockedBuildings(w, KindDock, angle)
 
 	extension := false
@@ -210,12 +210,11 @@ func dockPreview(w *World, angle float64, freePlacement bool,
 			ClaimedTotal:     claimedTotal,
 			Reserved:         reserved,
 			ReservedTotal:    reservedTotal,
-			Blocked:          blocked,
 			BlockedBuildings: blockedBuildings,
 		}
 	}
 
-	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0
+	valid := affordable && len(blockedBuildings) == 0
 	return placementPreview{
 		Kind:             KindDock,
 		Extension:        extension,
@@ -229,7 +228,6 @@ func dockPreview(w *World, angle float64, freePlacement bool,
 		ClaimedTotal:     claimedTotal,
 		Reserved:         reserved,
 		ReservedTotal:    reservedTotal,
-		Blocked:          blocked,
 		BlockedBuildings: blockedBuildings,
 	}
 }
