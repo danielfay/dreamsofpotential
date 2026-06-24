@@ -1,0 +1,477 @@
+package game
+
+import "math"
+
+// depositToField increments the planet-level field EXP for kind and spawns a
+// new node each time EXP meets or exceeds the cap. The spawn target region is
+// chosen by pickGrowthRegion (random among eligible known regions of that kind).
+func depositToField(w *World, kind ResourceKind, amount float64) {
+	fp := w.Planet.FieldProgress[kind]
+	if fp == nil {
+		return
+	}
+	fp.EXP += amount
+	for fp.EXP >= fp.Cap {
+		fp.EXP -= fp.Cap
+		// Capped geometric: grow the threshold exponentially while the step is
+		// small, then switch to additive so late-game trees stay naturally reachable.
+		if step := fp.Cap * (woodFieldEXPGrowth - 1); step < woodFieldEXPMaxStep {
+			fp.Cap *= woodFieldEXPGrowth
+		} else {
+			fp.Cap += woodFieldEXPMaxStep
+		}
+		f := pickGrowthRegion(w, kind)
+		if f == nil {
+			break
+		}
+		var result growthResult
+		if kind == KindWater {
+			result = spawnSparkle(w, f)
+		} else {
+			result = spawnNode(w, f)
+		}
+		activateGrowthCue(w, result)
+	}
+}
+
+// pickGrowthRegion selects a known region of the given kind to receive a new
+// spawn. Prefers regions that can still accept a node/sparkle; falls back to
+// any known region when all are saturated (spawnNode/spawnSparkle handles the
+// upgrade path).
+func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
+	var eligible []*ResourceField
+	var fallback *ResourceField
+	for _, f := range w.Planet.Fields {
+		if f.Kind != kind || !f.Known {
+			continue
+		}
+		if fallback == nil {
+			fallback = f
+		}
+		var canSpawn bool
+		if kind == KindWater {
+			canSpawn = waterFieldCanSpawnSparkle(w, f)
+		} else {
+			canSpawn = fieldCanSpawnNode(w, f)
+		}
+		if canSpawn {
+			eligible = append(eligible, f)
+		}
+	}
+	if len(eligible) > 0 {
+		return eligible[w.rng.Intn(len(eligible))]
+	}
+	return fallback
+}
+
+func activateGrowthCue(w *World, result growthResult) {
+	if result.Outcome == growthOutcomeNone {
+		return
+	}
+	cue := growthCueState{
+		Outcome:         result.Outcome,
+		Kind:            result.Kind,
+		CenterAngle:     result.CenterAngle,
+		HalfArc:         result.HalfArc,
+		NodeID:          result.NodeID,
+		WaterInfluenced: result.WaterInfluenced,
+		GaugeRelease:    growthGaugeReleaseTime,
+		GaugeAfterglow:  growthGaugeAfterglowTime,
+		FieldDelay:      growthFieldPulseDelay,
+		FieldPulse:      growthFieldPulseTime,
+		NodeDelay:       growthNodeCueDelay,
+		NodeCue:         growthNodeCueTime,
+	}
+	if growthCueActive(w.growthCue) {
+		w.pendingGrowthCues = append(w.pendingGrowthCues, cue)
+		return
+	}
+	w.growthCue = cue
+}
+
+func tickGrowthCue(w *World, dt float64) {
+	if !growthCueActive(w.growthCue) {
+		startNextGrowthCue(w)
+	}
+	tickTimer(&w.growthCue.GaugeRelease, dt)
+	tickTimer(&w.growthCue.GaugeAfterglow, dt)
+	if w.growthCue.FieldDelay > 0 {
+		tickTimer(&w.growthCue.FieldDelay, dt)
+	} else {
+		tickTimer(&w.growthCue.FieldPulse, dt)
+	}
+	if w.growthCue.NodeDelay > 0 {
+		tickTimer(&w.growthCue.NodeDelay, dt)
+	} else {
+		tickTimer(&w.growthCue.NodeCue, dt)
+	}
+	if growthCueTimersDone(w.growthCue) {
+		w.growthCue = growthCueState{NodeID: -1}
+		startNextGrowthCue(w)
+	}
+}
+
+func growthCueActive(c growthCueState) bool {
+	return c.Outcome != growthOutcomeNone || !growthCueTimersDone(c)
+}
+
+func growthCueTimersDone(c growthCueState) bool {
+	return c.GaugeRelease == 0 &&
+		c.GaugeAfterglow == 0 &&
+		c.FieldDelay == 0 &&
+		c.FieldPulse == 0 &&
+		c.NodeDelay == 0 &&
+		c.NodeCue == 0
+}
+
+func startNextGrowthCue(w *World) {
+	if len(w.pendingGrowthCues) == 0 {
+		return
+	}
+	w.growthCue = w.pendingGrowthCues[0]
+	copy(w.pendingGrowthCues, w.pendingGrowthCues[1:])
+	w.pendingGrowthCues = w.pendingGrowthCues[:len(w.pendingGrowthCues)-1]
+}
+
+func upgradeAllFieldsForDebug(w *World) bool {
+	fp := w.Planet.FieldProgress[KindWood]
+	if fp == nil {
+		return false
+	}
+	amount := fp.Cap - fp.EXP
+	if amount <= 0 {
+		amount = fp.Cap
+	}
+	depositToField(w, KindWood, amount)
+	return true
+}
+
+func growAllFieldsUntilBlockedForDebug(w *World) bool {
+	const maxDebugGrowthSteps = 512
+	for i := 0; i < maxDebugGrowthSteps; i++ {
+		before := len(w.Nodes)
+		if !upgradeAllFieldsForDebug(w) {
+			return false
+		}
+		if len(w.Nodes) == before {
+			return true
+		}
+	}
+	return true
+}
+
+// nurtureGrowthCuePending reports whether a growth cue is currently playing or
+// queued. Nurture is blocked while cues are pending so each press has
+// unambiguous visual feedback before the next can fire.
+func nurtureGrowthCuePending(w *World) bool {
+	return growthCueActive(w.growthCue) || len(w.pendingGrowthCues) > 0
+}
+
+// nurtureField directly spawns up to nurtureTreesPerPress new nodes across all
+// known regions of the given kind. Returns false if the resource is not yet
+// discovered, no known region exists, or a growth cue is already playing.
+// For KindWater, spawnSparkle handles interior placement; saturation upgrades.
+func nurtureField(w *World, kind ResourceKind) bool {
+	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
+		return false
+	}
+	f := pickGrowthRegion(w, kind)
+	if f == nil {
+		return false
+	}
+	if kind == KindWater {
+		for range nurtureTreesPerPress {
+			f = pickGrowthRegion(w, kind)
+			if f == nil {
+				break
+			}
+			activateGrowthCue(w, spawnSparkle(w, f))
+		}
+		return true
+	}
+	if !fieldCanSpawnNode(w, f) {
+		return false
+	}
+	for range nurtureTreesPerPress {
+		f = pickGrowthRegion(w, kind)
+		if f == nil || !fieldCanSpawnNode(w, f) {
+			break
+		}
+		activateGrowthCue(w, spawnNode(w, f))
+	}
+	return true
+}
+
+// nurtureAttentionActive reports whether the Nurture button should show its
+// attention pulse. Fires once all worker slots are both purchased AND filled
+// with physical workers, any known region of that kind can still accept a tree,
+// and no growth cue is pending.
+func nurtureAttentionActive(w *World, kind ResourceKind) bool {
+	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
+		return false
+	}
+	f := pickGrowthRegion(w, kind)
+	if f == nil || !fieldCanSpawnNode(w, f) {
+		return false
+	}
+	slots := maxTownSlots(w)
+	return slots > 0 && townFieldFull(w) && len(w.Workers) >= slots
+}
+
+// EstimateRate returns the analytic resource/sec for all active workers.
+func EstimateRate(w *World) float64 {
+	var rate float64
+	for _, wk := range w.Workers {
+		if !workerInLoop(wk) {
+			continue
+		}
+		node := findNode(w, wk.NodeID)
+		if node == nil {
+			continue
+		}
+		dist := routeLen(w, node)
+		if dist == math.MaxFloat64 {
+			continue
+		}
+		tripTime := loadTime + unloadTime + 2*dist/workerSpeed
+		rate += (baseLoadAmount * node.Size * (1 - woodFieldReturnRatio)) / tripTime
+	}
+	return rate
+}
+
+// EstimateWaterRate returns the analytic water/sec for active water workers.
+func EstimateWaterRate(w *World) float64 {
+	var rate float64
+	th := townHall(w)
+	if th == nil {
+		return 0
+	}
+	for _, wk := range w.Workers {
+		if !workerInWaterLoop(wk) {
+			continue
+		}
+		dock := findBuilding(w, wk.DockID)
+		if dock == nil {
+			continue
+		}
+		sparkles := dockServiceableSparkles(w, dock)
+		if len(sparkles) == 0 {
+			continue
+		}
+		var totalCarry float64
+		for _, s := range sparkles {
+			totalCarry += baseLoadAmount * s.Size
+		}
+		rimDist := effectiveArc(w, th.Angle, dock.Angle) * 2
+		diveDist := math.Sqrt(float64(len(sparkles))) * 15.0
+		tripTime := (rimDist+diveDist)/workerSpeed + unloadTime
+		if tripTime > 0 {
+			rate += totalCarry * (1 - woodFieldReturnRatio) / tripTime
+		}
+	}
+	return rate
+}
+
+func activeWorkerCount(w *World) int {
+	active := 0
+	for _, wk := range w.Workers {
+		if workerInLoop(wk) {
+			active++
+		}
+	}
+	return active
+}
+
+// availableCapacity returns the number of unused worker slots (capacity minus
+// current worker count). Clamped to 0 so debug free-spawns past capacity
+// do not yield a negative value that could trigger spurious growth spawns.
+func availableCapacity(w *World) int {
+	avail := w.Economy.WorkerCapacity - len(w.Workers)
+	if avail < 0 {
+		return 0
+	}
+	return avail
+}
+
+// townFieldSlots returns the world positions of every potential dwelling slot
+// inside the town field, anchored to th.Angle and stepping inward by rows.
+// len() of the result is the planet's max worker capacity.
+// Returns nil if th is nil.
+func townFieldSlots(p Planet, th *Building) []Vec {
+	if th == nil {
+		return nil
+	}
+	cos := math.Cos(th.Angle)
+	sin := math.Sin(th.Angle)
+	inx, iny := -cos, -sin // inward unit vector (toward planet center)
+	tx, ty := -sin, cos    // tangent unit vector (counterclockwise along rim)
+
+	rim := p.RimPoint(th.Angle)
+	maxDepth := townFieldDepthFrac * p.Radius
+
+	var slots []Vec
+	for d := townFieldRimInset; d <= maxDepth; d += townFieldSlotSpacing {
+		arcLen := 2 * (p.Radius - d) * townFieldHalfArc
+		cols := int(arcLen / townFieldSlotSpacing)
+		if cols == 0 {
+			continue
+		}
+		for order := 0; order < cols; order++ {
+			col := townFieldColumnIndex(order, cols)
+			tangOffset := (float64(col) - float64(cols-1)/2) * townFieldSlotSpacing
+			slots = append(slots, Vec{
+				X: rim.X + inx*d + tx*tangOffset,
+				Y: rim.Y + iny*d + ty*tangOffset,
+			})
+		}
+	}
+	return slots
+}
+
+func townFieldColumnIndex(order, cols int) int {
+	centerLeft := (cols - 1) / 2
+	if order == 0 {
+		return centerLeft
+	}
+	step := (order + 1) / 2
+	if order%2 == 1 {
+		return centerLeft + step
+	}
+	return centerLeft - step
+}
+
+// maxTownSlots returns the geometry-derived maximum worker capacity for the
+// current planet. Returns 0 if no Town Hall exists.
+func maxTownSlots(w *World) int {
+	return len(townFieldSlots(w.Planet, townHall(w)))
+}
+
+// townFieldFull reports whether the town field has no remaining dwelling slots
+// to build — capacity purchases are blocked when this returns true.
+func townFieldFull(w *World) bool {
+	return townHall(w) != nil && w.Economy.WorkerCapacity >= maxTownSlots(w)
+}
+
+// townCapacityCost returns the wood cost of the next paid capacity slot.
+func townCapacityCost(w *World) float64 {
+	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
+}
+
+// addFreeCapacity unlocks one worker slot without spending wood. Debug-only.
+func addFreeCapacity(w *World) bool {
+	if townHall(w) == nil {
+		return false
+	}
+	if w.Economy.WorkerCapacity >= maxTownSlots(w) {
+		return false
+	}
+	w.Economy.WorkerCapacity++
+	w.Economy.CapacityBought++
+	tryConsumeGrowth(w)
+	return true
+}
+
+// buildTownCapacity spends wood to unlock one worker slot. Calls
+// tryConsumeGrowth so a worker arrives immediately if growth is already full.
+func buildTownCapacity(w *World) bool {
+	if townHall(w) == nil {
+		return false
+	}
+	if w.Economy.WorkerCapacity >= maxTownSlots(w) {
+		return false
+	}
+	cost := townCapacityCost(w)
+	if w.Economy.Wood < cost {
+		return false
+	}
+	w.Economy.Wood -= cost
+	w.Economy.WorkerCapacity++
+	w.Economy.CapacityBought++
+	tryConsumeGrowth(w)
+	return true
+}
+
+// tryConsumeGrowth spawns at most one worker when Town Growth has reached its
+// cap and a slot is free, then resets growth and raises the cap.
+//
+// When all slots are filled but more can be purchased, excess growth is banked
+// in TownGrowthOverflow instead of discarded; draining happens in
+// tickOverflowGrowth and after each spawn.
+//
+// When capacity is permanently full (townFieldFull && no available slots),
+// growth is clamped at cap and overflow is cleared.
+//
+// A workerSpawnCooldown prevents overflow from triggering rapid-fire spawns.
+func tryConsumeGrowth(w *World) bool {
+	if w.Economy.TownGrowth < w.Economy.TownGrowthCap {
+		return false
+	}
+	if availableCapacity(w) <= 0 {
+		if townFieldFull(w) {
+			// All slots bought and all workers spawned: clear overflow, stop tracking.
+			w.Economy.TownGrowth = w.Economy.TownGrowthCap
+			w.Economy.TownGrowthOverflow = 0
+		} else {
+			// Capacity full but more houses can still be purchased: bank overflow.
+			if excess := w.Economy.TownGrowth - w.Economy.TownGrowthCap; excess > 0 {
+				w.Economy.TownGrowthOverflow += excess
+			}
+			w.Economy.TownGrowth = w.Economy.TownGrowthCap
+		}
+		return false
+	}
+	// Enforce minimum gap between spawns so overflow doesn't burst all at once.
+	if w.Economy.LastWorkerSpawnTime > 0 && w.SimTime-w.Economy.LastWorkerSpawnTime < workerSpawnCooldown {
+		w.Economy.TownGrowth = w.Economy.TownGrowthCap
+		return false
+	}
+	// Bank any excess above the cap before resetting.
+	if excess := w.Economy.TownGrowth - w.Economy.TownGrowthCap; excess > 0 {
+		w.Economy.TownGrowthOverflow += excess
+	}
+	th := townHall(w)
+	if spawnWorkerAtTownHall(w) == nil {
+		return false
+	}
+	w.Economy.LastWorkerSpawnTime = w.SimTime
+	if th != nil {
+		activatePulse(w, &th.Pulse)
+	}
+	// Transition from the scripted first-lesson cap to the normal-play ramp.
+	// After that, grow geometrically like every other fill.
+	if w.Economy.TownGrowthCap < townGrowthBaseCap {
+		w.Economy.TownGrowthCap = townGrowthBaseCap
+	} else {
+		w.Economy.TownGrowthCap *= townGrowthCapGrowth
+	}
+	// Immediately drain overflow into the fresh gauge so the bar visually
+	// refills and the next spawn is ready once the cooldown expires.
+	w.Economy.TownGrowth = 0
+	if w.Economy.TownGrowthOverflow > 0 {
+		drain := math.Min(w.Economy.TownGrowthOverflow, w.Economy.TownGrowthCap)
+		w.Economy.TownGrowth = drain
+		w.Economy.TownGrowthOverflow -= drain
+	}
+	return true
+}
+
+// tickOverflowGrowth drains banked overflow into the growth gauge each tick
+// and tries to spawn once the cooldown has expired. This allows overflow-driven
+// spawns to proceed even when no delivery is incoming.
+func tickOverflowGrowth(w *World) {
+	if availableCapacity(w) <= 0 {
+		return
+	}
+	if w.Economy.TownGrowthOverflow > 0 {
+		if needed := w.Economy.TownGrowthCap - w.Economy.TownGrowth; needed > 0 {
+			drain := math.Min(w.Economy.TownGrowthOverflow, needed)
+			w.Economy.TownGrowth += drain
+			w.Economy.TownGrowthOverflow -= drain
+		}
+	}
+	tryConsumeGrowth(w)
+}
+
+func addFreeWorkerAtTownHall(w *World) bool {
+	return spawnWorkerAtTownHall(w) != nil
+}
