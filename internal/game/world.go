@@ -62,6 +62,7 @@ const (
 	StateToIdleSpot                        // stepping inward into idle home
 	StateToDock                            // moving along rim to claimed dock
 	StateDiving                            // moving interior straight-line to collect sparkles
+	StateDiveLoading                       // pausing at a sparkle to gather it (mirrors StateLoading)
 	StateSwimmingToDock                    // swimming back to dock after collecting all reachable sparkles
 	StateDockUnloading                     // unloading water cargo at the dock
 )
@@ -301,7 +302,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 17
+const SaveVersion = 18
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {

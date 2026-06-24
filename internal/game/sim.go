@@ -215,15 +215,34 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 		if moveStraightLine(&wk.Pos, target.Pos, workerSpeed*diveSpeedFactor*dt) {
 			target.OwnerID = wk.ID
 			target.ReservedByWorkerID = -1
-			wk.Carried += baseLoadAmount * target.Size
+			wk.State = StateDiveLoading
+			wk.Timer = loadTime
 			activatePulse(w, &wk.Pulse)
 			activatePulse(w, &target.Pulse)
+		}
+	case StateDiveLoading:
+		dock := findBuilding(w, wk.DockID)
+		if dock == nil {
+			releaseInteriorNodes(w, wk.ID)
+			wk.NodeID = -1
+			wk.DockID = -1
+			wk.Carried = 0
+			startReturnHome(w, wk)
+			return
+		}
+		target := findNode(w, wk.NodeID)
+		wk.Timer -= dt
+		if wk.Timer <= 0 {
+			if target != nil {
+				wk.Carried += baseLoadAmount * target.Size
+			}
 			next := nextDiveSparkle(w, dock, wk)
 			if next == nil {
 				returnToDockFromDive(w, wk, dock)
 				return
 			}
 			wk.NodeID = next.ID
+			wk.State = StateDiving
 		}
 	case StateSwimmingToDock:
 		dock := findBuilding(w, wk.DockID)
@@ -556,7 +575,7 @@ func dockServiceableSparkles(w *World, dock *Building) []*ResourceNode {
 // workerInWaterLoop reports whether a worker is in the dock→dive→unload cycle.
 func workerInWaterLoop(wk *Worker) bool {
 	switch wk.State {
-	case StateToDock, StateDiving, StateSwimmingToDock, StateDockUnloading:
+	case StateToDock, StateDiving, StateDiveLoading, StateSwimmingToDock, StateDockUnloading:
 		return true
 	}
 	return false
@@ -1202,7 +1221,7 @@ func updateWorkerPos(w *World, wk *Worker) {
 			wk.Angle = th.Angle
 			return
 		}
-	case StateDiving, StateSwimmingToDock:
+	case StateDiving, StateDiveLoading, StateSwimmingToDock:
 		return // interior position managed directly in stepWorker
 	}
 	wk.Pos = w.Planet.RimPoint(wk.Angle)

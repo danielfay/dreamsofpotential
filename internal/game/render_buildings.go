@@ -39,7 +39,7 @@ func workerColor(w *World, wk *Worker) color.RGBA {
 	}
 	if wk.DeliveryKind == KindDock {
 		switch wk.State {
-		case StateDiving, StateSwimmingToDock, StateDockUnloading:
+		case StateDiving, StateDiveLoading, StateSwimmingToDock, StateDockUnloading:
 			col = colWorkerLadenWater
 		default:
 			if wk.Carried > 0 {
