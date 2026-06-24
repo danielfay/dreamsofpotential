@@ -550,6 +550,35 @@ func (r *waterFrontierRunner) Setup(w *World) {
 	}
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 10000
+
+	// Place the shore dock up front so sparkle seeding and ownership work immediately.
+	dockAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, dockAngle, true) {
+		panic("waterFrontierRunner: cannot place shore dock")
+	}
+	r.dockPlaced = true
+
+	// Seed sparkles directly in the dock's reach wedge so the harvest loop
+	// starts immediately rather than waiting for random growth to land there.
+	wf := fieldForKind(w, KindWater)
+	if wf != nil {
+		innerR := w.Planet.Radius * sparkleInnerFrac
+		outerR := w.Planet.Radius * sparkleOuterFrac
+		midR := (innerR + outerR) / 2
+		for _, delta := range []float64{0.0, -0.08, 0.12} {
+			ang := normAngle(dockAngle + delta)
+			pos := Vec{
+				X: w.Planet.Center.X + midR*math.Cos(ang),
+				Y: w.Planet.Center.Y + midR*math.Sin(ang),
+			}
+			if sparkleSpawnPosValid(w, wf, pos) {
+				n := newSparkle(w, pos)
+				w.Nodes = append(w.Nodes, n)
+			}
+		}
+		assignServicingDocks(w)
+	}
+
 	r.prevWorkers = len(w.Workers)
 	r.prevSparkles = waterSparkleCount(w)
 }
@@ -567,21 +596,9 @@ func (r *waterFrontierRunner) PlayerAI(w *World) []string {
 	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
 		buildTownCapacity(w)
 	}
-	if !r.dockPlaced {
-		hasDock := false
-		for _, b := range w.Buildings {
-			if b.Kind == KindDock {
-				hasDock = true
-				break
-			}
-		}
-		if !hasDock && w.Economy.Wood >= dockShoreCost {
-			angle := shoreEdgeAngle()
-			if placeBuildingWithFreePlacement(w, angle, false) {
-				r.dockPlaced = true
-				events = append(events, fmt.Sprintf("+shore dock at %.2f", angle))
-			}
-		}
+	// Nurture the water field whenever possible so sparkles keep growing.
+	if r.dockPlaced {
+		nurtureField(w, KindWater)
 	}
 	return events
 }
