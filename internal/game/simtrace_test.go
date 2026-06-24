@@ -494,3 +494,136 @@ func woodTreeCount(w *World) int {
 	}
 	return n
 }
+
+func waterSparkleCount(w *World) int {
+	n := 0
+	for _, node := range w.Nodes {
+		if node.Interior && node.Kind == KindWater {
+			n++
+		}
+	}
+	return n
+}
+
+// ── Water frontier first delivery ────────────────────────────────────────────
+
+// TestSimTraceWaterFirstDelivery runs the water frontier from awakening through
+// the first water delivery, confirming that WaterDiscovered is set.
+func TestSimTraceWaterFirstDelivery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
+	runner := &waterFrontierRunner{}
+	w := runSimTrace(t, "water frontier — first delivery", 30, runner)
+	if !w.Economy.WaterDiscovered {
+		t.Error("WaterDiscovered should be true after sim trace completes")
+	}
+	t.Logf("water earned: %.2f  |  sparkles: %d", w.Economy.Water, waterSparkleCount(w))
+}
+
+type waterFrontierRunner struct {
+	prevWorkers     int
+	prevSparkles    int
+	dockPlaced      bool
+	waterDiscovered bool
+}
+
+func (r *waterFrontierRunner) Setup(w *World) {
+	f0 := fieldForKind(w, KindWood)
+	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
+		panic("waterFrontierRunner: cannot place starting TH")
+	}
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	addWorker(w)
+	fillWoodFieldNodes(w, false)
+	w.ResourceDiscovered = true
+	triggerUnlock(w)
+
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	awakenPlanet(w, 3)
+	switchToPlanet(w, 3)
+	enterPlanetView(w)
+
+	if !placeBuilding(w, waterFrontierShoreAngle) {
+		panic("waterFrontierRunner: cannot place frontier TH")
+	}
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 10000
+
+	// Place the shore dock up front so sparkle seeding and ownership work immediately.
+	dockAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, dockAngle, true) {
+		panic("waterFrontierRunner: cannot place shore dock")
+	}
+	r.dockPlaced = true
+
+	// Seed sparkles directly in the dock's reach wedge so the harvest loop
+	// starts immediately rather than waiting for random growth to land there.
+	wf := fieldForKind(w, KindWater)
+	if wf != nil {
+		innerR := w.Planet.Radius * sparkleInnerFrac
+		outerR := w.Planet.Radius * sparkleOuterFrac
+		midR := (innerR + outerR) / 2
+		for _, delta := range []float64{0.0, -0.08, 0.12} {
+			ang := normAngle(dockAngle + delta)
+			pos := Vec{
+				X: w.Planet.Center.X + midR*math.Cos(ang),
+				Y: w.Planet.Center.Y + midR*math.Sin(ang),
+			}
+			if sparkleSpawnPosValid(w, wf, pos) {
+				n := newSparkle(w, pos)
+				w.Nodes = append(w.Nodes, n)
+			}
+		}
+		assignServicingDocks(w)
+	}
+
+	r.prevWorkers = len(w.Workers)
+	r.prevSparkles = waterSparkleCount(w)
+}
+
+func (r *waterFrontierRunner) ColHeader() string {
+	return fmt.Sprintf("%-8s  %-8s  %-6s", "wood", "water", "sparkle")
+}
+
+func (r *waterFrontierRunner) ColRow(w *World) string {
+	return fmt.Sprintf("%-8.0f  %-8.2f  %-6d", w.Economy.Wood, w.Economy.Water, waterSparkleCount(w))
+}
+
+func (r *waterFrontierRunner) PlayerAI(w *World) []string {
+	var events []string
+	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+		buildTownCapacity(w)
+	}
+	// Nurture the water field whenever possible so sparkles keep growing.
+	if r.dockPlaced {
+		nurtureField(w, KindWater)
+	}
+	return events
+}
+
+func (r *waterFrontierRunner) Events(w *World) []string {
+	var events []string
+	if cur := len(w.Workers); cur != r.prevWorkers {
+		events = append(events, fmt.Sprintf("+worker → %d", cur))
+		r.prevWorkers = cur
+	}
+	if cur := waterSparkleCount(w); cur != r.prevSparkles {
+		events = append(events, fmt.Sprintf("+sparkle → %d", cur))
+		r.prevSparkles = cur
+	}
+	if !r.waterDiscovered && w.Economy.WaterDiscovered {
+		events = append(events, fmt.Sprintf("*** WATER DISCOVERED (water=%.2f) ***", w.Economy.Water))
+		r.waterDiscovered = true
+	}
+	return events
+}
+
+func (r *waterFrontierRunner) Complete(w *World) bool {
+	return w.Economy.WaterDiscovered
+}
+
+func (r *waterFrontierRunner) Summary(w *World) string {
+	return fmt.Sprintf("water=%.2f sparkles=%d", w.Economy.Water, waterSparkleCount(w))
+}

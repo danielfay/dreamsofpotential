@@ -2767,3 +2767,152 @@ func TestSparkleSpawnPosValid(t *testing.T) {
 		t.Error("position occupied by existing sparkle should be invalid")
 	}
 }
+
+// ── Water harvesting (Phase 5) ────────────────────────────────────────────────
+
+// newWaterHarvestFixture returns a water frontier world with a shore dock and
+// several sparkles already assigned to it, ready for harvest testing.
+func newWaterHarvestFixture(t *testing.T) *World {
+	t.Helper()
+	w := newWaterSparkleTestWorld()
+	shoreEdge := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreEdge, true) {
+		t.Fatal("newWaterHarvestFixture: could not place shore dock")
+	}
+	f := fieldForKind(w, KindWater)
+	if f == nil {
+		t.Fatal("newWaterHarvestFixture: no water field")
+	}
+	for range 3 {
+		spawnSparkle(w, f)
+	}
+	assignServicingDocks(w)
+	return w
+}
+
+// TestAssignServicingDocksInWedge verifies that sparkles within dockWedgeHalfArc of
+// the dock angle get ServicingDockID set to that dock's ID.
+func TestAssignServicingDocksInWedge(t *testing.T) {
+	w := newWaterHarvestFixture(t)
+
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("no dock found")
+	}
+
+	inWedge := 0
+	outWedge := 0
+	for _, n := range w.Nodes {
+		if !n.Interior || n.Kind != KindWater {
+			continue
+		}
+		if angularDistance(n.Angle, dock.Angle) <= dockWedgeHalfArc {
+			inWedge++
+			if n.ServicingDockID != dock.ID {
+				t.Errorf("sparkle within wedge has ServicingDockID=%d, want %d", n.ServicingDockID, dock.ID)
+			}
+		} else {
+			outWedge++
+			if n.ServicingDockID == dock.ID {
+				t.Errorf("sparkle outside wedge has ServicingDockID=%d (should not be assigned to this dock)", dock.ID)
+			}
+		}
+	}
+	t.Logf("sparkles in wedge: %d, out of wedge: %d", inWedge, outWedge)
+}
+
+// TestUnreachableSparklesUnserviced verifies that sparkles outside all dock wedges
+// have ServicingDockID == -1 after assignServicingDocks.
+func TestUnreachableSparklesUnserviced(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	if f == nil {
+		t.Fatal("no water field")
+	}
+	for range 5 {
+		spawnSparkle(w, f)
+	}
+	assignServicingDocks(w)
+	for _, n := range w.Nodes {
+		if !n.Interior || n.Kind != KindWater {
+			continue
+		}
+		if n.ServicingDockID != -1 {
+			t.Errorf("sparkle with no dock has ServicingDockID=%d, want -1", n.ServicingDockID)
+		}
+	}
+}
+
+// TestWaterDeliveryReveal verifies that the first water unload sets WaterDiscovered.
+func TestWaterDeliveryReveal(t *testing.T) {
+	w := newWaterHarvestFixture(t)
+
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("no dock")
+	}
+
+	if w.Economy.WaterDiscovered {
+		t.Fatal("WaterDiscovered should be false before any delivery")
+	}
+
+	wk := &Worker{ID: 99, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1, DockID: dock.ID}
+	w.Workers = append(w.Workers, wk)
+	wk.Carried = 5.0
+	completeWaterUnload(w, wk, dock)
+
+	if !w.Economy.WaterDiscovered {
+		t.Error("WaterDiscovered should be true after first water delivery")
+	}
+	if w.Economy.Water <= 0 {
+		t.Error("Economy.Water should be positive after delivery")
+	}
+}
+
+// TestWaterFocusIdleNoSparkles verifies that a worker assigned to a dock with no
+// serviceable sparkles returns home instead of hanging.
+func TestWaterFocusIdleNoSparkles(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	shoreEdge := shoreEdgeAngle()
+	placeBuildingWithFreePlacement(w, shoreEdge, true)
+	assignServicingDocks(w)
+
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("no dock")
+	}
+
+	wk := &Worker{ID: 99, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1, DockID: dock.ID}
+	wk.State = StateToDock
+	wk.Angle = dock.Angle
+	wk.Pos = w.Planet.RimPoint(dock.Angle)
+	wk.DeliveryKind = KindDock
+	w.Workers = append(w.Workers, wk)
+
+	stepWorker(w, wk, 1.0/60.0)
+
+	if wk.State == StateToDock || wk.State == StateDiving {
+		t.Errorf("worker should not stay in water state with no sparkles; state=%v", wk.State)
+	}
+	if wk.DockID != -1 {
+		t.Errorf("DockID should be -1 after returning home; got %d", wk.DockID)
+	}
+}

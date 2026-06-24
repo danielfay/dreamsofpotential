@@ -55,8 +55,9 @@ var (
 	// Water-influenced growth cue tint — blue-green, event-local only.
 	colWaterGrowthTint = color.RGBA{R: 60, G: 200, B: 150, A: 255}
 
-	// Interior water sparkle node colour.
-	colSparkle = color.RGBA{R: 80, G: 190, B: 255, A: 240}
+	// Interior water sparkle node colours.
+	colSparkle        = color.RGBA{R: 80, G: 190, B: 255, A: 240} // free sparkle
+	colSparkleClaimed = color.RGBA{R: 30, G: 80, B: 140, A: 130}  // collected — dimmed until delivered
 
 	// Nurture attention pulse and confirm flash (alpha set per-frame).
 	colNurtureAttention = color.RGBA{R: 120, G: 255, B: 150, A: 255}
@@ -72,7 +73,8 @@ var (
 	// Worker colours.
 	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
 	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty
-	colWorkerLaden  = color.RGBA{R: 255, G: 240, B: 80, A: 255}  // carrying wood (worker yellow)
+	colWorkerLaden      = color.RGBA{R: 255, G: 240, B: 80, A: 255}  // carrying wood (worker yellow)
+	colWorkerLadenWater = color.RGBA{R: 60, G: 160, B: 255, A: 255}  // carrying water (blue)
 
 	// Building / UI button colours.
 	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // town hall — warm terracotta

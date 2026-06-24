@@ -233,6 +233,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	for _, n := range w.Nodes {
 		if n.Interior {
 			col := colSparkle
+			if n.OwnerID != -1 {
+				col = colSparkleClaimed
+			}
 			if pulseActive(w, n.Pulse) {
 				col = brighten(col, 45)
 			}
