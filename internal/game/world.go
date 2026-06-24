@@ -60,6 +60,9 @@ const (
 	StateUnloading                         // depositing at the delivery building
 	StateReturningHome                     // walking along rim to Town Hall
 	StateToIdleSpot                        // stepping inward into idle home
+	StateToDock                            // moving along rim to claimed dock
+	StateDiving                            // moving interior straight-line to collect sparkles
+	StateDockUnloading                     // unloading water cargo at the dock
 )
 
 // PulseState stores a guarded micro-pulse. Rapid activations become steady-lit
@@ -103,6 +106,7 @@ type Worker struct {
 	NodeID        int
 	TargetNodeID  int
 	PendingNodeID int
+	DockID        int  // building ID of the claimed dock; -1 if not a water worker
 	DeliveryKind  BuildingKind
 	Carried       float64
 	Timer         float64
@@ -296,7 +300,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 16
+const SaveVersion = 17
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -354,6 +358,7 @@ func spawnWorkerAtTownHall(w *World) *Worker {
 		NodeID:        -1,
 		TargetNodeID:  -1,
 		PendingNodeID: -1,
+		DockID:        -1,
 		Timer:         settleDelay,
 	}
 	w.Workers = append(w.Workers, wk)

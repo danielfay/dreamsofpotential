@@ -37,6 +37,9 @@ func workerColor(w *World, wk *Worker) color.RGBA {
 	if wk.Carried > 0 || wk.State == StateToBuilding || wk.State == StateUnloading {
 		col = colWorkerLaden
 	}
+	if (wk.Carried > 0 || wk.State == StateDockUnloading) && wk.DeliveryKind == KindDock {
+		col = colWorkerLadenWater
+	}
 	if pulseActive(w, wk.Pulse) {
 		col = brighten(col, 35)
 	}

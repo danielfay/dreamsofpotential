@@ -8,6 +8,7 @@ func Step(w *World, dt float64) {
 	tickPulses(w, dt)
 	tickGrowthCue(w, dt)
 	tickOverflowGrowth(w)
+	assignServicingDocks(w)
 	assignNodes(w)
 	for _, wk := range w.Workers {
 		stepWorker(w, wk, dt)
@@ -31,6 +32,9 @@ func assignNodes(w *World) {
 		}
 		if node := bestFreeNode(w); node != nil {
 			startReaction(wk, node)
+			assignedIdle = true
+		} else if dock := bestFreeDock(w); dock != nil {
+			startWaterDeparture(w, wk, dock)
 			assignedIdle = true
 		}
 	}
@@ -165,6 +169,68 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.State = StateIdleWaiting
 			wk.Timer = 0
 		}
+	case StateToDock:
+		dock := findBuilding(w, wk.DockID)
+		if dock == nil {
+			wk.DockID = -1
+			startReturnHome(w, wk)
+			return
+		}
+		speed := workerSpeed
+		if inLake(w, wk.Angle) {
+			speed *= lakeSpeedFactor
+		}
+		if moveAlongArc(&wk.Angle, dock.Angle, w.Planet.Radius, speed*dt) {
+			next := nextDiveSparkle(w, dock, wk)
+			if next == nil {
+				wk.DockID = -1
+				startReturnHome(w, wk)
+				return
+			}
+			wk.NodeID = next.ID
+			wk.Pos = w.Planet.RimPoint(dock.Angle)
+			wk.State = StateDiving
+			activatePulse(w, &dock.Pulse)
+		}
+	case StateDiving:
+		dock := findBuilding(w, wk.DockID)
+		if dock == nil {
+			releaseInteriorNodes(w, wk.ID)
+			wk.NodeID = -1
+			wk.DockID = -1
+			wk.Carried = 0
+			startReturnHome(w, wk)
+			return
+		}
+		target := findNode(w, wk.NodeID)
+		if target == nil || (target.OwnerID != -1 && target.OwnerID != wk.ID) {
+			next := nextDiveSparkle(w, dock, wk)
+			if next == nil {
+				returnToDockFromDive(w, wk, dock)
+				return
+			}
+			wk.NodeID = next.ID
+			return
+		}
+		if moveStraightLine(&wk.Pos, target.Pos, workerSpeed*dt) {
+			target.OwnerID = wk.ID
+			target.ReservedByWorkerID = -1
+			wk.Carried += baseLoadAmount * target.Size
+			activatePulse(w, &wk.Pulse)
+			activatePulse(w, &target.Pulse)
+			next := nextDiveSparkle(w, dock, wk)
+			if next == nil {
+				returnToDockFromDive(w, wk, dock)
+				return
+			}
+			wk.NodeID = next.ID
+		}
+	case StateDockUnloading:
+		wk.Timer -= dt
+		if wk.Timer <= 0 {
+			dock := findBuilding(w, wk.DockID)
+			completeWaterUnload(w, wk, dock)
+		}
 	}
 }
 
@@ -220,9 +286,11 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 
 func startReturnHome(w *World, wk *Worker) {
 	releaseOwnedNode(w, wk)
+	releaseInteriorNodes(w, wk.ID)
 	releaseWorkerReservations(w, wk.ID)
 	wk.TargetNodeID = -1
 	wk.PendingNodeID = -1
+	wk.DockID = -1
 	wk.Carried = 0
 	wk.State = StateReturningHome
 	wk.Timer = 0.15
@@ -386,6 +454,191 @@ func findNode(w *World, id int) *ResourceNode {
 		}
 	}
 	return nil
+}
+
+// findBuilding looks up a building by ID.
+func findBuilding(w *World, id int) *Building {
+	for _, b := range w.Buildings {
+		if b.ID == id {
+			return b
+		}
+	}
+	return nil
+}
+
+// moveStraightLine advances pos toward target by at most step world-units.
+// Returns true and snaps when within reach.
+func moveStraightLine(pos *Vec, target Vec, step float64) bool {
+	dx := target.X - pos.X
+	dy := target.Y - pos.Y
+	dist := math.Sqrt(dx*dx + dy*dy)
+	if dist <= step {
+		*pos = target
+		return true
+	}
+	pos.X += dx / dist * step
+	pos.Y += dy / dist * step
+	return false
+}
+
+// assignServicingDocks assigns each interior water sparkle to the nearest dock
+// whose reach wedge (dockWedgeHalfArc) contains it. Sparkles outside all wedges
+// get ServicingDockID = -1. Called every Step tick.
+func assignServicingDocks(w *World) {
+	for _, n := range w.Nodes {
+		if !n.Interior || n.Kind != KindWater {
+			continue
+		}
+		var best *Building
+		bestDist := math.MaxFloat64
+		for _, b := range w.Buildings {
+			if b.Kind != KindDock {
+				continue
+			}
+			dist := angularDistance(n.Angle, b.Angle)
+			if dist <= dockWedgeHalfArc && dist < bestDist {
+				bestDist = dist
+				best = b
+			}
+		}
+		if best != nil {
+			n.ServicingDockID = best.ID
+		} else {
+			n.ServicingDockID = -1
+		}
+	}
+}
+
+// dockServiceableSparkles returns all interior water sparkles assigned to dock.
+func dockServiceableSparkles(w *World, dock *Building) []*ResourceNode {
+	var result []*ResourceNode
+	for _, n := range w.Nodes {
+		if n.Interior && n.Kind == KindWater && n.ServicingDockID == dock.ID {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
+// workerInWaterLoop reports whether a worker is in the dock→dive→unload cycle.
+func workerInWaterLoop(wk *Worker) bool {
+	switch wk.State {
+	case StateToDock, StateDiving, StateDockUnloading:
+		return true
+	}
+	return false
+}
+
+// dockFreeForWorker reports whether no water worker currently owns this dock.
+func dockFreeForWorker(w *World, dock *Building) bool {
+	for _, wk := range w.Workers {
+		if wk.DockID == dock.ID && workerInWaterLoop(wk) {
+			return false
+		}
+	}
+	return true
+}
+
+// bestFreeDock returns a dock that has free serviceable sparkles and is not
+// already claimed by another water worker, or nil if none qualifies.
+func bestFreeDock(w *World) *Building {
+	for _, b := range w.Buildings {
+		if b.Kind != KindDock {
+			continue
+		}
+		if !dockFreeForWorker(w, b) {
+			continue
+		}
+		for _, n := range w.Nodes {
+			if n.Interior && n.Kind == KindWater && n.ServicingDockID == b.ID && n.OwnerID == -1 {
+				return b
+			}
+		}
+	}
+	return nil
+}
+
+// nextDiveSparkle returns the nearest unclaimed sparkle assigned to dock
+// relative to the worker's current position; nil if none remain.
+func nextDiveSparkle(w *World, dock *Building, wk *Worker) *ResourceNode {
+	var best *ResourceNode
+	bestDist := math.MaxFloat64
+	for _, n := range w.Nodes {
+		if !n.Interior || n.Kind != KindWater {
+			continue
+		}
+		if n.ServicingDockID != dock.ID {
+			continue
+		}
+		if n.OwnerID != -1 {
+			continue
+		}
+		if d := wk.Pos.Dist(n.Pos); d < bestDist {
+			bestDist = d
+			best = n
+		}
+	}
+	return best
+}
+
+// releaseInteriorNodes releases all interior sparkles owned by workerID.
+func releaseInteriorNodes(w *World, workerID int) {
+	for _, n := range w.Nodes {
+		if n.Interior && n.OwnerID == workerID {
+			n.OwnerID = -1
+		}
+	}
+}
+
+// startWaterDeparture transitions an idle worker to StateToDock for dock.
+func startWaterDeparture(w *World, wk *Worker, dock *Building) {
+	wk.DockID = dock.ID
+	wk.DeliveryKind = KindDock
+	wk.State = StateToDock
+	wk.Timer = 0
+	activatePulse(w, &wk.Pulse)
+}
+
+// returnToDockFromDive teleports the worker back to the dock to unload.
+func returnToDockFromDive(w *World, wk *Worker, dock *Building) {
+	wk.NodeID = -1
+	wk.Angle = dock.Angle
+	wk.Pos = dock.Pos
+	wk.State = StateDockUnloading
+	wk.Timer = unloadTime
+	activatePulse(w, &dock.Pulse)
+	activatePulse(w, &wk.Pulse)
+}
+
+// completeWaterUnload deposits carried water, reveals Water on first delivery,
+// releases owned sparkles, then either starts another dive or returns home.
+func completeWaterUnload(w *World, wk *Worker, dock *Building) {
+	gross := wk.Carried
+	if gross > 0 {
+		w.Economy.WaterDiscovered = true
+	}
+	banked := gross * (1 - woodFieldReturnRatio)
+	returned := gross * woodFieldReturnRatio
+	w.Economy.Water += banked
+	if dock != nil {
+		dock.DeliveredWood += gross
+		dock.DeliveryCount++
+		activatePulse(w, &dock.Pulse)
+	}
+	depositToField(w, KindWater, returned)
+	wk.Carried = 0
+	releaseInteriorNodes(w, wk.ID)
+
+	if dock != nil {
+		if next := nextDiveSparkle(w, dock, wk); next != nil {
+			wk.NodeID = next.ID
+			wk.Pos = dock.Pos
+			wk.State = StateDiving
+			return
+		}
+	}
+	wk.DockID = -1
+	startReturnHome(w, wk)
 }
 
 // depositToField increments the planet-level field EXP for kind and spawns a
@@ -582,9 +835,36 @@ func EstimateRate(w *World) float64 {
 }
 
 // EstimateWaterRate returns the analytic water/sec for active water workers.
-// Stub returning 0 until water harvesting workers are implemented in Phase 5.
-func EstimateWaterRate(_ *World) float64 {
-	return 0
+func EstimateWaterRate(w *World) float64 {
+	var rate float64
+	th := townHall(w)
+	if th == nil {
+		return 0
+	}
+	for _, wk := range w.Workers {
+		if !workerInWaterLoop(wk) {
+			continue
+		}
+		dock := findBuilding(w, wk.DockID)
+		if dock == nil {
+			continue
+		}
+		sparkles := dockServiceableSparkles(w, dock)
+		if len(sparkles) == 0 {
+			continue
+		}
+		var totalCarry float64
+		for _, s := range sparkles {
+			totalCarry += baseLoadAmount * s.Size
+		}
+		rimDist := effectiveArc(w, th.Angle, dock.Angle) * 2
+		diveDist := math.Sqrt(float64(len(sparkles))) * 15.0
+		tripTime := (rimDist+diveDist)/workerSpeed + unloadTime
+		if tripTime > 0 {
+			rate += totalCarry * (1 - woodFieldReturnRatio) / tripTime
+		}
+	}
+	return rate
 }
 
 func activeWorkerCount(w *World) int {
@@ -891,6 +1171,8 @@ func updateWorkerPos(w *World, wk *Worker) {
 			wk.Angle = th.Angle
 			return
 		}
+	case StateDiving:
+		return // interior position managed directly in stepWorker
 	}
 	wk.Pos = w.Planet.RimPoint(wk.Angle)
 }

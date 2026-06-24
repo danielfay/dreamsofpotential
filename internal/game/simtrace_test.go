@@ -494,3 +494,119 @@ func woodTreeCount(w *World) int {
 	}
 	return n
 }
+
+func waterSparkleCount(w *World) int {
+	n := 0
+	for _, node := range w.Nodes {
+		if node.Interior && node.Kind == KindWater {
+			n++
+		}
+	}
+	return n
+}
+
+// ── Water frontier first delivery ────────────────────────────────────────────
+
+// TestSimTraceWaterFirstDelivery runs the water frontier from awakening through
+// the first water delivery, confirming that WaterDiscovered is set.
+func TestSimTraceWaterFirstDelivery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
+	runner := &waterFrontierRunner{}
+	w := runSimTrace(t, "water frontier — first delivery", 30, runner)
+	if !w.Economy.WaterDiscovered {
+		t.Error("WaterDiscovered should be true after sim trace completes")
+	}
+	t.Logf("water earned: %.2f  |  sparkles: %d", w.Economy.Water, waterSparkleCount(w))
+}
+
+type waterFrontierRunner struct {
+	prevWorkers     int
+	prevSparkles    int
+	dockPlaced      bool
+	waterDiscovered bool
+}
+
+func (r *waterFrontierRunner) Setup(w *World) {
+	f0 := fieldForKind(w, KindWood)
+	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
+		panic("waterFrontierRunner: cannot place starting TH")
+	}
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	addWorker(w)
+	fillWoodFieldNodes(w, false)
+	w.ResourceDiscovered = true
+	triggerUnlock(w)
+
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	awakenPlanet(w, 3)
+	switchToPlanet(w, 3)
+	enterPlanetView(w)
+
+	if !placeBuilding(w, waterFrontierShoreAngle) {
+		panic("waterFrontierRunner: cannot place frontier TH")
+	}
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 10000
+	r.prevWorkers = len(w.Workers)
+	r.prevSparkles = waterSparkleCount(w)
+}
+
+func (r *waterFrontierRunner) ColHeader() string {
+	return fmt.Sprintf("%-8s  %-8s  %-6s", "wood", "water", "sparkle")
+}
+
+func (r *waterFrontierRunner) ColRow(w *World) string {
+	return fmt.Sprintf("%-8.0f  %-8.2f  %-6d", w.Economy.Wood, w.Economy.Water, waterSparkleCount(w))
+}
+
+func (r *waterFrontierRunner) PlayerAI(w *World) []string {
+	var events []string
+	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+		buildTownCapacity(w)
+	}
+	if !r.dockPlaced {
+		hasDock := false
+		for _, b := range w.Buildings {
+			if b.Kind == KindDock {
+				hasDock = true
+				break
+			}
+		}
+		if !hasDock && w.Economy.Wood >= dockShoreCost {
+			angle := shoreEdgeAngle()
+			if placeBuildingWithFreePlacement(w, angle, false) {
+				r.dockPlaced = true
+				events = append(events, fmt.Sprintf("+shore dock at %.2f", angle))
+			}
+		}
+	}
+	return events
+}
+
+func (r *waterFrontierRunner) Events(w *World) []string {
+	var events []string
+	if cur := len(w.Workers); cur != r.prevWorkers {
+		events = append(events, fmt.Sprintf("+worker → %d", cur))
+		r.prevWorkers = cur
+	}
+	if cur := waterSparkleCount(w); cur != r.prevSparkles {
+		events = append(events, fmt.Sprintf("+sparkle → %d", cur))
+		r.prevSparkles = cur
+	}
+	if !r.waterDiscovered && w.Economy.WaterDiscovered {
+		events = append(events, fmt.Sprintf("*** WATER DISCOVERED (water=%.2f) ***", w.Economy.Water))
+		r.waterDiscovered = true
+	}
+	return events
+}
+
+func (r *waterFrontierRunner) Complete(w *World) bool {
+	return w.Economy.WaterDiscovered
+}
+
+func (r *waterFrontierRunner) Summary(w *World) string {
+	return fmt.Sprintf("water=%.2f sparkles=%d", w.Economy.Water, waterSparkleCount(w))
+}
