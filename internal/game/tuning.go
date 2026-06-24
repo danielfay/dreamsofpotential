@@ -100,7 +100,7 @@ const (
 	// point and away from the rim ring.
 	sparkleInnerFrac        = 0.13  // minimum r as fraction of planet radius
 	sparkleOuterFrac        = 0.80  // maximum r — leaves room for the 4 px rim ring
-	sparkleSoftRadiusFactor = 3.5   // per-unit-Size soft-overlap radius (px)
+	sparkleSoftRadiusFactor = 8.0   // per-unit-Size soft-overlap radius (px)
 
 	// ── Dock buildings ───────────────────────────────────────────────────────────
 	// Shore dock cost (wood only) and extension dock costs (wood + water).
