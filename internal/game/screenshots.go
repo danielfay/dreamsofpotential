@@ -77,6 +77,7 @@ func screenshotScenarios() []screenshotScenario {
 		waterFrontierFreshScenario(),
 		systemViewFrontierAwakenedScenario(),
 		waterPlanetFirstDockScenario(),
+		waterPlanetSparklesScenario(),
 	}
 }
 
@@ -615,6 +616,24 @@ func waterPlanetFirstDockScenario() screenshotScenario {
 		}
 	}
 	return screenshotScenario{name: "33-water-planet-first-dock", world: w, fullHUD: true}
+}
+
+func waterPlanetSparklesScenario() screenshotScenario {
+	wood := 50.0
+	enter := 3
+	dockAngle := waterFrontierShoreAngle + waterFrontierShoreArc - 0.05
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:    []int{1},
+		AwakenFrontier:    true,
+		EnterPlanet:       &enter,
+		EchoPlaceTownHall: true,
+		EchoDocks:         []float64{dockAngle},
+		SaturateWaterField: true,
+		Wood:              &wood,
+	})
+	return screenshotScenario{name: "34-water-planet-sparkles", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }

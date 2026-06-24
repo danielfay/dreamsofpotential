@@ -68,6 +68,10 @@ type QAPreset struct {
 	EchoFillTownCapacity bool      `json:"echoFillTownCapacity"`
 	EchoNearSaturate     bool      `json:"echoNearSaturate"` // leave exactly one spawn slot
 	EchoDocks            []float64 `json:"echoDocks"`         // dock angles placed via free placement after EchoPlaceTownHall
+
+	// Water sparkle saturation — applied after echo setup.
+	// SaturateWaterField fills all known water fields with sparkles until no more can spawn.
+	SaturateWaterField bool `json:"saturateWaterField"`
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -293,6 +297,11 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		}
 	}
 
+	// Water sparkle saturation — applied after echo setup so docks are placed first.
+	if p.SaturateWaterField {
+		fillWaterFieldSparkles(w)
+	}
+
 	// Wood — stamped last so it reflects the intended final balance exactly.
 	if p.Wood != nil {
 		w.Economy.Wood = *p.Wood
@@ -349,6 +358,23 @@ func fillWoodFieldNodes(w *World, leaveSpaceForOne bool) {
 			}
 			w.Nodes = append(w.Nodes[:i], w.Nodes[i+1:]...)
 			break
+		}
+	}
+}
+
+// fillWaterFieldSparkles spawns interior sparkles in all known KindWater fields
+// until no more can be placed (i.e., the field is saturated).
+func fillWaterFieldSparkles(w *World) {
+	const maxPerField = 500
+	for _, f := range w.Planet.Fields {
+		if f.Kind != KindWater || !f.Known {
+			continue
+		}
+		for range maxPerField {
+			if !waterFieldCanSpawnSparkle(w, f) {
+				break
+			}
+			spawnSparkle(w, f)
 		}
 	}
 }

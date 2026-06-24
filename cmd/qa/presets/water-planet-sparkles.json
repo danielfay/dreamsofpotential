@@ -1,0 +1,15 @@
+{
+  "name": "water-planet-sparkles",
+  "description": "Water frontier awakened, entered, TH placed on shore, water field saturated with interior sparkles. Expected read: shore arc with TH + trees; dominant water arc filled with blue sparkle circles at various sizes.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "completeEchoes": [1],
+  "awakenFrontier": true,
+  "enterPlanet": 3,
+  "echoPlaceTownHall": true,
+  "saturateWaterField": true,
+  "wood": 50
+}

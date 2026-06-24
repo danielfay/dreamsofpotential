@@ -70,10 +70,14 @@ type PulseState struct {
 	SteadyUntil   float64
 }
 
-// ResourceNode is a single harvestable point on the planet rim.
+// ResourceNode is a single harvestable point on the planet.
 // OwnerID is the worker ID that has claimed it, or -1 if free.
 // ReservedByWorkerID is the worker ID that has spoken for it, or -1 if free.
 // Size scales both the visual and the load carried per trip (range ~0.6–1.4).
+// Interior is true for water sparkles placed inside a water field rather than
+// on the rim; their Pos is a free interior position and Angle is the direction
+// from the planet center to that position (for field membership checks).
+// ServicingDockID links a sparkle to the dock that will harvest it (Phase 5); -1 if unassigned.
 type ResourceNode struct {
 	ID                 int
 	Kind               ResourceKind
@@ -83,6 +87,8 @@ type ResourceNode struct {
 	ReservedByWorkerID int
 	Size               float64
 	Pulse              PulseState
+	Interior           bool
+	ServicingDockID    int
 }
 
 // Worker is a labourer that claims a node and delivers to the nearest camp.
@@ -290,7 +296,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 15
+const SaveVersion = 16
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -395,6 +401,28 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
 		Size:               0.6 + w.rng.Float64()*0.8,
+	}
+}
+
+// newSparkle allocates an interior water sparkle at the given world position.
+// Angle is derived from the position so angleWithinField filtering works.
+// ServicingDockID is -1 until a dock claims the sparkle in Phase 5.
+func newSparkle(w *World, pos Vec) *ResourceNode {
+	if w.rng == nil {
+		w.rng = rand.New(rand.NewSource(0))
+	}
+	id := w.NextNodeID
+	w.NextNodeID++
+	return &ResourceNode{
+		ID:                 id,
+		Kind:               KindWater,
+		Pos:                pos,
+		Angle:              w.Planet.AngleOf(pos),
+		OwnerID:            -1,
+		ReservedByWorkerID: -1,
+		Size:               0.6 + w.rng.Float64()*0.8,
+		Interior:           true,
+		ServicingDockID:    -1,
 	}
 }
 
@@ -522,7 +550,7 @@ func nodeSpawnAngleValid(w *World, f *ResourceField, candidate *ResourceNode, an
 
 	candidateSoftHalf := nodeSoftHalfArc(candidate, w.Planet.Radius)
 	for _, n := range w.Nodes {
-		if n.Kind != candidate.Kind || !angleWithinField(f, n.Angle) {
+		if n.Interior || n.Kind != candidate.Kind || !angleWithinField(f, n.Angle) {
 			continue
 		}
 		if anglesOverlap(angle, candidateSoftHalf, n.Angle, nodeSoftHalfArc(n, w.Planet.Radius)) {
@@ -625,7 +653,7 @@ func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *Reso
 	var best *ResourceNode
 	bestDist := math.MaxFloat64
 	for _, n := range w.Nodes {
-		if n.Kind != f.Kind || !angleWithinField(f, n.Angle) {
+		if n.Interior || n.Kind != f.Kind || !angleWithinField(f, n.Angle) {
 			continue
 		}
 		if dist := angularDistance(n.Angle, intended); dist < bestDist {
@@ -839,10 +867,136 @@ func newWaterFrontierState() *PlanetState {
 	}
 }
 
-// waterFieldCanSpawnSparkle reports whether the water field is ready to receive
-// a sparkle node. Always false until Phase 4 implements interior placement rules.
-func waterFieldCanSpawnSparkle(_ *World, _ *ResourceField) bool {
+// sparkleSpawnPosValid reports whether pos is a valid spawn location for a new
+// interior sparkle in field f: inside the radial band, within the field arc,
+// and not soft-overlapping any existing interior node.
+func sparkleSpawnPosValid(w *World, f *ResourceField, pos Vec) bool {
+	angle := w.Planet.AngleOf(pos)
+	if !angleWithinField(f, angle) {
+		return false
+	}
+	r := pos.Dist(w.Planet.Center)
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	if r < innerR || r > outerR {
+		return false
+	}
+	const candidateSize = 1.0
+	candidateSoftR := sparkleSoftRadiusFactor * candidateSize
+	for _, n := range w.Nodes {
+		if !n.Interior {
+			continue
+		}
+		if pos.Dist(n.Pos) < candidateSoftR+sparkleSoftRadiusFactor*n.Size {
+			return false
+		}
+	}
+	return true
+}
+
+// waterFieldCanSpawnSparkle reports whether there is at least one valid
+// interior position in f for a new sparkle.
+func waterFieldCanSpawnSparkle(w *World, f *ResourceField) bool {
+	if f == nil {
+		return false
+	}
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	const angularSteps = 16
+	const radialSteps = 4
+	for ai := range angularSteps {
+		angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*float64(ai)/float64(angularSteps-1))
+		for ri := range radialSteps {
+			r := innerR + (outerR-innerR)*float64(ri)/float64(radialSteps-1)
+			pos := Vec{
+				X: w.Planet.Center.X + r*math.Cos(angle),
+				Y: w.Planet.Center.Y + r*math.Sin(angle),
+			}
+			if sparkleSpawnPosValid(w, f, pos) {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+// spawnSparkle places a new interior water sparkle in f using golden-angle-
+// jittered polar placement. Falls back to upgradeNearestSparkle when the
+// field interior is saturated.
+func spawnSparkle(w *World, f *ResourceField) growthResult {
+	result := growthResult{
+		Outcome:     growthOutcomeNone,
+		Kind:        f.Kind,
+		CenterAngle: f.CenterAngle,
+		HalfArc:     f.HalfArc,
+		NodeID:      -1,
+	}
+	count := 0
+	for _, n := range w.Nodes {
+		if n.Interior && n.Kind == KindWater && angleWithinField(f, n.Angle) {
+			count++
+		}
+	}
+	const phi = 2.399 // golden angle ≈ radians
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	// Try golden-angle-jittered candidate positions; more attempts improves
+	// fill quality before falling back to upgrade.
+	const attempts = 24
+	for i := range attempts {
+		angularFrac := math.Mod(float64(count+i)*phi, math.Pi*2) / (math.Pi * 2)
+		angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*angularFrac)
+		r := innerR + w.rng.Float64()*(outerR-innerR)
+		pos := Vec{
+			X: w.Planet.Center.X + r*math.Cos(angle),
+			Y: w.Planet.Center.Y + r*math.Sin(angle),
+		}
+		if sparkleSpawnPosValid(w, f, pos) {
+			n := newSparkle(w, pos)
+			w.Nodes = append(w.Nodes, n)
+			activatePulse(w, &n.Pulse)
+			result.Outcome = growthOutcomeSpawnedNode
+			result.NodeID = n.ID
+			return result
+		}
+	}
+	// All attempts failed — field is saturated; upgrade nearest sparkle instead.
+	if upgraded := upgradeNearestSparkle(w, f); upgraded != nil {
+		result.Outcome = growthOutcomeUpgradedNode
+		result.NodeID = upgraded.ID
+	}
+	return result
+}
+
+// upgradeNearestSparkle grows the interior sparkle in f closest to the field
+// center by 0.15, clamped to 2.0, mirroring upgradeNearestFieldNode.
+func upgradeNearestSparkle(w *World, f *ResourceField) *ResourceNode {
+	// Reference point: the midpoint of the field's interior at field center angle.
+	midR := w.Planet.Radius * (sparkleInnerFrac + sparkleOuterFrac) / 2
+	ref := Vec{
+		X: w.Planet.Center.X + midR*math.Cos(f.CenterAngle),
+		Y: w.Planet.Center.Y + midR*math.Sin(f.CenterAngle),
+	}
+	var best *ResourceNode
+	bestDist := math.MaxFloat64
+	for _, n := range w.Nodes {
+		if !n.Interior || n.Kind != KindWater || !angleWithinField(f, n.Angle) {
+			continue
+		}
+		if d := n.Pos.Dist(ref); d < bestDist {
+			bestDist = d
+			best = n
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	best.Size += 0.15
+	if best.Size > 2.0 {
+		best.Size = 2.0
+	}
+	activatePulse(w, &best.Pulse)
+	return best
 }
 
 // ── Multi-planet park / load / switch ────────────────────────────────────────
