@@ -212,7 +212,7 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.NodeID = next.ID
 			return
 		}
-		if moveStraightLine(&wk.Pos, target.Pos, workerSpeed*dt) {
+		if moveStraightLine(&wk.Pos, target.Pos, workerSpeed*diveSpeedFactor*dt) {
 			target.OwnerID = wk.ID
 			target.ReservedByWorkerID = -1
 			wk.Carried += baseLoadAmount * target.Size
@@ -224,6 +224,23 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 				return
 			}
 			wk.NodeID = next.ID
+		}
+	case StateSwimmingToDock:
+		dock := findBuilding(w, wk.DockID)
+		if dock == nil {
+			releaseInteriorNodes(w, wk.ID)
+			wk.NodeID = -1
+			wk.DockID = -1
+			wk.Carried = 0
+			startReturnHome(w, wk)
+			return
+		}
+		if moveStraightLine(&wk.Pos, dock.Pos, workerSpeed*diveSpeedFactor*dt) {
+			wk.Angle = dock.Angle
+			wk.State = StateDockUnloading
+			wk.Timer = unloadTime
+			activatePulse(w, &dock.Pulse)
+			activatePulse(w, &wk.Pulse)
 		}
 	case StateDockUnloading:
 		wk.Timer -= dt
@@ -431,12 +448,28 @@ func findWorker(w *World, id int) *Worker {
 	return nil
 }
 
-// nearestCamp returns the camp with the lowest effective arc cost to node's angle.
-// Returns nil if no camps exist.
+// buildingAcceptsResource reports whether a building kind can receive deliveries
+// for the given resource kind. Each camp type is paired to one resource;
+// TownHall is the early-game fallback for wood.
+func buildingAcceptsResource(bKind BuildingKind, rKind ResourceKind) bool {
+	switch rKind {
+	case KindWood:
+		return bKind == KindTownHall || bKind == KindLoggingCamp
+	case KindWater:
+		return bKind == KindDock
+	}
+	return false
+}
+
+// nearestCamp returns the delivery building of the matching kind with the lowest
+// effective arc cost to node's angle. Returns nil if no suitable building exists.
 func nearestCamp(w *World, node *ResourceNode) *Building {
 	var best *Building
 	bestDist := math.MaxFloat64
 	for _, b := range w.Buildings {
+		if !buildingAcceptsResource(b.Kind, node.Kind) {
+			continue
+		}
 		dist := effectiveArc(w, node.Angle, b.Angle)
 		if dist < bestDist {
 			bestDist = dist
@@ -523,7 +556,7 @@ func dockServiceableSparkles(w *World, dock *Building) []*ResourceNode {
 // workerInWaterLoop reports whether a worker is in the dock→dive→unload cycle.
 func workerInWaterLoop(wk *Worker) bool {
 	switch wk.State {
-	case StateToDock, StateDiving, StateDockUnloading:
+	case StateToDock, StateDiving, StateSwimmingToDock, StateDockUnloading:
 		return true
 	}
 	return false
@@ -599,14 +632,12 @@ func startWaterDeparture(w *World, wk *Worker, dock *Building) {
 	activatePulse(w, &wk.Pulse)
 }
 
-// returnToDockFromDive teleports the worker back to the dock to unload.
+// returnToDockFromDive starts the worker swimming back to the dock from wherever
+// they are in the interior. The worker's Pos is preserved; movement happens in
+// StateSwimmingToDock.
 func returnToDockFromDive(w *World, wk *Worker, dock *Building) {
 	wk.NodeID = -1
-	wk.Angle = dock.Angle
-	wk.Pos = dock.Pos
-	wk.State = StateDockUnloading
-	wk.Timer = unloadTime
-	activatePulse(w, &dock.Pulse)
+	wk.State = StateSwimmingToDock
 	activatePulse(w, &wk.Pulse)
 }
 
@@ -1171,7 +1202,7 @@ func updateWorkerPos(w *World, wk *Worker) {
 			wk.Angle = th.Angle
 			return
 		}
-	case StateDiving:
+	case StateDiving, StateSwimmingToDock:
 		return // interior position managed directly in stepWorker
 	}
 	wk.Pos = w.Planet.RimPoint(wk.Angle)

@@ -55,8 +55,9 @@ var (
 	// Water-influenced growth cue tint — blue-green, event-local only.
 	colWaterGrowthTint = color.RGBA{R: 60, G: 200, B: 150, A: 255}
 
-	// Interior water sparkle node colour.
-	colSparkle = color.RGBA{R: 80, G: 190, B: 255, A: 240}
+	// Interior water sparkle node colours.
+	colSparkle        = color.RGBA{R: 80, G: 190, B: 255, A: 240} // free sparkle
+	colSparkleClaimed = color.RGBA{R: 30, G: 80, B: 140, A: 130}  // collected — dimmed until delivered
 
 	// Nurture attention pulse and confirm flash (alpha set per-frame).
 	colNurtureAttention = color.RGBA{R: 120, G: 255, B: 150, A: 255}

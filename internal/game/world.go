@@ -62,6 +62,7 @@ const (
 	StateToIdleSpot                        // stepping inward into idle home
 	StateToDock                            // moving along rim to claimed dock
 	StateDiving                            // moving interior straight-line to collect sparkles
+	StateSwimmingToDock                    // swimming back to dock after collecting all reachable sparkles
 	StateDockUnloading                     // unloading water cargo at the dock
 )
 
