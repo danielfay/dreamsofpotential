@@ -282,7 +282,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 			if pulseActive(w, b.Pulse) {
 				col = brighten(col, 40)
 			}
-			drawDockArt(scene, w.Planet, b.Angle, col)
+			drawDockArt(scene, w.Planet, b.Angle, col, b.Level)
 		default: // KindLoggingCamp
 			col := colBuilding
 			if pulseActive(w, b.Pulse) {

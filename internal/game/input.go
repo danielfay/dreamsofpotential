@@ -142,9 +142,20 @@ func (g *Game) handleInput() {
 	g.handlePlanetViewSystemReturn()
 
 	if !g.placing {
-		// Hit-test dock buildings for selection tray.
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			mx, my := ebiten.CursorPosition()
+			// Dock upgrade tray button (checked before world-space hit test).
+			if g.dockUpgradeRect.w > 0 {
+				rx := g.dockUpgradeRect
+				if float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
+					float32(my) >= rx.y && float32(my) < rx.y+rx.h {
+					if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
+						upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID])
+					}
+					return
+				}
+			}
+			// Hit-test dock buildings for selection tray.
 			if !g.hud.pointInHUD(mx, my, g.debug) {
 				wp := g.screenToWorld(mx, my)
 				newSel := -1
@@ -247,6 +258,7 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		w.Buildings = append(w.Buildings, &Building{
 			ID:        id,
 			Kind:      KindDock,
+			Level:     1,
 			Angle:     angle,
 			Pos:       w.Planet.RimPoint(angle),
 			Extension: pv.Extension,

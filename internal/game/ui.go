@@ -310,10 +310,9 @@ func (h *HUD) refreshNormal(w *World) {
 	if discovered {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.resourceText.Label = fmt.Sprintf("%.0f", w.Economy.Wood)
-		// Disable the Nurture square when the field is saturated or a growth cue
-		// is playing — the button has nothing to do in either state.
-		f := fieldForKind(w, KindWood)
-		saturated := f != nil && !fieldCanSpawnNode(w, f)
+		// Disable the Nurture square when all known fields are saturated or a
+		// growth cue is playing — the button has nothing to do in either state.
+		saturated := !anyFieldCanSpawn(w)
 		h.resourceSquare.GetWidget().Disabled = saturated || nurtureGrowthCuePending(w)
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)

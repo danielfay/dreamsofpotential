@@ -229,6 +229,145 @@ func TestDockTraversalReducesLakePenalty(t *testing.T) {
 	_ = dest
 }
 
+// TestDockUpgrade_CostAndLevel verifies that upgradeDock deducts the correct
+// resources and increments the dock's Level from 1 to 2.
+func TestDockUpgrade_CostAndLevel(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+		}
+	}
+	if dock == nil {
+		t.Fatal("no dock after placement")
+	}
+	if dock.Level != 1 {
+		t.Fatalf("new dock should start at Level 1, got %d", dock.Level)
+	}
+
+	woodBefore := w.Economy.Wood
+	waterBefore := w.Economy.Water
+	if !upgradeDock(w, dock) {
+		t.Fatal("upgradeDock returned false (expected success)")
+	}
+	if dock.Level != 2 {
+		t.Errorf("after upgrade: Level = %d, want 2", dock.Level)
+	}
+	if got, want := woodBefore-w.Economy.Wood, dockL2WoodCost; math.Abs(got-want) > 1e-9 {
+		t.Errorf("wood deducted %.1f, want %.1f", got, want)
+	}
+	if got, want := waterBefore-w.Economy.Water, dockL2WaterCost; math.Abs(got-want) > 1e-9 {
+		t.Errorf("water deducted %.1f, want %.1f", got, want)
+	}
+}
+
+// TestDockUpgrade_Level2Blocked verifies that a Level-2 dock cannot be upgraded further.
+func TestDockUpgrade_Level2Blocked(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+		}
+	}
+	dock.Level = 2
+	if upgradeDock(w, dock) {
+		t.Error("upgradeDock should return false for a Level-2 dock")
+	}
+	if dock.Level != 2 {
+		t.Errorf("Level should remain 2, got %d", dock.Level)
+	}
+}
+
+// TestDockUpgrade_InsufficientResources verifies that upgradeDock fails when
+// wood or water is below the upgrade cost.
+func TestDockUpgrade_InsufficientResources(t *testing.T) {
+	w := newWaterFrontierFixture()
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+		}
+	}
+
+	w.Economy.Wood = dockL2WoodCost - 1
+	w.Economy.Water = dockL2WaterCost
+	if upgradeDock(w, dock) {
+		t.Error("upgradeDock should fail when wood insufficient")
+	}
+	w.Economy.Wood = dockL2WoodCost
+	w.Economy.Water = dockL2WaterCost - 1
+	if upgradeDock(w, dock) {
+		t.Error("upgradeDock should fail when water insufficient")
+	}
+	if dock.Level != 1 {
+		t.Errorf("Level should remain 1 after failed upgrades, got %d", dock.Level)
+	}
+}
+
+// TestDockUpgradeAttention verifies dockUpgradeAttentionDock returns nil when
+// fields can still spawn, and a dock when all fields are saturated but no L2 dock.
+func TestDockUpgradeAttention(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+
+	// Town not full: attention should be nil.
+	if dock := dockUpgradeAttentionDock(w); dock != nil {
+		t.Error("dockUpgradeAttentionDock should return nil when town not full")
+	}
+
+	// Fill town capacity.
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+
+	// Fields not saturated yet: still nil.
+	if dock := dockUpgradeAttentionDock(w); dock != nil {
+		t.Error("dockUpgradeAttentionDock should return nil when fields not saturated")
+	}
+
+	// Saturate all fields.
+	fillWoodFieldNodes(w, false)
+	fillWaterFieldSparkles(w)
+
+	// Now should return the upgradeable dock.
+	dock := dockUpgradeAttentionDock(w)
+	if dock == nil {
+		t.Fatal("dockUpgradeAttentionDock should return a dock when all conditions met")
+	}
+	if dock.Level >= 2 {
+		t.Errorf("returned dock has Level %d (should be < 2)", dock.Level)
+	}
+
+	// Upgrade the dock: attention should return nil (no L1 dock remains).
+	upgradeDock(w, dock)
+	if dock := dockUpgradeAttentionDock(w); dock != nil {
+		t.Errorf("dockUpgradeAttentionDock should return nil after all docks reach L2, got dock Level=%d", dock.Level)
+	}
+}
+
 // TestDockSaveRoundTrip verifies that dock Kind, Extension, and Level fields
 // survive a JSON marshal/unmarshal cycle.
 func TestDockSaveRoundTrip(t *testing.T) {

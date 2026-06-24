@@ -109,6 +109,10 @@ const (
 	dockExtWoodCost  = 100.0 // wood cost for an extension dock
 	dockExtWaterCost = 30.0  // water cost for an extension dock
 
+	// Dock upgrade costs: Level 1→2 spends both wood and water.
+	dockL2WoodCost  = 150.0 // wood cost for L1→L2 dock upgrade
+	dockL2WaterCost = 50.0  // water cost for L1→L2 dock upgrade
+
 	// Dock art geometry (virtual pixels) — |_| shape on the rim.
 	dockDeckHalfLen = float32(6.5) // half-length of deck along rim tangent — covers gap to adjacent dock (min spacing = 12 px)
 	dockDeckHalfH   = float32(2.5) // half-thickness of deck (5 px total, sits inward from rim)

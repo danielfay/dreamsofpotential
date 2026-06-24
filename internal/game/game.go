@@ -44,8 +44,9 @@ type Game struct {
 	hudDigits                 int         // digit count of wood at last HUD build; triggers rebuild on grow
 	saveTimer                 float64     // counts down to next autosave
 	nurtureConfirmLeft        float64     // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown  float64     // counts down to next attention pulse fire
-	nurtureAttentionPulseLeft float64     // seconds remaining on the current attention flash
+	nurtureAttentionCooldown       float64 // counts down to next Nurture attention pulse
+	nurtureAttentionPulseLeft      float64 // seconds remaining on the Nurture attention flash
+	dockUpgradeAttentionCooldown   float64 // counts down to next dock-upgrade attention pulse
 	holdAction                int         // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                 float64     // counts down to next repeat fire
 	holdDuration              float64     // total seconds the current hold has been active
@@ -65,8 +66,9 @@ type Game struct {
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
 
-	// planet-view selected building (dock-only scaffold for Phase 6 upgrade slot)
-	selectedBuildingID int // index into w.Buildings; -1 = none
+	// planet-view selected building (dock tray with upgrade action)
+	selectedBuildingID int    // index into w.Buildings; -1 = none
+	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -86,7 +88,8 @@ func New() (*Game, error) {
 		hudScale:                 initialScale,
 		hudDigits:                woodDigits(w.Economy.Wood),
 		saveTimer:                autoSavePeriod,
-		nurtureAttentionCooldown: nurtureAttentionInterval,
+		nurtureAttentionCooldown:     nurtureAttentionInterval,
+		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
 		importCh:                 make(chan *World, 1),
 		sysDoubleClickPlanet:     -1,
 		selectedBuildingID:       -1,
@@ -133,7 +136,7 @@ func (g *Game) activateHold(action int) {
 func (g *Game) tryHoldAction(action int) bool {
 	switch action {
 	case holdNurture:
-		if nurtureField(g.world, KindWood) {
+		if nurtureField(g.world) {
 			g.nurtureConfirmLeft = nurtureConfirmDuration
 			return true
 		}
@@ -234,8 +237,15 @@ func (g *Game) Update() error {
 		g.nurtureAttentionCooldown -= dt
 		if g.nurtureAttentionCooldown <= 0 {
 			g.nurtureAttentionCooldown = nurtureAttentionInterval
-			if nurtureAttentionActive(g.world, KindWood) {
+			if nurtureAttentionActive(g.world) {
 				g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+			}
+		}
+		g.dockUpgradeAttentionCooldown -= dt
+		if g.dockUpgradeAttentionCooldown <= 0 {
+			g.dockUpgradeAttentionCooldown = nurtureAttentionInterval
+			if dock := dockUpgradeAttentionDock(g.world); dock != nil {
+				activatePulse(g.world, &dock.Pulse)
 			}
 		}
 		if g.rejectTime > 0 {
@@ -680,6 +690,7 @@ func clearTransientUI(g *Game) {
 	g.holdDuration = 0
 	g.showMenu = false
 	g.selectedBuildingID = -1
+	g.dockUpgradeRect = sysRect{}
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
@@ -709,13 +720,17 @@ func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
 }
 
 // drawDockTray draws a bottom tray when a dock building is selected.
-// The upgrade action slot is empty in Phase 3 — wired in Phase 6.
+// Shows dock identity on the left and an upgrade action on the right.
+// Level 1 docks show the L1→L2 upgrade cost (Wood + Water). Level 2 docks
+// show a quiet Level-3 tease (unnamed future resource, not purchasable).
 func (g *Game) drawDockTray(screen *ebiten.Image) {
 	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
+		g.dockUpgradeRect = sysRect{}
 		return
 	}
 	b := g.world.Buildings[g.selectedBuildingID]
 	if b.Kind != KindDock {
+		g.dockUpgradeRect = sysRect{}
 		return
 	}
 
@@ -726,27 +741,120 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 	}
 
 	const trayVH = float64(20)
-	const trayVW = float64(90)
-	tw, th := float32(trayVH*scale), float32(trayVH*scale)
-	tw = float32(trayVW * scale)
+	const trayVW = float64(108)
+	tw := float32(trayVW * scale)
+	th := float32(trayVH * scale)
 	tx := float32(g.screenW)/2 - tw/2
 	ty := float32(g.screenH) - th - float32(4*scale)
 
 	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
 	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
 
-	// Dock color swatch.
+	sp := float32(scale)
+
+	// ── Left section: dock identity ───────────────────────────────────────────
 	swSize := float32(10 * scale)
-	swX := tx + float32(5*scale)
+	swX := tx + 5*sp
 	swY := ty + (th-swSize)/2
 	vector.FillRect(screen, swX, swY, swSize, swSize, colDock, false)
 
-	// Building name label.
 	label := "Dock"
 	if b.Extension {
 		label = "Dock (ext)"
 	}
 	_, lH := text.Measure(label, face, 0)
 	lY := swY + swSize - float32(lH)
-	drawSysText(screen, label, swX+swSize+float32(4*scale), lY, colWoodLabel, face)
+	drawSysText(screen, label, swX+swSize+4*sp, lY, colWoodLabel, face)
+
+	// Level label.
+	lvlLabel := fmt.Sprintf("L%d", b.Level)
+	if b.Level == 0 {
+		lvlLabel = "L1"
+	}
+	_, lvlH := text.Measure(lvlLabel, face, 0)
+	lvlY := swY - float32(lvlH) + float32(lvlH)*0.5
+	_ = lvlY
+	drawSysText(screen, lvlLabel, swX+swSize+4*sp, swY-float32(lvlH), colSysTrayBorder, face)
+
+	// ── Right section: upgrade action ─────────────────────────────────────────
+	const actionW = float64(52)
+	axLeft := tx + tw - float32(actionW*scale)
+	actionH := th - 4*sp
+	ayTop := ty + 2*sp
+
+	// Separator line.
+	vector.StrokeLine(screen, axLeft-1, ty+2*sp, axLeft-1, ty+th-2*sp, 1, colSysTrayBorder, false)
+
+	if b.Level >= 2 {
+		// Level-3 tease: grey square + label, non-interactive.
+		g.dockUpgradeRect = sysRect{}
+		greyCol := color.RGBA{R: 60, G: 60, B: 80, A: 200}
+		qSize := float32(8 * scale)
+		qX := axLeft + 4*sp
+		qY := ayTop + (actionH-qSize)/2
+		vector.FillRect(screen, qX, qY, qSize, qSize, greyCol, false)
+		drawSysText(screen, "L3 ???", qX+qSize+3*sp, qY, greyCol, face)
+	} else {
+		// Level-1 upgrade button: shows cost and is clickable.
+		btnX := axLeft + 2*sp
+		btnW := tw - float32(actionW*scale) - 4*sp
+		btnH := actionH
+
+		affordable := canUpgradeDock(g.world, b)
+		btnFill := colSysTrayFill
+		if affordable {
+			btnFill = color.RGBA{R: 18, G: 22, B: 36, A: 220}
+		}
+		vector.FillRect(screen, btnX, ayTop, btnW, btnH, btnFill, false)
+		borderCol := colSysTrayBorder
+		if affordable {
+			borderCol = color.RGBA{R: 80, G: 100, B: 160, A: 200}
+		}
+		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
+
+		// Attention pulse: glow when dock's pulse is active.
+		if pulseActive(g.world, b.Pulse) {
+			atCol := colNurtureAttention
+			atCol.A = 180
+			vector.StrokeRect(screen, btnX-1, ayTop-1, btnW+2, btnH+2, 1.5, atCol, false)
+		}
+
+		g.dockUpgradeRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
+
+		// Cost icons inside button.
+		iconSize := float32(6 * scale)
+		iconY := ayTop + (btnH-iconSize)/2
+		cx := btnX + 4*sp
+
+		// Arrow "↑".
+		arrowCol := colWoodLabel
+		if !affordable {
+			arrowCol = colSysTrayBorder
+		}
+		drawSysText(screen, "▲", cx, iconY, arrowCol, face)
+		_, ah := text.Measure("▲", face, 0)
+		cx += float32(ah) + 2*sp
+
+		// Wood cost.
+		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colWoodResource, false)
+		cx += iconSize + 2*sp
+		woodStr := fmt.Sprintf("%.0f", dockL2WoodCost)
+		woodCol := colWoodLabel
+		if !affordable {
+			woodCol = colSysTrayBorder
+		}
+		drawSysText(screen, woodStr, cx, iconY, woodCol, face)
+		ww, _ := text.Measure(woodStr, face, 0)
+		cx += float32(ww) + 3*sp
+
+		// Water cost.
+		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colSparkle, false)
+		cx += iconSize + 2*sp
+		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
+		waterCol := color.RGBA{R: 100, G: 180, B: 230, A: 200}
+		if !affordable {
+			waterCol = colSysTrayBorder
+		}
+		drawSysText(screen, waterStr, cx, iconY, waterCol, face)
+	}
 }

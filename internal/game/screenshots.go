@@ -78,6 +78,8 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewFrontierAwakenedScenario(),
 		waterPlanetFirstDockScenario(),
 		waterPlanetSparklesScenario(),
+		waterPlanetDockUpgradeSelectedScenario(),
+		waterPlanetNearCompleteNoL2DockScenario(),
 	}
 }
 
@@ -634,6 +636,49 @@ func waterPlanetSparklesScenario() screenshotScenario {
 		Wood:              &wood,
 	})
 	return screenshotScenario{name: "34-water-planet-sparkles", world: w, fullHUD: true}
+}
+
+// waterPlanetDockUpgradeSelectedScenario shows the water frontier with a dock
+// selected and the upgrade tray visible. The dock is at Level 1 and the player
+// has enough resources to upgrade.
+func waterPlanetDockUpgradeSelectedScenario() screenshotScenario {
+	wood := dockL2WoodCost * 2
+	water := dockL2WaterCost * 2
+	enter := 3
+	dockAngle := waterFrontierShoreAngle + waterFrontierShoreArc - 0.05
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		AwakenFrontier: true,
+		EnterPlanet:    &enter,
+		EchoPlaceTownHall: true,
+		EchoDocks:      []float64{dockAngle},
+		Wood:           &wood,
+	})
+	w.Economy.Water = water
+	return screenshotScenario{name: "35-water-planet-dock-upgrade-selected", world: w, fullHUD: true}
+}
+
+// waterPlanetNearCompleteNoL2DockScenario shows the water frontier near
+// completion: town capacity full, both fields saturated, dock exists but is
+// still Level 1.
+func waterPlanetNearCompleteNoL2DockScenario() screenshotScenario {
+	wood := 50.0
+	enter := 3
+	dockAngle := waterFrontierShoreAngle + waterFrontierShoreArc - 0.05
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:     []int{1},
+		AwakenFrontier:     true,
+		EnterPlanet:        &enter,
+		EchoPlaceTownHall:  true,
+		EchoDocks:          []float64{dockAngle},
+		SaturateWaterField: true,
+		Wood:               &wood,
+	})
+	return screenshotScenario{name: "36-water-planet-near-complete-no-l2-dock", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }
