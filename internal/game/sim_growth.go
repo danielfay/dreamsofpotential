@@ -12,6 +12,10 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 	}
 	fp.EXP += amount
 	for fp.EXP >= fp.Cap {
+		f := pickGrowthRegion(w, kind)
+		if f == nil {
+			break
+		}
 		fp.EXP -= fp.Cap
 		// Capped geometric: grow the threshold exponentially while the step is
 		// small, then switch to additive so late-game trees stay naturally reachable.
@@ -19,10 +23,6 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 			fp.Cap *= woodFieldEXPGrowth
 		} else {
 			fp.Cap += woodFieldEXPMaxStep
-		}
-		f := pickGrowthRegion(w, kind)
-		if f == nil {
-			break
 		}
 		var result growthResult
 		if kind == KindWater {
@@ -43,6 +43,9 @@ func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
 	var fallback *ResourceField
 	for _, f := range w.Planet.Fields {
 		if f.Kind != kind || !f.Known {
+			continue
+		}
+		if kind == KindWater && !waterSparkleSpawningUnlocked(w) {
 			continue
 		}
 		if fallback == nil {
@@ -178,6 +181,9 @@ func pickPlanetNurtureField(w *World) *ResourceField {
 		if !f.Known || f.Kind == KindWaterInfluence {
 			continue
 		}
+		if f.Kind == KindWater && !waterSparkleSpawningUnlocked(w) {
+			continue
+		}
 		if fallback == nil {
 			fallback = f
 		}
@@ -225,13 +231,15 @@ func nurtureField(w *World) bool {
 // nurtureAttentionActive reports whether the Nurture button should show its
 // attention pulse. Fires when:
 //   - town is full + all worker slots filled + any known field can still spawn, or
-//   - at least one dock exists but EstimateWaterRate is zero (sparkles needed).
+//   - at least one dock exists but no reachable sparkle work exists.
 func nurtureAttentionActive(w *World) bool {
 	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
 		return false
 	}
-	// Dock-zero-water rule: nudge player to grow sparkles for idle docks.
-	if dockExists(w) && EstimateWaterRate(w) == 0 {
+	// Dock-no-work rule: nudge player to grow sparkles only when docks have no
+	// reachable water work. A dock can have zero estimated rate simply because no
+	// worker is currently assigned.
+	if dockExists(w) && !dockHasServiceableSparkles(w) {
 		return true
 	}
 	// Standard rule: town is full + any field can still spawn.

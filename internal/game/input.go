@@ -276,6 +276,7 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 	}
 
 	if pv.Kind == KindDock {
+		firstDock := !dockExists(w)
 		if !freePlacement {
 			if pv.Extension {
 				w.Economy.Wood -= dockExtWoodCost
@@ -292,6 +293,9 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			Pos:       w.Planet.RimPoint(angle),
 			Extension: pv.Extension,
 		})
+		if firstDock {
+			seedInitialDockSparkles(w, w.Buildings[len(w.Buildings)-1])
+		}
 		return true
 	}
 
