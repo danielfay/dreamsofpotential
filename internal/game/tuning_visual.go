@@ -1,6 +1,9 @@
 package game
 
-import "image/color"
+import (
+	"image/color"
+	"math"
+)
 
 // Wood resource colours — source of truth is the planet HUD idle swatch.
 // Use these everywhere a wood swatch or label appears so all UI elements share
@@ -84,6 +87,50 @@ var (
 )
 
 const (
+	// HUD scale knobs. Adjust these first when a HUD feels too large/small.
+	// The planet top HUD is intentionally smaller than the bottom trays so it
+	// does not crowd the planet.
+	planetTopHUDScale        = 0.75
+	systemTopHUDScale        = 1.00
+	systemBottomHUDScale     = 1.00
+	selectedBuildingHUDScale = 1.00
+
+	// planetTopHUD*Base values are the current unscaled element sizes for the
+	// compact planet top HUD. They are multiplied by planetTopHUDScale.
+	planetTopHUDIconBase     = 15
+	planetTopHUDActionBase   = 21
+	planetTopHUDDigitBase    = 10
+	planetTopHUDInnerGapBase = 4
+	planetTopHUDGroupGapBase = 9
+	planetTopHUDPaddingVBase = 6
+	planetTopHUDPaddingHBase = 9
+	planetTopHUDHeightBase   = 33
+	planetTopHUDFontBase     = 16
+	planetTopHUDTextScale    = 0.75
+	ebitenUIHUDBaseScale     = 0.75
+
+	// Manual screen-space HUD base sizes. These are multiplied by the relevant
+	// HUD scale knob and the current view scale.
+	systemTopHUDHeightBase     = 24
+	systemTopHUDSquareBase     = 8
+	systemTopHUDCircleBase     = 4
+	systemTopHUDPaddingVBase   = 3
+	systemTopHUDRowGapBase     = 3
+	systemTopHUDColumnGapBase  = 16
+	bottomHUDHeightBase        = 20
+	bottomHUDSwatchBase        = 10
+	bottomHUDSmallIconBase     = 6
+	bottomHUDButtonBase        = 14
+	bottomHUDContentGapBase    = 8
+	bottomHUDRateGapBase       = 6
+	bottomHUDCostGapBase       = 6
+	bottomHUDTextGapBase       = 2
+	bottomHUDCircleBase        = 3
+	selectedHUDActionWidthBase = 52
+	selectedHUDActionInsetBase = 2
+	selectedHUDContentGapBase  = 10
+	selectedHUDIdentityGapBase = 5
+
 	// sparkleBaseDrawRadius is the visual radius (px) of a size-1 interior water sparkle.
 	sparkleBaseDrawRadius = float32(3.0)
 	// sparkleArmWidthRatio controls arm thickness relative to arm half-length.
@@ -123,9 +170,31 @@ const (
 	atmosphereBreathFreq = 0.35 // rad/s — one full breath every ~18 s
 )
 
+func scaledHUDInt(viewScale int, hudScale float64, base int) int {
+	v := int(math.Round(float64(base) * float64(viewScale) * ebitenUIHUDBaseScale * hudScale))
+	if v < 1 {
+		return 1
+	}
+	return v
+}
+
+func scaledHUDFloat(viewScale, hudScale float64, base float64) float32 {
+	v := float32(base * viewScale * hudScale)
+	if v < 1 {
+		return 1
+	}
+	return v
+}
+
 var (
 	// Per-planet atmosphere tint colours. The alpha is set per-layer at draw time.
 	colAtmosphereStart = color.RGBA{R: 55, G: 200, B: 80, A: 255}  // starting planet — mid green
 	colAtmosphereA     = color.RGBA{R: 40, G: 190, B: 100, A: 255} // echo layout 0 — cool blue-green
 	colAtmosphereB     = color.RGBA{R: 110, G: 210, B: 45, A: 255} // echo layout 1 — warm yellow-green
+	colAtmosphereWater = color.RGBA{R: 50, G: 160, B: 230, A: 255} // water frontier — azure blue
+)
+
+var (
+	colWaterGaugeFill  = color.RGBA{R: 60, G: 160, B: 230, A: 180}
+	colWaterGaugeFrame = colWoodGaugeFrame
 )

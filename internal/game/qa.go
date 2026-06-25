@@ -53,6 +53,13 @@ type QAPreset struct {
 	// Applied after CompleteEchoes and before SelectPlanet/EnterPlanet.
 	AwakenFrontier bool `json:"awakenFrontier"`
 
+	// CompleteFrontier drives the frontier (Planets index 3) to completion:
+	// places a Town Hall, fills town capacity, saturates both wood and water fields,
+	// places and upgrades a dock to Level 2, then calls checkActivePlanetCompletion.
+	// Requires AwakenFrontier (or frontier already awakened). Leaves the world in
+	// system view on the starting planet. Applied after AwakenFrontier.
+	CompleteFrontier bool `json:"completeFrontier"`
+
 	// ForestPotential / WaterPotential stamp exact Potential balances after all
 	// other overrides (including AwakenEchoes, CompleteEchoes, AwakenFrontier).
 	// Use to set precise amounts for QA scenarios without relying on the growth path.
@@ -258,6 +265,39 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		}
 	}
 
+	// Frontier completion — drive planet 3 to its water-planet completion gate.
+	if p.CompleteFrontier {
+		const frontierIdx = 3
+		if !w.System.Planets[frontierIdx].Awakened {
+			return nil, fmt.Errorf("completeFrontier: frontier not awakened (set AwakenFrontier first)")
+		}
+		switchToPlanet(w, frontierIdx)
+		enterPlanetView(w)
+		thAngle, ok := findValidBuildingAngle(w)
+		if !ok || !placeBuilding(w, thAngle) {
+			return nil, fmt.Errorf("completeFrontier: cannot place Town Hall on frontier")
+		}
+		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+			w.Economy.WorkerCapacity = max
+		}
+		fillWoodFieldNodes(w, false)
+		if !placeBuildingWithFreePlacement(w, waterFrontierLakeAngle, true) {
+			return nil, fmt.Errorf("completeFrontier: cannot place dock at frontier lake angle")
+		}
+		fillWaterFieldSparkles(w)
+		for _, b := range w.Buildings {
+			if b.Kind == KindDock {
+				b.Level = 2
+			}
+		}
+		checkActivePlanetCompletion(w)
+		if !w.System.Planets[frontierIdx].Completed {
+			return nil, fmt.Errorf("completeFrontier: planet did not complete after full setup")
+		}
+		switchToPlanet(w, 0)
+		enterSystemView(w)
+	}
+
 	// Potential stamps — applied after all lifecycle overrides so callers can set
 	// exact balances regardless of what the growth path happened to award.
 	if p.ForestPotential != nil {
@@ -386,16 +426,30 @@ func fillWoodFieldNodes(w *World, leaveSpaceForOne bool) {
 // fillWaterFieldSparkles spawns interior sparkles in all known KindWater fields
 // until no more can be placed (i.e., the field is saturated).
 func fillWaterFieldSparkles(w *World) {
-	const maxPerField = 500
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	const angularSteps = 16
+	const radialSteps = 4
 	for _, f := range w.Planet.Fields {
 		if f.Kind != KindWater || !f.Known {
 			continue
 		}
-		for range maxPerField {
-			if !waterFieldCanSpawnSparkle(w, f) {
-				break
+		// Try exactly the 16×4 grid positions that waterFieldCanSpawnSparkle samples.
+		// Placing sparkles at every valid grid position guarantees the gate check sees
+		// no remaining valid positions and returns false (no golden-angle divergence).
+		for ai := range angularSteps {
+			angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*float64(ai)/float64(angularSteps-1))
+			for ri := range radialSteps {
+				r := innerR + (outerR-innerR)*float64(ri)/float64(radialSteps-1)
+				pos := Vec{
+					X: w.Planet.Center.X + r*math.Cos(angle),
+					Y: w.Planet.Center.Y + r*math.Sin(angle),
+				}
+				if sparkleSpawnPosValid(w, f, pos) {
+					n := newSparkle(w, pos)
+					w.Nodes = append(w.Nodes, n)
+				}
 			}
-			spawnSparkle(w, f)
 		}
 	}
 }

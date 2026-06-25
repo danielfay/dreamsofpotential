@@ -69,10 +69,13 @@ type Game struct {
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
 
-	// planet-view selected building (dock tray with upgrade action)
-	selectedBuildingID int     // index into w.Buildings; -1 = none
-	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
-	dockTrayRect       sysRect // entire tray background rect (clicking anywhere dismisses)
+	// planet-view selected building (dock tray or town hall tray)
+	selectedBuildingID          int     // index into w.Buildings; -1 = none
+	dockUpgradeRect             sysRect // upgrade button hit-test rect in native screen space
+	dockTrayRect                sysRect // entire dock tray background rect (clicking anywhere dismisses)
+	thCapacityRect              sysRect // capacity button in TH tray
+	thTrayRect                  sysRect // entire TH tray background rect
+	thCapacityAttentionCooldown float64 // counts down to next TH capacity attention pulse
 
 	// labor focus control overlay
 	showFocusControl bool
@@ -104,6 +107,7 @@ func New() (*Game, error) {
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
 		workerRatioAttentionCooldown: nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
+		thCapacityAttentionCooldown:  nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
 		selectedBuildingID:           -1,
@@ -207,6 +211,11 @@ func (g *Game) Update() error {
 	if g.world.System.View == ViewSystem {
 		g.handleSystemInput()
 	} else {
+		// Auto-placement: always in placement mode when in planet view.
+		// Debug mode retains manual button control.
+		if !g.debug {
+			g.placing = true
+		}
 		g.handleInput()
 
 		if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
@@ -270,6 +279,14 @@ func (g *Game) Update() error {
 			g.dockUpgradeAttentionCooldown = nurtureAttentionInterval
 			if dock := dockUpgradeAttentionDock(g.world); dock != nil {
 				activatePulse(g.world, &dock.Pulse)
+			}
+		}
+		g.thCapacityAttentionCooldown -= dt
+		if g.thCapacityAttentionCooldown <= 0 {
+			g.thCapacityAttentionCooldown = nurtureAttentionInterval
+			if th := townHall(g.world); th != nil && !townFieldFull(g.world) &&
+				g.world.Economy.Wood >= townCapacityCost(g.world) {
+				activatePulse(g.world, &th.Pulse)
 			}
 		}
 		if g.rejectTime > 0 {
@@ -387,15 +404,6 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 
 	g.drawAffordabilityProgress(screen)
 
-	// Selected-outline around the build button while placement mode is active.
-	if g.placing {
-		r := g.hud.buildCampBtn.GetWidget().Rect
-		vector.StrokeRect(screen,
-			float32(r.Min.X)-2, float32(r.Min.Y)-2,
-			float32(r.Max.X-r.Min.X)+4, float32(r.Max.Y-r.Min.Y)+4,
-			2, colGhostOk, false)
-	}
-
 	// Gauge bar beneath the resource HUD icon+number, only after discovery.
 	if g.world.ResourceDiscovered && len(g.world.Planet.Fields) > 0 {
 		f := g.world.Planet.Fields[0]
@@ -415,17 +423,48 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		if frac > 0 {
 			vector.FillRect(screen, x, y, w*frac, h, colWoodGaugeFill, false)
 		}
-		if g.world.growthCue.GaugeAfterglow > 0 {
+		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeAfterglow > 0 {
 			t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
 			col := colGrowthGaugeAfterglow
 			col.A = uint8(120 * t)
 			vector.FillRect(screen, x, y, w, h, col, false)
 		}
-		if g.world.growthCue.GaugeRelease > 0 {
+		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeRelease > 0 {
 			t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
 			col := colGrowthGaugeRelease
 			col.A = uint8(210 * t)
 			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, col, false)
+		}
+
+		// Water gauge bar beneath the water HUD icon+number.
+		if g.world.Economy.WaterDiscovered {
+			var waterFrac float32
+			if fp := g.world.Planet.FieldProgress[KindWater]; fp != nil && fp.Cap > 0 {
+				waterFrac = float32(fp.EXP / fp.Cap)
+				if waterFrac > 1 {
+					waterFrac = 1
+				}
+			}
+			wr := g.hud.waterHUD.GetWidget().Rect
+			wx := float32(wr.Min.X)
+			wy := float32(wr.Max.Y) + 2
+			ww := float32(wr.Max.X - wr.Min.X)
+			vector.StrokeRect(screen, wx, wy, ww, h, 1, colWaterGaugeFrame, false)
+			if waterFrac > 0 {
+				vector.FillRect(screen, wx, wy, ww*waterFrac, h, colWaterGaugeFill, false)
+			}
+			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeAfterglow > 0 {
+				t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
+				col := colGrowthGaugeAfterglow
+				col.A = uint8(120 * t)
+				vector.FillRect(screen, wx, wy, ww, h, col, false)
+			}
+			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeRelease > 0 {
+				t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
+				col := colGrowthGaugeRelease
+				col.A = uint8(210 * t)
+				vector.StrokeRect(screen, wx-1, wy-1, ww+2, h+2, 1, col, false)
+			}
 		}
 
 		sr := g.hud.resourceSquare.GetWidget().Rect
@@ -475,8 +514,9 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		}
 	}
 
-	// Selected-building dock tray.
+	// Selected-building trays.
 	g.drawDockTray(screen)
+	g.drawTownHallTray(screen)
 
 	// Worker HUD slider icon + colored breakdown (shown when focus is active).
 	g.drawWorkerHUDOverlay(screen)
@@ -490,17 +530,22 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		colPulse.A = uint8(200 * g.pulseTime / pulseDuration)
 		switch g.pulseTarget {
 		case 1:
-			pr := g.hud.buildCampBtn.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			// Camp unaffordable: flash around the wood resource display.
+			if g.hud.resourceHUD != nil {
+				pr := g.hud.resourceHUD.GetWidget().Rect
+				vector.StrokeRect(screen,
+					float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+					float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+					2, colPulse, false)
+			}
 		case 2:
-			pr := g.hud.buildTownCapacityBtn.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			// Capacity unaffordable: flash around the TH tray capacity button.
+			if g.thCapacityRect.w > 0 {
+				cr := g.thCapacityRect
+				vector.StrokeRect(screen,
+					cr.x-2, cr.y-2, cr.w+4, cr.h+4,
+					2, colPulse, false)
+			}
 		case 3:
 			pr := g.hud.resourceSquare.GetWidget().Rect
 			vector.StrokeRect(screen,
@@ -511,21 +556,10 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 	}
 }
 
-// drawAffordabilityProgress fills disabled economy buttons from bottom to top
-// as the player approaches the cost. Non-economy locks remain fully dim.
-func (g *Game) drawAffordabilityProgress(screen *ebiten.Image) {
-	hasTownHall := len(g.world.Buildings) > 0
-	discovered := g.world.ResourceDiscovered
-	if hasTownHall && discovered {
-		drawButtonProgress(screen, g.hud.buildCampBtn, affordabilityFrac(g.world.Economy.Wood, CampCost(g.world)),
-			color.RGBA{R: 100, G: 62, B: 36, A: 230}) // colBuilding, A:230
-	}
-	if hasTownHall && !townFieldFull(g.world) {
-		drawButtonProgress(screen, g.hud.buildTownCapacityBtn,
-			affordabilityFrac(g.world.Economy.Wood, townCapacityCost(g.world)),
-			color.RGBA{R: 230, G: 145, B: 70, A: 230})
-	}
-}
+// drawAffordabilityProgress was used to fill disabled HUD buttons from bottom to top.
+// Camp and capacity buttons have moved to the world (auto-placement) and TH tray respectively,
+// so this is now a no-op retained for potential future use.
+func (g *Game) drawAffordabilityProgress(_ *ebiten.Image) {}
 
 func affordabilityFrac(wood, cost float64) float32 {
 	if cost <= 0 || wood >= cost {
@@ -575,53 +609,133 @@ var sysTrayRateSpecs = []sysTrayRateSpec{
 func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
+	systemHUD := func(base float64) float32 {
+		return scaledHUDFloat(scale, systemBottomHUDScale, base)
+	}
+	systemTopHUD := func(base float64) float32 {
+		return scaledHUDFloat(scale, systemTopHUDScale, base)
+	}
 
-	// Global resources — top-left, drawn on screen at native resolution.
+	// Global resources — full-width top band. Square resources occupy the top
+	// row; matching Potential circles sit beneath them by resource colour/type.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
-		swSize := float32(8 * scale)
-		swX := float32(4 * scale)
-		swY := float32(4 * scale)
-		rowGap := swSize + float32(3*scale)
-
-		// Wood row.
-		woodStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world)))
-		vector.FillRect(screen, swX, swY, swSize, swSize, colWoodResource, false)
-		textX := swX + swSize + float32(3*scale)
-		_, textH := text.Measure(woodStr, face, 0)
-		drawSysText(screen, woodStr, textX, swY+swSize-float32(textH), colWoodLabel, face)
-
-		// Water row: shown after first water delivery.
-		nextRowY := swY + rowGap
-		if g.world.Economy.WaterDiscovered {
-			waterStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(abstractWaterIncome(g.world)))
-			vector.FillRect(screen, swX, nextRowY, swSize, swSize, colSparkle, false)
-			_, wTextH := text.Measure(waterStr, face, 0)
-			drawSysText(screen, waterStr, textX, nextRowY+swSize-float32(wTextH),
-				color.RGBA{R: 100, G: 200, B: 255, A: 220}, face)
-			nextRowY += rowGap
+		type systemResourceColumn struct {
+			showSquare    bool
+			squareText    string
+			squareCol     color.RGBA
+			squareTextCol color.RGBA
+			showCircle    bool
+			circleText    string
+			circleCol     color.RGBA
+			circleTextCol color.RGBA
+			width         float32
 		}
 
-		// Earned Potential circles — one per kind, shown only after first award.
-		potRow := nextRowY
-		potR := float32(4 * scale)
-		potCols := []struct {
-			kind PotentialKind
-			col  color.RGBA
-		}{
-			{PotentialForest, colForestPotential},
-			{PotentialWater, colWaterPotential},
+		squareSize := systemTopHUD(systemTopHUDSquareBase)
+		circleR := systemTopHUD(systemTopHUDCircleBase)
+		textGap := systemTopHUD(bottomHUDTextGapBase)
+		columnGap := systemTopHUD(systemTopHUDColumnGapBase)
+
+		mkColumn := func(showSquare bool, squareText string, squareCol, squareTextCol color.RGBA, potKind PotentialKind, circleCol, circleTextCol color.RGBA) systemResourceColumn {
+			count, earned := g.world.Economy.Potential[potKind]
+			col := systemResourceColumn{
+				showSquare:    showSquare,
+				squareText:    squareText,
+				squareCol:     squareCol,
+				squareTextCol: squareTextCol,
+				showCircle:    earned,
+				circleText:    fmt.Sprintf("%d", count),
+				circleCol:     circleCol,
+				circleTextCol: circleTextCol,
+			}
+			if showSquare {
+				tw, _ := text.Measure(squareText, face, 0)
+				col.width = squareSize + textGap + float32(tw)
+			}
+			if earned {
+				tw, _ := text.Measure(col.circleText, face, 0)
+				w := circleR*2 + textGap + float32(tw)
+				if w > col.width {
+					col.width = w
+				}
+			}
+			return col
 		}
-		potX := swX + potR
-		for _, pk := range potCols {
-			count, earned := g.world.Economy.Potential[pk.kind]
-			if !earned {
+
+		columns := []systemResourceColumn{
+			mkColumn(
+				g.world.ResourceDiscovered || g.world.System.Unlocked,
+				fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world))),
+				colWoodResource, colWoodLabel,
+				PotentialForest, colForestPotential, colForestPotentialLabel,
+			),
+			mkColumn(
+				g.world.Economy.WaterDiscovered,
+				fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(abstractWaterIncome(g.world))),
+				colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220},
+				PotentialWater, colWaterPotential, colWaterPotentialLabel,
+			),
+		}
+
+		var visibleCols []systemResourceColumn
+		totalW := float32(0)
+		for _, col := range columns {
+			if !col.showSquare && !col.showCircle {
 				continue
 			}
-			drawPotentialCircle(screen, potX, potRow+potR, potR, pk.col)
-			countStr := fmt.Sprintf("%d", count)
-			cw, ch := text.Measure(countStr, face, 0)
-			drawSysText(screen, countStr, potX+potR+float32(2*scale), potRow+potR-float32(ch)/2, pk.col, face)
-			potX += potR*2 + float32(cw) + float32(8*scale)
+			if len(visibleCols) > 0 {
+				totalW += columnGap
+			}
+			totalW += col.width
+			visibleCols = append(visibleCols, col)
+		}
+
+		if len(visibleCols) > 0 {
+			h := systemTopHUD(systemTopHUDHeightBase)
+			x := float32(0)
+			y := float32(0)
+			w := float32(g.screenW)
+			vector.FillRect(screen, x, y, w, h, colSysTrayFill, false)
+			vector.StrokeLine(screen, x, h, x+w, h, 1, colSysTrayBorder, false)
+
+			paddingY := systemTopHUD(systemTopHUDPaddingVBase)
+			rowGap := systemTopHUD(systemTopHUDRowGapBase)
+			topY := paddingY
+			bottomY := topY + squareSize + rowGap
+			cx := float32(g.screenW)/2 - totalW/2
+			for i, col := range visibleCols {
+				if i > 0 {
+					cx += columnGap
+				}
+				if col.showSquare {
+					rowW := squareSize
+					if col.squareText != "" {
+						tw, _ := text.Measure(col.squareText, face, 0)
+						rowW += textGap + float32(tw)
+					}
+					rowX := cx + (col.width-rowW)/2
+					vector.FillRect(screen, rowX, topY, squareSize, squareSize, col.squareCol, false)
+					if col.squareText != "" {
+						_, th := text.Measure(col.squareText, face, 0)
+						drawSysText(screen, col.squareText, rowX+squareSize+textGap, topY+squareSize-float32(th), col.squareTextCol, face)
+					}
+				}
+				if col.showCircle {
+					rowW := circleR * 2
+					if col.circleText != "" {
+						tw, _ := text.Measure(col.circleText, face, 0)
+						rowW += textGap + float32(tw)
+					}
+					rowX := cx + (col.width-rowW)/2
+					circleY := bottomY + circleR
+					drawPotentialCircle(screen, rowX+circleR, circleY, circleR, col.circleCol)
+					if col.circleText != "" {
+						_, th := text.Measure(col.circleText, face, 0)
+						drawSysText(screen, col.circleText, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
+					}
+				}
+				cx += col.width
+			}
 		}
 	}
 
@@ -629,59 +743,160 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	sel := g.world.System.Selected
 	if sel < 0 || sel >= len(g.world.System.Planets) {
 		g.sysEnterRect = sysRect{}
+		g.sysAwakenRect = sysRect{}
 		return
 	}
 	p := g.world.System.Planets[sel]
 
 	// Tray background.
-	const trayVH = float64(20)
-	const trayVW = float64(90)
-	tw, th := float32(trayVW*scale), float32(trayVH*scale)
-	tx := float32(g.screenW)/2 - tw/2
-	ty := float32(g.screenH) - th - float32(4*scale)
+	th := systemHUD(bottomHUDHeightBase)
+	tx := float32(0)
+	tw := float32(g.screenW)
+	ty := float32(g.screenH) - th
 	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
-	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
+	vector.StrokeLine(screen, tx, ty, tx+tw, ty, 1, colSysTrayBorder, false)
 
 	// Planet swatch — small colored square.
-	swSize := float32(10 * scale)
-	swX := tx + float32(5*scale)
+	swSize := systemHUD(bottomHUDSwatchBase)
 	swY := ty + (th-swSize)/2
-	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
 
 	// Resource rates — draw each non-zero rate as [icon] [N.N/s], left-to-right.
 	// Text bottom is aligned with the swatch bottom for a consistent baseline.
-	iconSz := float32(6 * scale)
-	iconY := swY + (swSize-iconSz)/2
+	iconSz := systemHUD(bottomHUDSmallIconBase)
 	_, rateH := text.Measure("0", face, 0)
-	rateY := swY + swSize - float32(rateH)
-	cx := swX + swSize + float32(4*scale)
-	drewAny := false
+	type rateItem struct {
+		label   string
+		iconCol color.RGBA
+		textCol color.RGBA
+		width   float32
+		icon    bool
+	}
+	var rateItems []rateItem
 	for _, spec := range sysTrayRateSpecs {
 		rate := spec.getRate(p)
 		if rate <= 0 {
 			continue
 		}
-		vector.FillRect(screen, cx, iconY, iconSz, iconSz, spec.iconCol, false)
-		cx += iconSz + float32(2*scale)
 		rateStr := fmt.Sprintf("%.1f/s", rate)
-		drawSysText(screen, rateStr, cx, rateY, spec.textCol, face)
 		rw, _ := text.Measure(rateStr, face, 0)
-		cx += float32(rw) + float32(4*scale)
-		drewAny = true
+		rateItems = append(rateItems, rateItem{
+			label:   rateStr,
+			iconCol: spec.iconCol,
+			textCol: spec.textCol,
+			width:   iconSz + systemHUD(bottomHUDTextGapBase) + float32(rw),
+			icon:    true,
+		})
 	}
-	if !drewAny {
+	if len(rateItems) == 0 {
 		// Newly awakened planet with no measured rate yet — show wood placeholder.
-		drawSysText(screen, "-.--/s", cx, rateY, colWoodLabel, face)
+		placeholder := "-.--/s"
+		pw, _ := text.Measure(placeholder, face, 0)
+		rateItems = append(rateItems, rateItem{
+			label:   placeholder,
+			textCol: colWoodLabel,
+			width:   float32(pw),
+		})
 	}
 
-	// Right side of tray: awaken button for un-awakened echoes, enter button for zoomable planets.
 	g.sysEnterRect = sysRect{}
 	g.sysAwakenRect = sysRect{}
-	btnSize := float32(14 * scale)
-	btnX := tx + tw - btnSize - float32(5*scale)
+	btnSize := systemHUD(bottomHUDButtonBase)
 	btnY := ty + (th-btnSize)/2
+	showAwaken := (p.Kind == PlanetEcho || p.Kind == PlanetUnknown) && !p.Awakened
+	showEnter := !showAwaken && p.zoomable()
 
-	if (p.Kind == PlanetEcho || p.Kind == PlanetUnknown) && !p.Awakened {
+	type potCostItem struct {
+		kind     PotentialKind
+		col      color.RGBA
+		labelCol color.RGBA
+	}
+	potOrder := []potCostItem{
+		{PotentialWater, colWaterPotential, colWaterPotentialLabel},
+		{PotentialForest, colForestPotential, colForestPotentialLabel},
+	}
+	awakenCostMap := planetAwakenCost(g.world, sel)
+	costStr := "1"
+	costW, costH := text.Measure(costStr, face, 0)
+	circR := systemHUD(bottomHUDCircleBase)
+	costItemGap := systemHUD(bottomHUDCostGapBase)
+	costWidth := float32(0)
+	if showAwaken {
+		for _, pk := range potOrder {
+			if awakenCostMap[pk.kind] == 0 {
+				continue
+			}
+			if costWidth > 0 {
+				costWidth += costItemGap
+			}
+			costWidth += float32(costW) + systemHUD(3) + circR*2
+		}
+	}
+
+	rateGap := systemHUD(bottomHUDRateGapBase)
+	contentGap := systemHUD(bottomHUDContentGapBase)
+	totalW := swSize
+	if len(rateItems) > 0 {
+		totalW += contentGap
+		for i, item := range rateItems {
+			if i > 0 {
+				totalW += rateGap
+			}
+			totalW += item.width
+		}
+	}
+	if costWidth > 0 {
+		totalW += contentGap + costWidth
+	}
+	if showAwaken || showEnter {
+		totalW += contentGap + btnSize
+	}
+
+	cx := float32(g.screenW)/2 - totalW/2
+	swX := cx
+	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
+	cx += swSize + contentGap
+
+	iconY := swY + (swSize-iconSz)/2
+	rateY := swY + swSize - float32(rateH)
+	for i, item := range rateItems {
+		if i > 0 {
+			cx += rateGap
+		}
+		if item.icon {
+			vector.FillRect(screen, cx, iconY, iconSz, iconSz, item.iconCol, false)
+			cx += iconSz + systemHUD(bottomHUDTextGapBase)
+		}
+		drawSysText(screen, item.label, cx, rateY, item.textCol, face)
+		cx += item.width
+		if item.icon {
+			cx -= iconSz + systemHUD(bottomHUDTextGapBase)
+		}
+	}
+	cx += contentGap
+
+	if showAwaken && costWidth > 0 {
+		costY := btnY + (btnSize-float32(costH))/2
+		circY := btnY + btnSize/2
+		drewCost := false
+		for _, pk := range potOrder {
+			if awakenCostMap[pk.kind] == 0 {
+				continue
+			}
+			if drewCost {
+				cx += costItemGap
+			}
+			drawSysText(screen, costStr, cx, costY, pk.labelCol, face)
+			cx += float32(costW) + systemHUD(3) + circR
+			drawPotentialCircle(screen, cx, circY, circR, pk.col)
+			cx += circR
+			drewCost = true
+		}
+		cx += contentGap
+	}
+
+	btnX := cx
+
+	if showAwaken {
 		// Awaken button: burst/sparkle glyph, enabled or greyed by affordability.
 		canAff := canAwaken(g.world, sel)
 		fillCol, rimCol, glyphCol := colAwakenFill, colAwakenRim, colAwakenGlyph
@@ -694,53 +909,22 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		// Four-point burst glyph.
 		cx2 := btnX + btnSize/2
 		cy2 := btnY + btnSize/2
-		ray := float32(4 * scale)
-		half := float32(1.5 * scale)
+		ray := systemHUD(4)
+		half := systemHUD(1.5)
 		vector.StrokeLine(screen, cx2-ray, cy2-ray, cx2+ray, cy2+ray, half, glyphCol, false)
 		vector.StrokeLine(screen, cx2+ray, cy2-ray, cx2-ray, cy2+ray, half, glyphCol, false)
 		vector.FillCircle(screen, cx2, cy2, half+float32(scale), glyphCol, false)
-
-		// Cost labels to the left of the button: one circle+number per required Potential.
-		// Items are drawn right-to-left from the button edge; the cost map is iterated in
-		// a fixed display order so layout is deterministic.
-		type potCostItem struct {
-			kind     PotentialKind
-			col      color.RGBA
-			labelCol color.RGBA
-		}
-		potOrder := []potCostItem{
-			{PotentialWater, colWaterPotential, colWaterPotentialLabel},
-			{PotentialForest, colForestPotential, colForestPotentialLabel},
-		}
-		costStr := "1"
-		_, costH := text.Measure(costStr, face, 0)
-		costY := btnY + (btnSize-float32(costH))/2
-		circR := float32(3 * scale)
-		circY := btnY + btnSize/2
-		awakenCostMap := planetAwakenCost(g.world, sel)
-		curRight := btnX - float32(5*scale) // right edge of next item, working leftward
-		for _, pk := range potOrder {
-			if awakenCostMap[pk.kind] == 0 {
-				continue
-			}
-			// Draw circle just left of curRight.
-			circX := curRight - circR
-			drawPotentialCircle(screen, circX, circY, circR, pk.col)
-			costW, _ := text.Measure(costStr, face, 0)
-			drawSysText(screen, costStr, circX-circR-float32(3*scale)-float32(costW), costY, pk.labelCol, face)
-			curRight = circX - circR - float32(costW) - float32(6*scale)
-		}
 		g.sysAwakenRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 
-	} else if p.zoomable() {
+	} else if showEnter {
 		// Enter button: planet circle glyph.
 		vector.FillRect(screen, btnX, btnY, btnSize, btnSize, colEnterFill, false)
 		vector.StrokeRect(screen, btnX, btnY, btnSize, btnSize, 1, colEnterRim, false)
 		bCx := btnX + btnSize/2
 		bCy := btnY + btnSize/2
-		bR := float32(4 * scale)
+		bR := systemHUD(4)
 		vector.FillCircle(screen, bCx, bCy, bR, colEnterGlyph, false)
-		drawSystemOrbitRing(screen, bCx, bCy, bR+float32(2*scale), 1, colEnterOrbit)
+		drawSystemOrbitRing(screen, bCx, bCy, bR+systemHUD(2), 1, colEnterOrbit)
 		g.sysEnterRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 	}
 }
@@ -792,6 +976,8 @@ func clearTransientUI(g *Game) {
 	g.showFocusControl = false
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
+	g.thCapacityRect = sysRect{}
+	g.thTrayRect = sysRect{}
 }
 
 // openFocusControl opens the labor focus control, initialising the draft split
@@ -857,64 +1043,69 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
+	selectedHUD := func(base float64) float32 {
+		return scaledHUDFloat(scale, selectedBuildingHUDScale, base)
+	}
 	if face == nil {
 		g.dockUpgradeRect = sysRect{}
 		g.dockTrayRect = sysRect{}
 		return
 	}
 
-	const trayVH = float64(20)
-	const trayVW = float64(108)
-	tw := float32(trayVW * scale)
-	th := float32(trayVH * scale)
-	tx := float32(g.screenW)/2 - tw/2
-	ty := float32(g.screenH) - th - float32(4*scale)
+	th := selectedHUD(bottomHUDHeightBase)
+	tx := float32(0)
+	tw := float32(g.screenW)
+	ty := float32(g.screenH) - th
 
 	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
-	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
+	vector.StrokeLine(screen, tx, ty, tx+tw, ty, 1, colSysTrayBorder, false)
 	g.dockTrayRect = sysRect{x: tx, y: ty, w: tw, h: th}
 
-	sp := float32(scale)
+	sp := selectedHUD(1)
 
-	// ── Left section: dock identity ───────────────────────────────────────────
-	swSize := float32(10 * scale)
-	swX := tx + 5*sp
+	// ── Centered row: dock identity + action ──────────────────────────────────
+	swSize := selectedHUD(bottomHUDSwatchBase)
 	swY := ty + (th-swSize)/2
-	vector.FillRect(screen, swX, swY, swSize, swSize, colDock, false)
 
 	// Level pips: N upward triangles (1 = L1, 2 = L2).
 	level := b.Level
 	if level == 0 {
 		level = 1
 	}
-	pipHalfW := float32(3 * scale)
-	pipGap := float32(2 * scale)
+	pipHalfW := selectedHUD(3)
+	pipGap := selectedHUD(2)
 	pipCY := ty + th/2
-	pipX := swX + swSize + 5*sp + pipHalfW
+	pipsW := float32(level)*(pipHalfW*2) + float32(level-1)*pipGap
+
+	actionWpx := selectedHUD(selectedHUDActionWidthBase)
+	actionInset := selectedHUD(selectedHUDActionInsetBase)
+	actionH := th - actionInset*2
+	ayTop := ty + actionInset
+	contentGap := selectedHUD(selectedHUDContentGapBase)
+	identityGap := selectedHUD(selectedHUDIdentityGapBase)
+	totalW := swSize + identityGap + pipsW + contentGap + actionWpx
+	cx := float32(g.screenW)/2 - totalW/2
+
+	swX := cx
+	vector.FillRect(screen, swX, swY, swSize, swSize, colDock, false)
+	pipX := swX + swSize + identityGap + pipHalfW
 	for i := 0; i < level; i++ {
 		drawUpTriangle(screen, pipX+float32(i)*(pipHalfW*2+pipGap), pipCY, pipHalfW, colSysTrayBorder)
 	}
 
-	// ── Right section: upgrade action ─────────────────────────────────────────
-	const actionW = float64(52)
-	axLeft := tx + tw - float32(actionW*scale)
-	actionH := th - 4*sp
-	ayTop := ty + 2*sp
-
-	// Separator line.
-	vector.StrokeLine(screen, axLeft-1, ty+2*sp, axLeft-1, ty+th-2*sp, 1, colSysTrayBorder, false)
+	axLeft := swX + swSize + identityGap + pipsW + contentGap
 
 	if b.Level >= 2 {
 		// Level-3 tease: grey square + label, non-interactive.
 		g.dockUpgradeRect = sysRect{}
 		greyCol := color.RGBA{R: 60, G: 60, B: 80, A: 200}
-		qSize := float32(8 * scale)
+		qSize := selectedHUD(8)
 		qX := axLeft + 4*sp
 		qY := ayTop + (actionH-qSize)/2
 		vector.FillRect(screen, qX, qY, qSize, qSize, greyCol, false)
 		// 3 dim triangles hint at a future third level.
-		pipHalfW := float32(3 * scale)
-		pipGap := float32(2 * scale)
+		pipHalfW := selectedHUD(3)
+		pipGap := selectedHUD(2)
 		pipCY := qY + qSize/2
 		pipX := qX + qSize + 3*sp + pipHalfW
 		for i := 0; i < 3; i++ {
@@ -922,8 +1113,8 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		}
 	} else {
 		// Level-1 upgrade button: fills from bottom as resources accumulate.
-		btnX := axLeft + 2*sp
-		btnW := tw - float32(actionW*scale) - 4*sp
+		btnX := axLeft
+		btnW := actionWpx
 		btnH := actionH
 
 		affordable := canUpgradeDock(g.world, b)
@@ -963,7 +1154,7 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		g.dockUpgradeRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
 
 		// Cost icons: always use full color so they're visible against the dark/fill background.
-		iconSize := float32(6 * scale)
+		iconSize := selectedHUD(bottomHUDSmallIconBase)
 		iconY := ayTop + (btnH-iconSize)/2
 		cx := btnX + 4*sp
 
@@ -983,6 +1174,122 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 	}
 }
 
+// drawTownHallTray draws a bottom tray when the Town Hall is selected.
+// Mirrors the dock tray: TH swatch + one level pip, then a capacity action button.
+// When the town field is full the button is greyed out and non-interactive.
+func (g *Game) drawTownHallTray(screen *ebiten.Image) {
+	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
+		g.thCapacityRect = sysRect{}
+		g.thTrayRect = sysRect{}
+		return
+	}
+	b := g.world.Buildings[g.selectedBuildingID]
+	if b.Kind != KindTownHall {
+		g.thCapacityRect = sysRect{}
+		g.thTrayRect = sysRect{}
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	face := g.hud.sysface
+	selectedHUD := func(base float64) float32 {
+		return scaledHUDFloat(scale, selectedBuildingHUDScale, base)
+	}
+	if face == nil {
+		g.thCapacityRect = sysRect{}
+		g.thTrayRect = sysRect{}
+		return
+	}
+
+	th := selectedHUD(bottomHUDHeightBase)
+	tx := float32(0)
+	tw := float32(g.screenW)
+	ty := float32(g.screenH) - th
+
+	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
+	vector.StrokeLine(screen, tx, ty, tx+tw, ty, 1, colSysTrayBorder, false)
+	g.thTrayRect = sysRect{x: tx, y: ty, w: tw, h: th}
+
+	sp := selectedHUD(1)
+
+	swSize := selectedHUD(bottomHUDSwatchBase)
+	swY := ty + (th-swSize)/2
+
+	// One level pip: TH is always level 1.
+	pipHalfW := selectedHUD(3)
+	pipCY := ty + th/2
+	pipsW := pipHalfW * 2
+
+	actionWpx := selectedHUD(selectedHUDActionWidthBase)
+	actionInset := selectedHUD(selectedHUDActionInsetBase)
+	actionH := th - actionInset*2
+	ayTop := ty + actionInset
+	contentGap := selectedHUD(selectedHUDContentGapBase)
+	identityGap := selectedHUD(selectedHUDIdentityGapBase)
+
+	totalW := swSize + identityGap + pipsW + contentGap + actionWpx
+	cx := float32(g.screenW)/2 - totalW/2
+
+	swX := cx
+	vector.FillRect(screen, swX, swY, swSize, swSize, colTownHall, false)
+	drawUpTriangle(screen, swX+swSize+identityGap+pipHalfW, pipCY, pipHalfW, colSysTrayBorder)
+
+	axLeft := swX + swSize + identityGap + pipsW + contentGap
+
+	isFull := townFieldFull(g.world)
+	if isFull {
+		// Greyed out — not interactive.
+		g.thCapacityRect = sysRect{}
+		vector.FillRect(screen, axLeft, ayTop, actionWpx, actionH,
+			color.RGBA{R: 30, G: 30, B: 45, A: 200}, false)
+		vector.StrokeRect(screen, axLeft, ayTop, actionWpx, actionH, 1, colSysTrayBorder, false)
+	} else {
+		cost := townCapacityCost(g.world)
+		affordable := g.world.Economy.Wood >= cost
+		btnX := axLeft
+		btnW := actionWpx
+		btnH := actionH
+
+		// Dark base.
+		vector.FillRect(screen, btnX, ayTop, btnW, btnH, colSysTrayFill, false)
+
+		// Fill from bottom to top as wood accumulates.
+		frac := affordabilityFrac(g.world.Economy.Wood, cost)
+		if frac > 0 && frac < 1 {
+			fillH := btnH * frac
+			vector.FillRect(screen, btnX, ayTop+btnH-fillH, btnW, fillH,
+				color.RGBA{R: 120, G: 75, B: 30, A: 200}, false)
+		} else if affordable {
+			vector.FillRect(screen, btnX, ayTop, btnW, btnH,
+				color.RGBA{R: 120, G: 75, B: 30, A: 200}, false)
+		}
+
+		borderCol := colSysTrayBorder
+		if affordable {
+			borderCol = color.RGBA{R: 200, G: 120, B: 50, A: 220}
+		}
+		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
+
+		// Attention pulse: glow when TH's pulse is active.
+		if pulseActive(g.world, b.Pulse) {
+			atCol := colNurtureAttention
+			atCol.A = 180
+			vector.StrokeRect(screen, btnX-1, ayTop-1, btnW+2, btnH+2, 1.5, atCol, false)
+		}
+
+		g.thCapacityRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
+
+		// Wood cost icon + amount.
+		iconSize := selectedHUD(bottomHUDSmallIconBase)
+		iconY := ayTop + (btnH-iconSize)/2
+		icx := btnX + 4*sp
+		vector.FillRect(screen, icx, iconY, iconSize, iconSize, colWoodResource, false)
+		icx += iconSize + 2*sp
+		costStr := fmt.Sprintf("%.0f", cost)
+		drawSysText(screen, costStr, icx, iconY, colWoodLabel, face)
+	}
+}
+
 // drawWorkerHUDOverlay replaces the plain worker icon and ratio text with a
 // mini slider icon and per-kind worker counts once LaborFocus is set.
 func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
@@ -994,63 +1301,87 @@ func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 		return
 	}
 
-	scale, _, _ := viewGeom(g.screenW, g.screenH)
-	sp := float32(scale)
-	face := g.hud.face
-	if face == nil {
-		return
-	}
-
 	nWood, nWater, nIdle := activeWorkerHUDCounts(w)
 
-	// ── Split worker icon (drawn over workerSquare button) ────────────────
+	// ── Compact focus glyph (drawn over workerSquare button) ──────────────
 	sqR := g.hud.workerSquare.GetWidget().Rect
 	sqX := float32(sqR.Min.X)
 	sqY := float32(sqR.Min.Y)
 	sqW := float32(sqR.Dx())
 	sqH := float32(sqR.Dy())
 
-	vector.FillRect(screen, sqX, sqY, sqW, sqH, color.RGBA{R: 46, G: 40, B: 16, A: 235}, false)
+	vector.FillRect(screen, sqX, sqY, sqW, sqH, colSysTrayFill, false)
 	vector.StrokeRect(screen, sqX, sqY, sqW, sqH, 1, colWorkerLaden, false)
 
-	inset := 3 * sp
+	inset := sqH * 0.22
 	innerX := sqX + inset
 	innerY := sqY + inset
 	innerW := sqW - inset*2
 	innerH := sqH - inset*2
-	halfW := innerW / 2
+	halfGap := float32(1)
+	halfW := (innerW - halfGap) / 2
 	vector.FillRect(screen, innerX, innerY, halfW, innerH, colWoodResource, false)
-	vector.FillRect(screen, innerX+halfW, innerY, innerW-halfW, innerH, colSparkle, false)
-	vector.StrokeLine(screen, innerX+halfW, innerY, innerX+halfW, innerY+innerH, 1, colWorkerLaden, false)
+	vector.FillRect(screen, innerX+halfW+halfGap, innerY, halfW, innerH, colSparkle, false)
+	vector.StrokeLine(screen, innerX+halfW+halfGap/2, innerY, innerX+halfW+halfGap/2, innerY+innerH, 1, colWorkerLaden, false)
 
-	// ── Colored count text (drawn over workerRatio text widget) ───────────
+	// ── Worker distribution meter (drawn over workerRatio text area) ──────
 	txtR := g.hud.workerRatio.GetWidget().Rect
 	txtX := float32(txtR.Min.X)
 	txtW := float32(txtR.Dx())
 
-	// Background behind text area.
-	vector.FillRect(screen, txtX-2*sp, sqY, txtW+4*sp, sqH, colSysTrayFill, false)
+	bgPad := float32(2)
+	vector.FillRect(screen, txtX-bgPad, sqY, txtW+bgPad*2, sqH, colSysTrayFill, false)
 
-	_, fontH := text.Measure("0", face, 0)
-	textY := sqY + (sqH-float32(fontH))/2
+	barH := sqH * 0.48
+	barY := sqY + (sqH-barH)/2
+	barX := txtX
+	barW := txtW
+	vector.StrokeRect(screen, barX, barY, barW, barH, 1, colSysTrayBorder, false)
 
-	colSlash := colWorkerLaden
-	type seg struct {
-		s   string
-		col color.RGBA
+	total := nWood + nWater + nIdle
+	if total == 0 {
+		return
 	}
-	segs := []seg{
-		{fmt.Sprintf("%d", nWood), colWoodResource},
-		{"/", colSlash},
-		{fmt.Sprintf("%d", nWater), color.RGBA{R: colSparkle.R, G: colSparkle.G, B: colSparkle.B, A: 240}},
-		{"/", colSlash},
-		{fmt.Sprintf("%d", nIdle), colWorkerLaden},
+	type workerSeg struct {
+		count int
+		col   color.RGBA
 	}
-	x := txtX
-	for _, seg := range segs {
-		drawSysText(screen, seg.s, x, textY, seg.col, face)
-		w, _ := text.Measure(seg.s, face, 0)
-		x += float32(w)
+	segments := []workerSeg{
+		{nWood, colWoodResource},
+		{nWater, color.RGBA{R: colSparkle.R, G: colSparkle.G, B: colSparkle.B, A: 240}},
+		{nIdle, colWorkerLaden},
+	}
+	nonZero := 0
+	for _, seg := range segments {
+		if seg.count > 0 {
+			nonZero++
+		}
+	}
+	fillX := barX + 1
+	fillW := barW - 2
+	remainingW := fillW
+	drawn := 0
+	for _, seg := range segments {
+		if seg.count <= 0 {
+			continue
+		}
+		drawn++
+		w := remainingW
+		if drawn < nonZero {
+			w = fillW * float32(seg.count) / float32(total)
+			if w < 2 {
+				w = 2
+			}
+			if w > remainingW {
+				w = remainingW
+			}
+		}
+		vector.FillRect(screen, fillX, barY+1, w, barH-2, seg.col, false)
+		fillX += w
+		remainingW -= w
+		if remainingW <= 0 {
+			break
+		}
 	}
 }
 

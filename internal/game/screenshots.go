@@ -56,6 +56,7 @@ func screenshotScenarios() []screenshotScenario {
 		invalidFullRimPreviewScenario(),
 		debugPlacementDiagnosticsScenario(),
 		affordabilityButtonsScenario(),
+		townHallSelectedScenario(),
 		wideResourceHUDScenario(),
 		fieldGrowthSpawnCueScenario(),
 		fieldGrowthUpgradeCueScenario(),
@@ -84,8 +85,9 @@ func screenshotScenarios() []screenshotScenario {
 		waterPlanetDockUpgradeSelectedScenario(),
 		waterPlanetNearCompleteNoL2DockScenario(),
 		dockConeVisibilityScenario(),
-		workerRatioUIOpenScenario(), // 38
-		workerRatioHUDScenario(),    // 39
+		workerRatioUIOpenScenario(),              // 38
+		workerRatioHUDScenario(),                 // 39
+		waterPlanetCompletedSystemViewScenario(), // 40
 	}
 }
 
@@ -240,6 +242,22 @@ func affordabilityButtonsScenario() screenshotScenario {
 		name:    "10-affordability-buttons",
 		world:   w,
 		fullHUD: true,
+	}
+}
+
+func townHallSelectedScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 80
+	w.Economy.CapacityBought = 1
+	w.Economy.WorkerCapacity = 2
+	thIdx := 0
+	return screenshotScenario{
+		name:           "11-town-hall-selected",
+		world:          w,
+		fullHUD:        true,
+		selectBuilding: &thIdx,
 	}
 }
 
@@ -777,6 +795,32 @@ func workerRatioHUDScenario() screenshotScenario {
 		world:   p,
 		fullHUD: true,
 	}
+}
+
+// waterPlanetCompletedSystemViewScenario shows the system view immediately after
+// the water frontier has completed: dual abstract rates (Wood/sec + Water/sec)
+// visible in the system-view overlay and both Potential tokens banked.
+func waterPlanetCompletedSystemViewScenario() screenshotScenario {
+	w, err := BuildQAWorld(QAPreset{
+		Name:              "water-planet-completed",
+		Seed:              11,
+		PlaceTownHall:     true,
+		FillTownCapacity:  true,
+		SaturateWoodField: true,
+		Reveal:            true,
+		CompleteEchoes:    []int{1, 2},
+		AwakenFrontier:    true,
+		CompleteFrontier:  true,
+	})
+	if err != nil {
+		return screenshotScenario{name: "40-water-planet-completed-system-view", world: NewWorld(), fullHUD: true}
+	}
+	// Stamp illustrative non-zero abstract rates so the system-view rate display
+	// is readable in the screenshot (the preset has no live workers, so rates
+	// snapshot at zero — this is purely visual).
+	w.System.Planets[3].AbstractRate = 1.4
+	w.System.Planets[3].AbstractWaterRate = 0.6
+	return screenshotScenario{name: "40-water-planet-completed-system-view", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }

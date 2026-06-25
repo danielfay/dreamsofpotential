@@ -18,6 +18,38 @@ func forestPlanetComplete(w *World) bool {
 	return hasKnownForest
 }
 
+// waterPlanetComplete reports the mastery gate for the water frontier:
+// town capacity is maxed AND every known production field is saturated
+// (KindWood nodes + KindWater sparkles) AND at least one dock is Level 2.
+func waterPlanetComplete(w *World) bool {
+	if !townFieldFull(w) {
+		return false
+	}
+	hasKnownField := false
+	for _, f := range w.Planet.Fields {
+		if !f.Known || f.Kind == KindWaterInfluence {
+			continue
+		}
+		hasKnownField = true
+		if f.Kind == KindWater {
+			if waterFieldCanSpawnSparkle(w, f) {
+				return false
+			}
+		} else if fieldCanSpawnNode(w, f) {
+			return false
+		}
+	}
+	if !hasKnownField {
+		return false
+	}
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock && b.Level >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
 // abstractRateSpec pairs a live rate estimator with the PlanetState field it updates.
 // Add an entry here to track any new resource — the rolling-window update handles the rest.
 type abstractRateSpec struct {
@@ -140,18 +172,29 @@ func allEchoesComplete(w *World) bool {
 	return true
 }
 
-// checkActivePlanetCompletion detects when the active echo planet finishes and
+// checkActivePlanetCompletion detects when the active planet finishes and
 // snapshots its amplified abstract rate, then fires a lightweight Town Hall pulse.
+// Handles both echo planets (PlanetEcho) and the water frontier (PlanetUnknown).
 func checkActivePlanetCompletion(w *World) {
 	p := &w.System.Planets[w.Active]
-	if p.Kind != PlanetEcho || !p.Awakened || p.Completed {
+	if (p.Kind != PlanetEcho && p.Kind != PlanetUnknown) || !p.Awakened || p.Completed {
 		return
 	}
-	if !forestPlanetComplete(w) {
-		return
+	isWaterFrontier := p.Kind == PlanetUnknown
+	if isWaterFrontier {
+		if !waterPlanetComplete(w) {
+			return
+		}
+	} else {
+		if !forestPlanetComplete(w) {
+			return
+		}
 	}
 	awardCompletionPotential(w)
 	p.AbstractRate = EstimateRate(w) * completionAmplifier
+	if isWaterFrontier {
+		p.AbstractWaterRate = EstimateWaterRate(w) * completionAmplifier
+	}
 	p.Completed = true
 	p.CompletedAt = w.SimTime
 	if th := townHall(w); th != nil {

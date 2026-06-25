@@ -35,7 +35,7 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	routeRadius := radius + 6
 	lensRadius := radius + 3
 
-	if pv.Valid {
+	if pv.Valid && pv.Kind == KindLoggingCamp {
 		// Free-node route lines — quality-scaled brightness and width.
 		for _, pr := range pv.Free {
 			q := float32(1) - clamp32(float32(pr.Dist)/maxDist, 0, 1)

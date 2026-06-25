@@ -116,9 +116,9 @@ func (g *Game) handleGlobalInput() {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
-	// Esc: cancel placement if placing, otherwise toggle the settings menu.
+	// Esc: in debug mode, cancel placement if active; otherwise toggle the settings menu.
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		if g.placing {
+		if g.debug && g.placing {
 			g.placing = false
 			g.freePlacing = false
 		} else {
@@ -128,97 +128,115 @@ func (g *Game) handleGlobalInput() {
 	}
 }
 
-// handleInput processes build-placement input. It must be called after
-// g.ui.Update() so that EbitenUI has already consumed any widget clicks this
-// frame, preventing a HUD button click from simultaneously placing a camp on
-// the world.
+// handleInput processes build-placement and building-selection input. It must
+// be called after g.ui.Update() so that EbitenUI has already consumed any
+// widget clicks this frame.
 func (g *Game) handleInput() {
-	// Menu is open — swallow all further input so nothing behind it fires.
 	if g.showMenu {
 		return
 	}
-
-	// Focus control is open: route all input to it.
 	if g.showFocusControl {
 		g.handleFocusControlInput()
 		return
 	}
-
-	// Post-unlock: wheel-down and return button navigate to system view.
 	g.handlePlanetViewSystemReturn()
 
-	if !g.placing {
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			mx, my := ebiten.CursorPosition()
-			// Dock tray: any click inside the tray is consumed (upgrade if on button; dismiss otherwise).
-			if g.dockTrayRect.w > 0 {
-				tr := g.dockTrayRect
-				if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
-					float32(my) >= tr.y && float32(my) < tr.y+tr.h {
-					rx := g.dockUpgradeRect
-					if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
-						float32(my) >= rx.y && float32(my) < rx.y+rx.h {
-						if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
-							upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID])
-						}
-					}
-					g.selectedBuildingID = -1
-					return
-				}
-			}
-			// Hit-test dock buildings for selection tray.
-			if !g.hud.pointInHUD(mx, my, g.debug) {
-				wp := g.screenToWorld(mx, my)
-				newSel := -1
-				for i, b := range g.world.Buildings {
-					if b.Kind == KindDock && wp.Dist(b.Pos) <= 6.0 {
-						newSel = i
-						break
-					}
-				}
-				g.selectedBuildingID = newSel
-			}
-		}
-		return
-	}
-
-	// Cancel placement with right-click.
+	// Right-click: deselect any selected building; in debug mode also cancel placement.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-		g.placing = false
-		g.freePlacing = false
+		if g.debug && g.placing {
+			g.placing = false
+			g.freePlacing = false
+		} else {
+			g.selectedBuildingID = -1
+		}
 		return
 	}
 
-	// Confirm placement on left-click outside the HUD.
-	// Any direction snaps to the rim. If invalid we stay in placement mode so the
-	// player can retry at a better angle. After a Town Hall is placed, the Camp
-	// tool is sticky — placement mode stays on so the player can keep placing
-	// camps until they cancel.
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		mx, my := ebiten.CursorPosition()
-		if g.hud.pointInHUD(mx, my, g.debug) {
-			return // click was on the HUD panel; ignore
-		}
-		pv := g.placementPreviewAtCursor()
-		if pv == nil {
+	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		return
+	}
+	mx, my := ebiten.CursorPosition()
+
+	// TH tray: any click inside is consumed (buy capacity if on button; dismiss otherwise).
+	if g.thTrayRect.w > 0 {
+		tr := g.thTrayRect
+		if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
+			float32(my) >= tr.y && float32(my) < tr.y+tr.h {
+			rx := g.thCapacityRect
+			if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
+				float32(my) >= rx.y && float32(my) < rx.y+rx.h {
+				if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
+					g.pulseTime = pulseDuration
+					g.pulseTarget = 2
+				}
+			}
+			g.selectedBuildingID = -1
 			return
 		}
-		isTownHall := len(g.world.Buildings) == 0
-		if !pv.Affordable && g.world.ResourceDiscovered {
-			g.pulseTime = pulseDuration
-			g.pulseTarget = 1
-		}
-		if !pv.Valid {
-			g.rejectTime = microPulseTime
+	}
+
+	// Dock tray: any click inside is consumed (upgrade if on button; dismiss otherwise).
+	if g.dockTrayRect.w > 0 {
+		tr := g.dockTrayRect
+		if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
+			float32(my) >= tr.y && float32(my) < tr.y+tr.h {
+			rx := g.dockUpgradeRect
+			if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
+				float32(my) >= rx.y && float32(my) < rx.y+rx.h {
+				if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
+					upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID])
+				}
+			}
+			g.selectedBuildingID = -1
 			return
 		}
-		if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
-			if isTownHall {
-				g.placing = false
-			}
-			if isTownHall || !g.debug {
-				g.freePlacing = false
-			}
+	}
+
+	// HUD clicks are consumed by EbitenUI.
+	if g.hud.pointInHUD(mx, my, g.debug) {
+		return
+	}
+
+	// Hit-test selectable buildings (dock, town hall). Building selection takes
+	// priority over placement so clicking on a building opens its tray.
+	wp := g.screenToWorld(mx, my)
+	for i, b := range g.world.Buildings {
+		if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+			g.selectedBuildingID = i
+			return
+		}
+	}
+
+	// In debug mode, placement requires g.placing to be explicitly enabled.
+	if g.debug && !g.placing {
+		g.selectedBuildingID = -1
+		return
+	}
+	// Suppress placement during the locked pre-discovery camp period (non-debug only).
+	if !g.debug && len(g.world.Buildings) > 0 && !g.world.ResourceDiscovered {
+		g.selectedBuildingID = -1
+		return
+	}
+
+	// Placement: try to place at cursor position near the rim.
+	pv := g.placementPreviewAtCursor()
+	if pv == nil {
+		g.selectedBuildingID = -1
+		return
+	}
+	isTownHall := len(g.world.Buildings) == 0
+	if !pv.Affordable && g.world.ResourceDiscovered {
+		g.pulseTime = pulseDuration
+		g.pulseTarget = 1
+	}
+	if !pv.Valid {
+		g.rejectTime = microPulseTime
+		return
+	}
+	if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
+		g.selectedBuildingID = -1
+		if isTownHall || !g.debug {
+			g.freePlacing = false
 		}
 	}
 }
@@ -296,10 +314,25 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 }
 
 // curPlacementPreview returns the placement preview for the current cursor
-// position, or nil when not placing or the cursor is too far from the rim.
+// position, or nil when placement is inactive, locked, or the cursor is over
+// a selectable building or too far from the rim.
 func (g *Game) curPlacementPreview() *placementPreview {
 	if !g.placing {
 		return nil
+	}
+	// Suppress during the locked pre-discovery camp period (non-debug mode only).
+	if !g.debug && len(g.world.Buildings) > 0 && !g.world.ResourceDiscovered {
+		return nil
+	}
+	// Suppress when hovering over a selectable building so the click goes to selection.
+	mx, my := ebiten.CursorPosition()
+	if !g.hud.pointInHUD(mx, my, g.debug) {
+		wp := g.screenToWorld(mx, my)
+		for _, b := range g.world.Buildings {
+			if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+				return nil
+			}
+		}
 	}
 	pv := g.placementPreviewAtCursor()
 	if pv != nil && g.rejectTime > 0 {
