@@ -467,40 +467,45 @@ func activeWorkerHUDCounts(w *World) (wood, water, idle int) {
 	return wood, water, idle
 }
 
-func reconcileLaborFocus(w *World) {
-	if len(w.LaborFocus) == 0 {
-		return
-	}
-	// When workers outnumber the focus total (new worker spawned after the ratio
-	// was saved), extend the dominant kind's target by the overflow so it agrees
-	// with assignFocusToIdleWorker and doesn't immediately recall those workers.
+// effectiveFocusTarget returns the worker-count ceiling for kind, accounting
+// for post-ratio-save overflow. When workers were added after the ratio was
+// last set (len(w.Workers) > focusSum), the dominant kind (largest positive
+// target) absorbs the extras so they are not recalled or aborted mid-journey.
+func effectiveFocusTarget(w *World, kind ResourceKind) int {
+	target := w.LaborFocus[kind]
 	focusSum := 0
 	for _, t := range w.LaborFocus {
 		focusSum += t
 	}
 	overflow := len(w.Workers) - focusSum
+	if overflow <= 0 {
+		return target
+	}
 	dominantKind := focusKindNone
-	if overflow > 0 {
-		bestTarget := 0
-		for kind, target := range w.LaborFocus {
-			if target > bestTarget || (target == bestTarget && kind > dominantKind) {
-				bestTarget = target
-				dominantKind = kind
-			}
+	bestTarget := 0
+	for k, t := range w.LaborFocus {
+		if t > bestTarget || (t == bestTarget && k > dominantKind) {
+			bestTarget = t
+			dominantKind = k
 		}
 	}
+	if kind == dominantKind {
+		return target + overflow
+	}
+	return target
+}
 
+func reconcileLaborFocus(w *World) {
+	if len(w.LaborFocus) == 0 {
+		return
+	}
 	counts := activeWorkerCountsByKind(w)
 	for _, wk := range w.Workers {
 		kind := activeWorkerKind(wk)
 		if kind == focusKindNone {
 			continue
 		}
-		target := w.LaborFocus[kind]
-		if kind == dominantKind {
-			target += overflow
-		}
-		if counts[kind] <= target {
+		if counts[kind] <= effectiveFocusTarget(w, kind) {
 			continue
 		}
 		startReturnHome(w, wk)
@@ -785,7 +790,7 @@ func workerShouldAbortKind(w *World, wk *Worker, kind ResourceKind) bool {
 	if len(w.LaborFocus) == 0 {
 		return false
 	}
-	target := w.LaborFocus[kind]
+	target := effectiveFocusTarget(w, kind)
 	if target == 0 {
 		return true
 	}
