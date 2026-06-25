@@ -21,13 +21,13 @@ const (
 
 // HUD holds the live EbitenUI widgets for the resource display and action buttons.
 //
-// Normal mode uses two separate anchored containers:
-//   - normalTopBar: small resource/worker info, horizontal row across the top.
-//   - normalSidebar: action buttons (build, worker), vertical column on the left.
+// Normal mode uses a full-width top bar with a centered horizontal row of
+// resource info and action buttons. New HUD pieces should be added to that row.
 //
 // Debug mode (F3) replaces both with a single verbose debugPanel.
 type HUD struct {
 	face         text.Face
+	normalFace   text.Face
 	sysface      text.Face // fixed 8 px face for system overlay; drawn on scene so it scales naturally
 	debugSection int
 
@@ -52,18 +52,17 @@ type HUD struct {
 	growFullDbg      *widget.Button
 	resetBtn         *widget.Button
 
-	// normal mode — top bar (resource info, horizontal, full-width)
-	normalTopBar *widget.Container
-	resourceHUD  *widget.Container // green icon + amount; hidden until discovered
-	resourceText *widget.Text
-	waterHUD     *widget.Container // blue icon + amount; hidden until first water delivery
-	waterText    *widget.Text
-	workerHUD    *widget.Container // yellow icon + ratio; hidden until first worker
-	workerRatio  *widget.Text
-	workerSquare *widget.Button // interactive swatch: opens focus control when 2 resources active
+	// normal mode — top bar (resource info + actions, centered, full-width)
+	normalTopBar     *widget.Container
+	normalTopContent *widget.Container
+	resourceHUD      *widget.Container // green icon + amount; hidden until discovered
+	resourceText     *widget.Text
+	waterHUD         *widget.Container // blue icon + amount; hidden until first water delivery
+	waterText        *widget.Text
+	workerHUD        *widget.Container // yellow icon + ratio; hidden until first worker
+	workerRatio      *widget.Text
+	workerSquare     *widget.Button // interactive swatch: opens focus control when 2 resources active
 
-	// normal mode — left sidebar (action buttons, vertical)
-	normalSidebar        *widget.Container
 	buildCampBtn         *widget.Button // brown square — always visible
 	buildTownCapacityBtn *widget.Button // yellow square — hidden until Town Hall exists
 
@@ -88,7 +87,7 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 	if debug {
 		return inRect(h.debugPanel)
 	}
-	return inRect(h.normalSidebar) || inRect(h.normalTopBar)
+	return inRect(h.normalTopBar)
 }
 
 // Refresh updates all HUD labels and visibility states to match the world.
@@ -98,7 +97,6 @@ func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *place
 		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
-		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		return
 	} else {
 		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
@@ -107,18 +105,15 @@ func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *place
 	if debug {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
-		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.refreshDebug(w, placing, pv)
 	} else if w.System.View == ViewSystem {
 		// In system view the EbitenUI planet HUD is hidden; the system overlay
 		// is drawn manually in drawOverlay.
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
-		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Hide)
 	} else {
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Show)
-		h.normalSidebar.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.refreshNormal(w)
 	}
 }
@@ -392,8 +387,13 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	hud := &HUD{}
 	hud.face = &text.GoTextFace{Source: src, Size: float64(16*s) * 0.75}
+	hud.normalFace = &text.GoTextFace{
+		Source: src,
+		Size:   float64(planetTopHUDFontBase*s) * ebitenUIHUDBaseScale * planetTopHUDScale * planetTopHUDTextScale,
+	}
 	hud.sysface = &text.GoTextFace{Source: src, Size: 8.0 * float64(s)}
 	face := &hud.face
+	normalFace := &hud.normalFace
 
 	// --- debug panel styling ---
 	dbgBtnImg := func() *widget.ButtonImage {
@@ -570,9 +570,9 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.growFullDbg)
 	hud.debugPanel.AddChild(hud.resetBtn)
 
-	// --- normal mode: top bar ---
-	// Stretched horizontally so its Rect covers the full screen width, making
-	// pointInHUD reliable even before any children are visible.
+	// --- normal mode: full-width top bar ---
+	// The outer bar owns the full top interaction space. The inner row stays
+	// centered, so newly appended HUD pieces remain grouped around screen center.
 
 	// smallSquare creates a non-interactive solid-color square for the top bar.
 	// Both MinSize AND RowLayoutData.MaxWidth/MaxHeight are required: MinSize
@@ -596,8 +596,11 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		)
 	}
 
-	iconSz := sz(20)
-	digitWidth := sz(10)
+	topSz := func(base int) int {
+		return scaledHUDInt(s, planetTopHUDScale, base)
+	}
+	iconSz := topSz(planetTopHUDIconBase)
+	digitWidth := topSz(planetTopHUDDigitBase)
 	minResourceDigits := 4
 	if g.hudDigits > minResourceDigits {
 		minResourceDigits = g.hudDigits
@@ -608,13 +611,13 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	initialResourceLabel := fmt.Sprintf("%.0f", g.world.Economy.Wood)
 
 	hud.resourceText = widget.NewText(
-		widget.TextOpts.Text(initialResourceLabel, face, color.NRGBA{R: 180, G: 255, B: 180, A: 255}),
+		widget.TextOpts.Text(initialResourceLabel, normalFace, color.NRGBA{R: 180, G: 255, B: 180, A: 255}),
 		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*minResourceDigits, 0)),
 	)
 	hud.resourceHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
-			widget.RowLayoutOpts.Spacing(sz(4)),
+			widget.RowLayoutOpts.Spacing(topSz(planetTopHUDInnerGapBase)),
 		)),
 	)
 	hud.resourceSquare = widget.NewButton(
@@ -640,13 +643,13 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 
 	hud.waterText = widget.NewText(
-		widget.TextOpts.Text("0", face, color.NRGBA{R: 100, G: 200, B: 255, A: 255}),
+		widget.TextOpts.Text("0", normalFace, color.NRGBA{R: 100, G: 200, B: 255, A: 255}),
 		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*minResourceDigits, 0)),
 	)
 	hud.waterHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
-			widget.RowLayoutOpts.Spacing(sz(4)),
+			widget.RowLayoutOpts.Spacing(topSz(planetTopHUDInnerGapBase)),
 		)),
 	)
 	hud.waterHUD.AddChild(smallSquare(colSparkle, iconSz))
@@ -654,7 +657,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.waterHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 
 	hud.workerRatio = widget.NewText(
-		widget.TextOpts.Text("0/0", face, color.NRGBA{R: 255, G: 240, B: 180, A: 255}),
+		widget.TextOpts.Text("0/0", normalFace, color.NRGBA{R: 255, G: 240, B: 180, A: 255}),
 		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*5, 0)),
 	)
 	hud.workerSquare = widget.NewButton(
@@ -680,35 +683,36 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.workerHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
-			widget.RowLayoutOpts.Spacing(sz(4)),
+			widget.RowLayoutOpts.Spacing(topSz(planetTopHUDInnerGapBase)),
 		)),
 	)
 	hud.workerHUD.AddChild(hud.workerSquare)
 	hud.workerHUD.AddChild(hud.workerRatio)
 	hud.workerHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 
-	hud.normalTopBar = widget.NewContainer(
+	hud.normalTopContent = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
-			widget.RowLayoutOpts.Spacing(sz(12)),
-			widget.RowLayoutOpts.Padding(&widget.Insets{Top: sz(6), Left: sz(6), Bottom: sz(6), Right: sz(6)}),
+			widget.RowLayoutOpts.Spacing(topSz(planetTopHUDGroupGapBase)),
+			widget.RowLayoutOpts.Padding(&widget.Insets{
+				Top:    topSz(planetTopHUDPaddingVBase),
+				Left:   topSz(planetTopHUDPaddingHBase),
+				Bottom: topSz(planetTopHUDPaddingVBase),
+				Right:  topSz(planetTopHUDPaddingHBase),
+			}),
 		)),
 		widget.ContainerOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
-				HorizontalPosition: widget.AnchorLayoutPositionStart,
-				VerticalPosition:   widget.AnchorLayoutPositionStart,
-				StretchHorizontal:  true,
+				HorizontalPosition: widget.AnchorLayoutPositionCenter,
+				VerticalPosition:   widget.AnchorLayoutPositionCenter,
 			}),
 		),
 	)
-	hud.normalTopBar.AddChild(hud.resourceHUD)
-	hud.normalTopBar.AddChild(hud.waterHUD)
-	hud.normalTopBar.AddChild(hud.workerHUD)
+	hud.normalTopContent.AddChild(hud.resourceHUD)
+	hud.normalTopContent.AddChild(hud.waterHUD)
+	hud.normalTopContent.AddChild(hud.workerHUD)
 
-	// --- normal mode: left sidebar (action buttons) ---
-	// Top padding clears the top bar; proportional to scale.
-
-	btnSz := sz(28)
+	btnSz := topSz(planetTopHUDActionBase)
 
 	// actionSquare creates an interactive button for the sidebar.
 	actionSquare := func(idle, hover, pressed, disabled color.Color) *widget.ButtonImage {
@@ -768,29 +772,24 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	)
 	hud.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
 
-	sidebarSpacer := widget.NewContainer(
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(1, sz(10)),
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{MaxHeight: sz(10)}),
-		),
-	)
+	hud.normalTopContent.AddChild(hud.buildCampBtn)
+	hud.normalTopContent.AddChild(hud.buildTownCapacityBtn)
 
-	hud.normalSidebar = widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(sz(6)),
-			widget.RowLayoutOpts.Padding(&widget.Insets{Top: sz(52), Left: sz(8), Bottom: sz(8), Right: sz(8)}),
-		)),
+	hud.normalTopBar = widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(
+			eimage.NewNineSliceColor(colSysTrayFill),
+		),
+		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(0, topSz(planetTopHUDHeightBase)),
 			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
-				HorizontalPosition: widget.AnchorLayoutPositionStart,
+				HorizontalPosition: widget.AnchorLayoutPositionCenter,
 				VerticalPosition:   widget.AnchorLayoutPositionStart,
+				StretchHorizontal:  true,
 			}),
 		),
 	)
-	hud.normalSidebar.AddChild(hud.buildCampBtn)
-	hud.normalSidebar.AddChild(sidebarSpacer)
-	hud.normalSidebar.AddChild(hud.buildTownCapacityBtn)
+	hud.normalTopBar.AddChild(hud.normalTopContent)
 
 	// --- settings menu overlay ---
 	menuBtnImg := &widget.ButtonImage{
@@ -881,13 +880,12 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.menuPanel.AddChild(hud.menuResetBtn)
 	hud.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 
-	// Root: AnchorLayout holding debug panel, both normal-mode containers, and menu overlay.
+	// Root: AnchorLayout holding debug panel, normal-mode top bar, and menu overlay.
 	root := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 	root.AddChild(hud.debugPanel)
 	root.AddChild(hud.normalTopBar)
-	root.AddChild(hud.normalSidebar)
 	root.AddChild(hud.menuPanel)
 
 	// Start in normal (minimalist) mode.
