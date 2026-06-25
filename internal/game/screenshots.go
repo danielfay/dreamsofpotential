@@ -56,6 +56,7 @@ func screenshotScenarios() []screenshotScenario {
 		invalidFullRimPreviewScenario(),
 		debugPlacementDiagnosticsScenario(),
 		affordabilityButtonsScenario(),
+		townHallSelectedScenario(),
 		wideResourceHUDScenario(),
 		fieldGrowthSpawnCueScenario(),
 		fieldGrowthUpgradeCueScenario(),
@@ -241,6 +242,22 @@ func affordabilityButtonsScenario() screenshotScenario {
 		name:    "10-affordability-buttons",
 		world:   w,
 		fullHUD: true,
+	}
+}
+
+func townHallSelectedScenario() screenshotScenario {
+	w := screenshotWorld(11)
+	mustPlace(w, w.Planet.Fields[0].CenterAngle)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 80
+	w.Economy.CapacityBought = 1
+	w.Economy.WorkerCapacity = 2
+	thIdx := 0
+	return screenshotScenario{
+		name:           "11-town-hall-selected",
+		world:          w,
+		fullHUD:        true,
+		selectBuilding: &thIdx,
 	}
 }
 

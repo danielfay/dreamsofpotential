@@ -69,10 +69,13 @@ type Game struct {
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
 
-	// planet-view selected building (dock tray with upgrade action)
-	selectedBuildingID int     // index into w.Buildings; -1 = none
-	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
-	dockTrayRect       sysRect // entire tray background rect (clicking anywhere dismisses)
+	// planet-view selected building (dock tray or town hall tray)
+	selectedBuildingID          int     // index into w.Buildings; -1 = none
+	dockUpgradeRect             sysRect // upgrade button hit-test rect in native screen space
+	dockTrayRect                sysRect // entire dock tray background rect (clicking anywhere dismisses)
+	thCapacityRect              sysRect // capacity button in TH tray
+	thTrayRect                  sysRect // entire TH tray background rect
+	thCapacityAttentionCooldown float64 // counts down to next TH capacity attention pulse
 
 	// labor focus control overlay
 	showFocusControl bool
@@ -104,6 +107,7 @@ func New() (*Game, error) {
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
 		workerRatioAttentionCooldown: nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
+		thCapacityAttentionCooldown:  nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
 		selectedBuildingID:           -1,
@@ -207,6 +211,11 @@ func (g *Game) Update() error {
 	if g.world.System.View == ViewSystem {
 		g.handleSystemInput()
 	} else {
+		// Auto-placement: always in placement mode when in planet view.
+		// Debug mode retains manual button control.
+		if !g.debug {
+			g.placing = true
+		}
 		g.handleInput()
 
 		if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
@@ -270,6 +279,14 @@ func (g *Game) Update() error {
 			g.dockUpgradeAttentionCooldown = nurtureAttentionInterval
 			if dock := dockUpgradeAttentionDock(g.world); dock != nil {
 				activatePulse(g.world, &dock.Pulse)
+			}
+		}
+		g.thCapacityAttentionCooldown -= dt
+		if g.thCapacityAttentionCooldown <= 0 {
+			g.thCapacityAttentionCooldown = nurtureAttentionInterval
+			if th := townHall(g.world); th != nil && !townFieldFull(g.world) &&
+				g.world.Economy.Wood >= townCapacityCost(g.world) {
+				activatePulse(g.world, &th.Pulse)
 			}
 		}
 		if g.rejectTime > 0 {
@@ -387,15 +404,6 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 
 	g.drawAffordabilityProgress(screen)
 
-	// Selected-outline around the build button while placement mode is active.
-	if g.placing {
-		r := g.hud.buildCampBtn.GetWidget().Rect
-		vector.StrokeRect(screen,
-			float32(r.Min.X)-2, float32(r.Min.Y)-2,
-			float32(r.Max.X-r.Min.X)+4, float32(r.Max.Y-r.Min.Y)+4,
-			2, colGhostOk, false)
-	}
-
 	// Gauge bar beneath the resource HUD icon+number, only after discovery.
 	if g.world.ResourceDiscovered && len(g.world.Planet.Fields) > 0 {
 		f := g.world.Planet.Fields[0]
@@ -506,8 +514,9 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		}
 	}
 
-	// Selected-building dock tray.
+	// Selected-building trays.
 	g.drawDockTray(screen)
+	g.drawTownHallTray(screen)
 
 	// Worker HUD slider icon + colored breakdown (shown when focus is active).
 	g.drawWorkerHUDOverlay(screen)
@@ -521,17 +530,22 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		colPulse.A = uint8(200 * g.pulseTime / pulseDuration)
 		switch g.pulseTarget {
 		case 1:
-			pr := g.hud.buildCampBtn.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			// Camp unaffordable: flash around the wood resource display.
+			if g.hud.resourceHUD != nil {
+				pr := g.hud.resourceHUD.GetWidget().Rect
+				vector.StrokeRect(screen,
+					float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+					float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+					2, colPulse, false)
+			}
 		case 2:
-			pr := g.hud.buildTownCapacityBtn.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			// Capacity unaffordable: flash around the TH tray capacity button.
+			if g.thCapacityRect.w > 0 {
+				cr := g.thCapacityRect
+				vector.StrokeRect(screen,
+					cr.x-2, cr.y-2, cr.w+4, cr.h+4,
+					2, colPulse, false)
+			}
 		case 3:
 			pr := g.hud.resourceSquare.GetWidget().Rect
 			vector.StrokeRect(screen,
@@ -542,21 +556,10 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 	}
 }
 
-// drawAffordabilityProgress fills disabled economy buttons from bottom to top
-// as the player approaches the cost. Non-economy locks remain fully dim.
-func (g *Game) drawAffordabilityProgress(screen *ebiten.Image) {
-	hasTownHall := len(g.world.Buildings) > 0
-	discovered := g.world.ResourceDiscovered
-	if hasTownHall && discovered {
-		drawButtonProgress(screen, g.hud.buildCampBtn, affordabilityFrac(g.world.Economy.Wood, CampCost(g.world)),
-			color.RGBA{R: 100, G: 62, B: 36, A: 230}) // colBuilding, A:230
-	}
-	if hasTownHall && !townFieldFull(g.world) {
-		drawButtonProgress(screen, g.hud.buildTownCapacityBtn,
-			affordabilityFrac(g.world.Economy.Wood, townCapacityCost(g.world)),
-			color.RGBA{R: 230, G: 145, B: 70, A: 230})
-	}
-}
+// drawAffordabilityProgress was used to fill disabled HUD buttons from bottom to top.
+// Camp and capacity buttons have moved to the world (auto-placement) and TH tray respectively,
+// so this is now a no-op retained for potential future use.
+func (g *Game) drawAffordabilityProgress(_ *ebiten.Image) {}
 
 func affordabilityFrac(wood, cost float64) float32 {
 	if cost <= 0 || wood >= cost {
@@ -973,6 +976,8 @@ func clearTransientUI(g *Game) {
 	g.showFocusControl = false
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
+	g.thCapacityRect = sysRect{}
+	g.thTrayRect = sysRect{}
 }
 
 // openFocusControl opens the labor focus control, initialising the draft split
@@ -1166,6 +1171,122 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		cx += iconSize + 2*sp
 		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
 		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
+	}
+}
+
+// drawTownHallTray draws a bottom tray when the Town Hall is selected.
+// Mirrors the dock tray: TH swatch + one level pip, then a capacity action button.
+// When the town field is full the button is greyed out and non-interactive.
+func (g *Game) drawTownHallTray(screen *ebiten.Image) {
+	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
+		g.thCapacityRect = sysRect{}
+		g.thTrayRect = sysRect{}
+		return
+	}
+	b := g.world.Buildings[g.selectedBuildingID]
+	if b.Kind != KindTownHall {
+		g.thCapacityRect = sysRect{}
+		g.thTrayRect = sysRect{}
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	face := g.hud.sysface
+	selectedHUD := func(base float64) float32 {
+		return scaledHUDFloat(scale, selectedBuildingHUDScale, base)
+	}
+	if face == nil {
+		g.thCapacityRect = sysRect{}
+		g.thTrayRect = sysRect{}
+		return
+	}
+
+	th := selectedHUD(bottomHUDHeightBase)
+	tx := float32(0)
+	tw := float32(g.screenW)
+	ty := float32(g.screenH) - th
+
+	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
+	vector.StrokeLine(screen, tx, ty, tx+tw, ty, 1, colSysTrayBorder, false)
+	g.thTrayRect = sysRect{x: tx, y: ty, w: tw, h: th}
+
+	sp := selectedHUD(1)
+
+	swSize := selectedHUD(bottomHUDSwatchBase)
+	swY := ty + (th-swSize)/2
+
+	// One level pip: TH is always level 1.
+	pipHalfW := selectedHUD(3)
+	pipCY := ty + th/2
+	pipsW := pipHalfW * 2
+
+	actionWpx := selectedHUD(selectedHUDActionWidthBase)
+	actionInset := selectedHUD(selectedHUDActionInsetBase)
+	actionH := th - actionInset*2
+	ayTop := ty + actionInset
+	contentGap := selectedHUD(selectedHUDContentGapBase)
+	identityGap := selectedHUD(selectedHUDIdentityGapBase)
+
+	totalW := swSize + identityGap + pipsW + contentGap + actionWpx
+	cx := float32(g.screenW)/2 - totalW/2
+
+	swX := cx
+	vector.FillRect(screen, swX, swY, swSize, swSize, colTownHall, false)
+	drawUpTriangle(screen, swX+swSize+identityGap+pipHalfW, pipCY, pipHalfW, colSysTrayBorder)
+
+	axLeft := swX + swSize + identityGap + pipsW + contentGap
+
+	isFull := townFieldFull(g.world)
+	if isFull {
+		// Greyed out — not interactive.
+		g.thCapacityRect = sysRect{}
+		vector.FillRect(screen, axLeft, ayTop, actionWpx, actionH,
+			color.RGBA{R: 30, G: 30, B: 45, A: 200}, false)
+		vector.StrokeRect(screen, axLeft, ayTop, actionWpx, actionH, 1, colSysTrayBorder, false)
+	} else {
+		cost := townCapacityCost(g.world)
+		affordable := g.world.Economy.Wood >= cost
+		btnX := axLeft
+		btnW := actionWpx
+		btnH := actionH
+
+		// Dark base.
+		vector.FillRect(screen, btnX, ayTop, btnW, btnH, colSysTrayFill, false)
+
+		// Fill from bottom to top as wood accumulates.
+		frac := affordabilityFrac(g.world.Economy.Wood, cost)
+		if frac > 0 && frac < 1 {
+			fillH := btnH * frac
+			vector.FillRect(screen, btnX, ayTop+btnH-fillH, btnW, fillH,
+				color.RGBA{R: 120, G: 75, B: 30, A: 200}, false)
+		} else if affordable {
+			vector.FillRect(screen, btnX, ayTop, btnW, btnH,
+				color.RGBA{R: 120, G: 75, B: 30, A: 200}, false)
+		}
+
+		borderCol := colSysTrayBorder
+		if affordable {
+			borderCol = color.RGBA{R: 200, G: 120, B: 50, A: 220}
+		}
+		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
+
+		// Attention pulse: glow when TH's pulse is active.
+		if pulseActive(g.world, b.Pulse) {
+			atCol := colNurtureAttention
+			atCol.A = 180
+			vector.StrokeRect(screen, btnX-1, ayTop-1, btnW+2, btnH+2, 1.5, atCol, false)
+		}
+
+		g.thCapacityRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
+
+		// Wood cost icon + amount.
+		iconSize := selectedHUD(bottomHUDSmallIconBase)
+		iconY := ayTop + (btnH-iconSize)/2
+		icx := btnX + 4*sp
+		vector.FillRect(screen, icx, iconY, iconSize, iconSize, colWoodResource, false)
+		icx += iconSize + 2*sp
+		costStr := fmt.Sprintf("%.0f", cost)
+		drawSysText(screen, costStr, icx, iconY, colWoodLabel, face)
 	}
 }
 

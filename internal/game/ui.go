@@ -63,9 +63,6 @@ type HUD struct {
 	workerRatio      *widget.Text
 	workerSquare     *widget.Button // interactive swatch: opens focus control when 2 resources active
 
-	buildCampBtn         *widget.Button // brown square — always visible
-	buildTownCapacityBtn *widget.Button // yellow square — hidden until Town Hall exists
-
 	// settings menu overlay (centered; shown when showMenu is true)
 	menuPanel     *widget.Container
 	menuSaveBtn   *widget.Button
@@ -282,25 +279,7 @@ func (h *HUD) applyDebugSectionVisibility() {
 }
 
 func (h *HUD) refreshNormal(w *World) {
-	hasTownHall := len(w.Buildings) > 0
 	discovered := w.ResourceDiscovered
-
-	// --- sidebar: action buttons ---
-
-	// Build button:
-	//   - before Town Hall: always enabled (Town Hall is free)
-	//   - after Town Hall, pre-discovery: locked (Camp tool dimmed)
-	//   - after discovery: enabled when affordable
-	campLocked := hasTownHall && !discovered
-	h.buildCampBtn.GetWidget().Disabled = campLocked || (hasTownHall && w.Economy.Wood < CampCost(w))
-
-	// Capacity button: visible only while Town Hall exists and town is not yet full.
-	if hasTownHall && !townFieldFull(w) {
-		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Show)
-		h.buildTownCapacityBtn.GetWidget().Disabled = w.Economy.Wood < townCapacityCost(w)
-	} else {
-		h.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
-	}
 
 	// --- top bar: resource info ---
 
@@ -711,69 +690,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.normalTopContent.AddChild(hud.resourceHUD)
 	hud.normalTopContent.AddChild(hud.waterHUD)
 	hud.normalTopContent.AddChild(hud.workerHUD)
-
-	btnSz := topSz(planetTopHUDActionBase)
-
-	// actionSquare creates an interactive button for the sidebar.
-	actionSquare := func(idle, hover, pressed, disabled color.Color) *widget.ButtonImage {
-		return &widget.ButtonImage{
-			Idle:     eimage.NewNineSliceColor(idle),
-			Hover:    eimage.NewNineSliceColor(hover),
-			Pressed:  eimage.NewNineSliceColor(pressed),
-			Disabled: eimage.NewNineSliceColor(disabled),
-		}
-	}
-
-	hud.buildCampBtn = widget.NewButton(
-		widget.ButtonOpts.Image(actionSquare(
-			colBuilding,
-			color.NRGBA{R: 130, G: 82, B: 48, A: 255},
-			color.NRGBA{R: 72, G: 44, B: 26, A: 255},
-			color.NRGBA{R: 48, G: 34, B: 24, A: 255},
-		)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(btnSz, btnSz),
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{MaxWidth: btnSz, MaxHeight: btnSz}),
-		),
-		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			if g.placing {
-				g.placing = false
-				g.freePlacing = false
-				return
-			}
-			// Town Hall is free; only check affordability once a Town Hall exists.
-			if len(g.world.Buildings) > 0 && g.world.Economy.Wood < CampCost(g.world) {
-				g.pulseTime = pulseDuration
-				g.pulseTarget = 1
-				return
-			}
-			g.freePlacing = false
-			g.placing = true
-		}),
-	)
-
-	hud.buildTownCapacityBtn = widget.NewButton(
-		widget.ButtonOpts.Image(actionSquare(
-			colTownCapacity,
-			color.NRGBA{R: 235, G: 132, B: 64, A: 255},
-			color.NRGBA{R: 165, G: 78, B: 36, A: 255},
-			color.NRGBA{R: 82, G: 48, B: 34, A: 255},
-		)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(btnSz, btnSz),
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{MaxWidth: btnSz, MaxHeight: btnSz}),
-		),
-		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
-				g.pulseTime = pulseDuration
-				g.pulseTarget = 2
-			}
-		}),
-	)
-	hud.buildTownCapacityBtn.GetWidget().SetVisibility(widget.Visibility_Hide)
-
-	hud.normalTopContent.AddChild(hud.buildCampBtn)
-	hud.normalTopContent.AddChild(hud.buildTownCapacityBtn)
 
 	hud.normalTopBar = widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(
