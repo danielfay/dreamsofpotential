@@ -415,17 +415,48 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		if frac > 0 {
 			vector.FillRect(screen, x, y, w*frac, h, colWoodGaugeFill, false)
 		}
-		if g.world.growthCue.GaugeAfterglow > 0 {
+		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeAfterglow > 0 {
 			t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
 			col := colGrowthGaugeAfterglow
 			col.A = uint8(120 * t)
 			vector.FillRect(screen, x, y, w, h, col, false)
 		}
-		if g.world.growthCue.GaugeRelease > 0 {
+		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeRelease > 0 {
 			t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
 			col := colGrowthGaugeRelease
 			col.A = uint8(210 * t)
 			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, col, false)
+		}
+
+		// Water gauge bar beneath the water HUD icon+number.
+		if g.world.Economy.WaterDiscovered {
+			var waterFrac float32
+			if fp := g.world.Planet.FieldProgress[KindWater]; fp != nil && fp.Cap > 0 {
+				waterFrac = float32(fp.EXP / fp.Cap)
+				if waterFrac > 1 {
+					waterFrac = 1
+				}
+			}
+			wr := g.hud.waterHUD.GetWidget().Rect
+			wx := float32(wr.Min.X)
+			wy := float32(wr.Max.Y) + 2
+			ww := float32(wr.Max.X - wr.Min.X)
+			vector.StrokeRect(screen, wx, wy, ww, h, 1, colWaterGaugeFrame, false)
+			if waterFrac > 0 {
+				vector.FillRect(screen, wx, wy, ww*waterFrac, h, colWaterGaugeFill, false)
+			}
+			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeAfterglow > 0 {
+				t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
+				col := colGrowthGaugeAfterglow
+				col.A = uint8(120 * t)
+				vector.FillRect(screen, wx, wy, ww, h, col, false)
+			}
+			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeRelease > 0 {
+				t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
+				col := colGrowthGaugeRelease
+				col.A = uint8(210 * t)
+				vector.StrokeRect(screen, wx-1, wy-1, ww+2, h+2, 1, col, false)
+			}
 		}
 
 		sr := g.hud.resourceSquare.GetWidget().Rect

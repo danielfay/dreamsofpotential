@@ -128,4 +128,10 @@ var (
 	colAtmosphereStart = color.RGBA{R: 55, G: 200, B: 80, A: 255}  // starting planet — mid green
 	colAtmosphereA     = color.RGBA{R: 40, G: 190, B: 100, A: 255} // echo layout 0 — cool blue-green
 	colAtmosphereB     = color.RGBA{R: 110, G: 210, B: 45, A: 255} // echo layout 1 — warm yellow-green
+	colAtmosphereWater = color.RGBA{R: 50, G: 160, B: 230, A: 255} // water frontier — azure blue
+)
+
+var (
+	colWaterGaugeFill  = color.RGBA{R: 60, G: 160, B: 230, A: 180}
+	colWaterGaugeFrame = colWoodGaugeFrame
 )

@@ -55,12 +55,14 @@ var (
 	gradAtmosphereStart colorgrad.Gradient
 	gradAtmosphereA     colorgrad.Gradient
 	gradAtmosphereB     colorgrad.Gradient
+	gradAtmosphereWater colorgrad.Gradient
 )
 
 func init() {
 	gradAtmosphereStart = buildAtmosphereGrad(colAtmosphereStart)
 	gradAtmosphereA = buildAtmosphereGrad(colAtmosphereA)
 	gradAtmosphereB = buildAtmosphereGrad(colAtmosphereB)
+	gradAtmosphereWater = buildAtmosphereGrad(colAtmosphereWater)
 }
 
 // viewGeom returns the uniform scale and top-left offset that centres the
@@ -131,6 +133,8 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 	switch {
 	case p.Kind == PlanetEcho && p.Completed:
 		completedAt = p.CompletedAt
+	case p.Kind == PlanetUnknown && p.Completed:
+		completedAt = p.CompletedAt
 	case p.Kind == PlanetStarting && w.System.Unlocked:
 		completedAt = p.CompletedAt
 	default:
@@ -143,6 +147,9 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 		atmosGrad colorgrad.Gradient
 	)
 	switch {
+	case p.Kind == PlanetUnknown:
+		base = colAtmosphereWater
+		atmosGrad = gradAtmosphereWater
 	case p.Kind == PlanetEcho && p.LayoutID == 1:
 		base = colAtmosphereB
 		atmosGrad = gradAtmosphereB
