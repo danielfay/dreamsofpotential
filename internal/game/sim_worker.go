@@ -471,6 +471,25 @@ func reconcileLaborFocus(w *World) {
 	if len(w.LaborFocus) == 0 {
 		return
 	}
+	// When workers outnumber the focus total (new worker spawned after the ratio
+	// was saved), extend the dominant kind's target by the overflow so it agrees
+	// with assignFocusToIdleWorker and doesn't immediately recall those workers.
+	focusSum := 0
+	for _, t := range w.LaborFocus {
+		focusSum += t
+	}
+	overflow := len(w.Workers) - focusSum
+	dominantKind := focusKindNone
+	if overflow > 0 {
+		bestTarget := 0
+		for kind, target := range w.LaborFocus {
+			if target > bestTarget || (target == bestTarget && kind > dominantKind) {
+				bestTarget = target
+				dominantKind = kind
+			}
+		}
+	}
+
 	counts := activeWorkerCountsByKind(w)
 	for _, wk := range w.Workers {
 		kind := activeWorkerKind(wk)
@@ -478,6 +497,9 @@ func reconcileLaborFocus(w *World) {
 			continue
 		}
 		target := w.LaborFocus[kind]
+		if kind == dominantKind {
+			target += overflow
+		}
 		if counts[kind] <= target {
 			continue
 		}
