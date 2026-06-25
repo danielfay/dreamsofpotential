@@ -363,7 +363,11 @@ func bestFreeNodeForKind(w *World, kind ResourceKind) *ResourceNode {
 
 // assignFocusToIdleWorker updates wk.FocusedKind to match LaborFocus before
 // assigning the worker a job. If LaborFocus is empty, the worker is unfocused.
-// The worker assigned to the most under-represented kind.
+// Counts are based on actual work states, not FocusedKind labels, so that
+// multiple idle workers dispatched in the same tick each see accurate counts:
+// a worker dispatched earlier in the loop is in an active state (StateToDock,
+// StateToForest, …) and gets counted; an idle worker waiting to be processed
+// does not, preventing all idle workers from seeing the same baseline.
 func assignFocusToIdleWorker(w *World, wk *Worker) {
 	if len(w.LaborFocus) == 0 {
 		wk.FocusedKind = focusKindNone
@@ -371,10 +375,15 @@ func assignFocusToIdleWorker(w *World, wk *Worker) {
 	}
 	counts := map[ResourceKind]int{}
 	for _, other := range w.Workers {
-		if other.ID == wk.ID || other.FocusedKind == focusKindNone {
+		if other.ID == wk.ID {
 			continue
 		}
-		counts[other.FocusedKind]++
+		switch {
+		case workerInWaterLoop(other):
+			counts[KindWater]++
+		case workerInLoop(other), other.State == StateDeparturePulse, other.State == StateToRim:
+			counts[KindWood]++
+		}
 	}
 	var bestKind ResourceKind = focusKindNone
 	bestDeficit := 0
