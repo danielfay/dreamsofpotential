@@ -1003,31 +1003,25 @@ func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 
 	nWood, nWater, nIdle := activeWorkerHUDCounts(w)
 
-	// ── Slider icon (drawn over workerSquare button) ──────────────────────
+	// ── Split worker icon (drawn over workerSquare button) ────────────────
 	sqR := g.hud.workerSquare.GetWidget().Rect
 	sqX := float32(sqR.Min.X)
 	sqY := float32(sqR.Min.Y)
 	sqW := float32(sqR.Dx())
 	sqH := float32(sqR.Dy())
 
-	// Dark backing keeps the icon distinct from the plain worker-count swatch.
-	vector.FillRect(screen, sqX, sqY, sqW, sqH, color.RGBA{R: 34, G: 34, B: 22, A: 235}, false)
+	vector.FillRect(screen, sqX, sqY, sqW, sqH, color.RGBA{R: 46, G: 40, B: 16, A: 235}, false)
+	vector.StrokeRect(screen, sqX, sqY, sqW, sqH, 1, colWorkerLaden, false)
 
-	iconCol := colWorkerLaden
-	trackPad := 3 * sp
-	trackX := sqX + trackPad
-	trackWpx := sqW - 2*trackPad
-	trackY := sqY + sqH/2
-
-	knobW := 5 * sp
-	knobH := 8 * sp
-	knobX := trackX + trackWpx/2 - knobW/2
-	knobY := sqY + sqH/2 - knobH/2
-
-	vector.StrokeLine(screen, trackX, trackY, knobX-1, trackY, 1.5, iconCol, false)
-	vector.StrokeLine(screen, knobX+knobW+1, trackY, trackX+trackWpx, trackY, 1.5, iconCol, false)
-	vector.FillRect(screen, knobX, knobY, knobW, knobH, iconCol, false)
-	vector.StrokeRect(screen, knobX, knobY, knobW, knobH, 1, color.RGBA{R: 70, G: 58, B: 12, A: 230}, false)
+	inset := 3 * sp
+	innerX := sqX + inset
+	innerY := sqY + inset
+	innerW := sqW - inset*2
+	innerH := sqH - inset*2
+	halfW := innerW / 2
+	vector.FillRect(screen, innerX, innerY, halfW, innerH, colWoodResource, false)
+	vector.FillRect(screen, innerX+halfW, innerY, innerW-halfW, innerH, colSparkle, false)
+	vector.StrokeLine(screen, innerX+halfW, innerY, innerX+halfW, innerY+innerH, 1, colWorkerLaden, false)
 
 	// ── Colored count text (drawn over workerRatio text widget) ───────────
 	txtR := g.hud.workerRatio.GetWidget().Rect
