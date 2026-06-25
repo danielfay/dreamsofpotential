@@ -82,6 +82,20 @@ func drawArcAtRadius(scene *ebiten.Image, planet Planet, radius, a, b, width flo
 	vector.StrokePath(scene, &path, sop, drawOp)
 }
 
+// drawUpTriangle draws a small filled upward-pointing triangle.
+// (cx, cy) is the centroid; halfW is the half-base width.
+func drawUpTriangle(scene *ebiten.Image, cx, cy, halfW float32, col color.RGBA) {
+	h := halfW * 1.5
+	var path vector.Path
+	path.MoveTo(cx, cy-h*2/3)
+	path.LineTo(cx+halfW, cy+h/3)
+	path.LineTo(cx-halfW, cy+h/3)
+	path.Close()
+	op := &vector.DrawPathOptions{}
+	op.ColorScale.ScaleWithColor(col)
+	vector.FillPath(scene, &path, nil, op)
+}
+
 // drawOrientedRect fills an axis-oriented-in-world-space rectangle defined by
 // its center (lx,ly), tangent direction (tx,ty), inward direction (ix,iy),
 // half-width hw along the tangent, and half-height hh along inward.

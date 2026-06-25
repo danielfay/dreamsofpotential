@@ -776,23 +776,18 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 	swY := ty + (th-swSize)/2
 	vector.FillRect(screen, swX, swY, swSize, swSize, colDock, false)
 
-	label := "Dock"
-	if b.Extension {
-		label = "Dock (ext)"
+	// Level pips: N upward triangles (1 = L1, 2 = L2).
+	level := b.Level
+	if level == 0 {
+		level = 1
 	}
-	_, lH := text.Measure(label, face, 0)
-	lY := swY + swSize - float32(lH)
-	drawSysText(screen, label, swX+swSize+4*sp, lY, colWoodLabel, face)
-
-	// Level label.
-	lvlLabel := fmt.Sprintf("L%d", b.Level)
-	if b.Level == 0 {
-		lvlLabel = "L1"
+	pipHalfW := float32(3 * scale)
+	pipGap := float32(2 * scale)
+	pipCY := ty + th/2
+	pipX := swX + swSize + 5*sp + pipHalfW
+	for i := 0; i < level; i++ {
+		drawUpTriangle(screen, pipX+float32(i)*(pipHalfW*2+pipGap), pipCY, pipHalfW, colSysTrayBorder)
 	}
-	_, lvlH := text.Measure(lvlLabel, face, 0)
-	lvlY := swY - float32(lvlH) + float32(lvlH)*0.5
-	_ = lvlY
-	drawSysText(screen, lvlLabel, swX+swSize+4*sp, swY-float32(lvlH), colSysTrayBorder, face)
 
 	// ── Right section: upgrade action ─────────────────────────────────────────
 	const actionW = float64(52)
@@ -811,7 +806,14 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		qX := axLeft + 4*sp
 		qY := ayTop + (actionH-qSize)/2
 		vector.FillRect(screen, qX, qY, qSize, qSize, greyCol, false)
-		drawSysText(screen, "L3 ???", qX+qSize+3*sp, qY, greyCol, face)
+		// 3 dim triangles hint at a future third level.
+		pipHalfW := float32(3 * scale)
+		pipGap := float32(2 * scale)
+		pipCY := qY + qSize/2
+		pipX := qX + qSize + 3*sp + pipHalfW
+		for i := 0; i < 3; i++ {
+			drawUpTriangle(screen, pipX+float32(i)*(pipHalfW*2+pipGap), pipCY, pipHalfW, greyCol)
+		}
 	} else {
 		// Level-1 upgrade button: fills from bottom as resources accumulate.
 		btnX := axLeft + 2*sp
@@ -858,11 +860,6 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		iconSize := float32(6 * scale)
 		iconY := ayTop + (btnH-iconSize)/2
 		cx := btnX + 4*sp
-
-		// Arrow "▲".
-		drawSysText(screen, "▲", cx, iconY, colWoodLabel, face)
-		_, ah := text.Measure("▲", face, 0)
-		cx += float32(ah) + 2*sp
 
 		// Wood cost icon + amount.
 		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colWoodResource, false)
