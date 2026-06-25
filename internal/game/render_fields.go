@@ -229,6 +229,21 @@ func drawAnnularSector(scene *ebiten.Image, cx, cy, innerR, outerR float32, star
 	vector.FillPath(scene, &path, nil, drawOp)
 }
 
+// drawDockReachSector draws a quiet translucent reach cone. Ebiten vector
+// fills use premultiplied-alpha colour input, so premultiply the low-alpha
+// dock colour here; otherwise the wedge reads as a bright opaque block.
+func drawDockReachSector(scene *ebiten.Image, cx, cy, innerR, outerR float32, startAngle, endAngle float64) {
+	if outerR <= 0 || innerR < 0 || innerR >= outerR {
+		return
+	}
+	col := premultiplyRGBA(colDockWedge)
+	if innerR <= 0 {
+		drawFilledSector(scene, cx, cy, outerR, startAngle, endAngle, col)
+		return
+	}
+	drawAnnularSector(scene, cx, cy, innerR, outerR, startAngle, endAngle, col)
+}
+
 // drawFilledSector draws a filled wedge from (cx,cy) spanning startAngle..endAngle
 // out to radius fillR, in the given colour.
 func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, endAngle float64, col color.RGBA) {

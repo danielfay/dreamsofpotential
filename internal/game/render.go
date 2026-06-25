@@ -20,26 +20,26 @@ const (
 
 // planet-view palette
 var (
-	colBackground    = color.RGBA{R: 10, G: 10, B: 20, A: 255}
-	colPlanetBody    = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
-	colPlanetEdge    = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
-	colNodeFree      = color.RGBA{R: 40, G: 160, B: 60, A: 255}
-	colNodeReserved  = color.RGBA{R: 32, G: 130, B: 48, A: 255}
-	colNodeClaimed   = color.RGBA{R: 20, G: 100, B: 35, A: 255}
+	colBackground            = color.RGBA{R: 10, G: 10, B: 20, A: 255}
+	colPlanetBody            = color.RGBA{R: 5, G: 5, B: 10, A: 255}    // near-black interior
+	colPlanetEdge            = color.RGBA{R: 50, G: 130, B: 50, A: 255} // green rim ring
+	colNodeFree              = color.RGBA{R: 40, G: 160, B: 60, A: 255}
+	colNodeReserved          = color.RGBA{R: 32, G: 130, B: 48, A: 255}
+	colNodeClaimed           = color.RGBA{R: 20, G: 100, B: 35, A: 255}
 	colTownFieldBase         = color.RGBA{R: 120, G: 82, B: 40, A: 150}  // warm clay wedge fill
 	colTownFieldEdge         = color.RGBA{R: 165, G: 115, B: 58, A: 120} // amber edge bands
 	colTownFieldSlot         = color.RGBA{R: 200, G: 148, B: 72, A: 220} // available dwelling slot
 	colTownFieldSlotOccupied = color.RGBA{R: 150, G: 80, B: 8, A: 255}   // occupied — darker richer amber
-	colGhostOk      = color.RGBA{R: 200, G: 200, B: 255, A: 160}
-	colGhostBad     = color.RGBA{R: 200, G: 80, B: 80, A: 80}
-	colRouteFree    = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
-	colRouteClaimed = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
-	colPreviewLens  = color.RGBA{R: 125, G: 145, B: 170, A: 16}
-	colPreviewDebug = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
+	colGhostOk               = color.RGBA{R: 200, G: 200, B: 255, A: 160}
+	colGhostBad              = color.RGBA{R: 200, G: 80, B: 80, A: 80}
+	colRouteFree             = color.RGBA{R: 160, G: 220, B: 255, A: 200} // base; alpha/width scaled by quality
+	colRouteClaimed          = color.RGBA{R: 100, G: 130, B: 150, A: 90}  // uniform muted
+	colPreviewLens           = color.RGBA{R: 125, G: 145, B: 170, A: 16}
+	colPreviewDebug          = color.RGBA{R: 255, G: 220, B: 80, A: 180} // debug range markers
 
 	colInfluenceDebugFill = color.RGBA{R: 20, G: 60, B: 160, A: 28}  // debug-only: transparent blue wedge for KindWaterInfluence
 	colInfluenceDebugEdge = color.RGBA{R: 55, G: 130, B: 215, A: 80} // debug-only: water-blue rim
-	colDockWedge          = color.RGBA{R: 200, G: 210, B: 220, A: 12} // dock dive-reach cone: subtle grey-white
+	colDockWedge          = color.RGBA{R: 95, G: 165, B: 235, A: 38} // dock dive-reach cone: faint water-blue fill
 )
 
 // planetViewPalette holds the planet-view colors that vary by planet identity.
@@ -232,13 +232,12 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// L1 = annular sector 1/3 from rim; L2+ = full sector to center.
 	for _, b := range w.Buildings {
 		if b.Kind == KindDock {
-			cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 			if b.Level >= 2 {
-				drawFilledSector(scene, cx, cy, r,
-					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc, colDockWedge)
+				drawDockReachSector(scene, cx, cy, 0, r,
+					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc)
 			} else {
-				drawAnnularSector(scene, cx, cy, r*2/3, r,
-					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc, colDockWedge)
+				drawDockReachSector(scene, cx, cy, r*2/3, r,
+					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc)
 			}
 		}
 	}
@@ -339,4 +338,3 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		drawIdleOverflow(scene, w.Planet, th, idleCount-idleMaxSlots)
 	}
 }
-

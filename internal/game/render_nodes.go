@@ -77,8 +77,8 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	case KindDock:
 		// Dive-reach wedge: L1 annular sector anchored at the rim, reaching 1/3 inward.
 		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
-		drawAnnularSector(scene, cx, cy, radius*2/3, radius,
-			pv.Angle-dockWedgeHalfArc, pv.Angle+dockWedgeHalfArc, colDockWedge)
+		drawDockReachSector(scene, cx, cy, radius*2/3, radius,
+			pv.Angle-dockWedgeHalfArc, pv.Angle+dockWedgeHalfArc)
 		drawDockArt(scene, planet, pv.Angle, col, 1) // preview always shows L1 visual
 	default: // KindLoggingCamp
 		vector.FillRect(scene,

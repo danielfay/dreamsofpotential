@@ -43,6 +43,16 @@ func blendColor(col color.RGBA, target color.RGBA, amount uint8) color.RGBA {
 	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
 
+func premultiplyRGBA(col color.RGBA) color.RGBA {
+	a := uint16(col.A)
+	return color.RGBA{
+		R: uint8(uint16(col.R) * a / 255),
+		G: uint8(uint16(col.G) * a / 255),
+		B: uint8(uint16(col.B) * a / 255),
+		A: col.A,
+	}
+}
+
 // drawRimArc strokes an arc from angle a to b along planet's rim with the
 // given line width and colour, following the short way round.
 func drawRimArc(scene *ebiten.Image, planet Planet, a, b, width float32, col color.RGBA) {
