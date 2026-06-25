@@ -105,4 +105,3 @@ func Load() (*World, error) {
 	initTransientWorldState(&w)
 	return &w, nil
 }
-

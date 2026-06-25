@@ -16,6 +16,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 	case StateReactionDelay:
 		wk.Timer -= dt
 		if wk.Timer <= 0 {
+			if workerShouldAbortKind(w, wk, KindWood) {
+				clearTarget(wk)
+				wk.State = StateIdleWaiting
+				return
+			}
 			node := findNode(w, wk.TargetNodeID)
 			if node == nil || !nodeFreeForWorker(w, node, wk.ID) {
 				clearTarget(wk)
@@ -44,6 +49,10 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.State = StateToForest
 		}
 	case StateToForest:
+		if workerShouldAbortKind(w, wk, KindWood) {
+			startReturnHome(w, wk)
+			return
+		}
 		node := findNode(w, wk.NodeID)
 		if node == nil {
 			startReturnHome(w, wk)
@@ -128,6 +137,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.Timer = 0
 		}
 	case StateToDock:
+		if workerShouldAbortKind(w, wk, KindWater) {
+			wk.DockID = -1
+			startReturnHome(w, wk)
+			return
+		}
 		dock := findBuilding(w, wk.DockID)
 		if dock == nil {
 			wk.DockID = -1
@@ -329,6 +343,156 @@ func bestFreeNode(w *World) *ResourceNode {
 	return best
 }
 
+func bestFreeNodeForKind(w *World, kind ResourceKind) *ResourceNode {
+	var best *ResourceNode
+	bestRoute := math.MaxFloat64
+	for _, n := range w.Nodes {
+		if n.Kind != kind {
+			continue
+		}
+		if !nodeFreeForWorker(w, n, -1) {
+			continue
+		}
+		if r := routeLen(w, n); r < bestRoute {
+			bestRoute = r
+			best = n
+		}
+	}
+	return best
+}
+
+// assignFocusToIdleWorker updates wk.FocusedKind to match LaborFocus before
+// assigning the worker a job. If LaborFocus is empty, the worker is unfocused.
+// Counts are based on actual work states, not FocusedKind labels, so that
+// multiple idle workers dispatched in the same tick each see accurate counts:
+// a worker dispatched earlier in the loop is in an active state (StateToDock,
+// StateToForest, …) and gets counted; an idle worker waiting to be processed
+// does not, preventing all idle workers from seeing the same baseline.
+func assignFocusToIdleWorker(w *World, wk *Worker) {
+	if len(w.LaborFocus) == 0 {
+		wk.FocusedKind = focusKindNone
+		return
+	}
+	counts := activeWorkerCountsByKind(w)
+	var bestKind ResourceKind = focusKindNone
+	bestDeficit := 0
+	for kind, target := range w.LaborFocus {
+		if !focusKindHasAvailableWork(w, kind) {
+			continue
+		}
+		deficit := target - counts[kind]
+		if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
+			bestDeficit = deficit
+			bestKind = kind
+		}
+	}
+	wk.FocusedKind = bestKind
+}
+
+func focusKindHasAvailableWork(w *World, kind ResourceKind) bool {
+	switch kind {
+	case KindWood:
+		return bestFreeNodeForKind(w, KindWood) != nil
+	case KindWater:
+		return bestFreeDock(w) != nil
+	default:
+		return false
+	}
+}
+
+func activeWorkerCountsByKind(w *World) map[ResourceKind]int {
+	counts := map[ResourceKind]int{}
+	for _, wk := range w.Workers {
+		if kind := activeWorkerKind(wk); kind != focusKindNone {
+			counts[kind]++
+		}
+	}
+	return counts
+}
+
+func activeWorkerKind(wk *Worker) ResourceKind {
+	switch {
+	case workerInWaterLoop(wk):
+		return KindWater
+	case workerInWoodAssignment(wk):
+		return KindWood
+	default:
+		return focusKindNone
+	}
+}
+
+func workerInWoodAssignment(wk *Worker) bool {
+	switch wk.State {
+	case StateReactionDelay, StateDeparturePulse, StateToRim:
+		return wk.TargetNodeID != -1 || wk.NodeID != -1
+	default:
+		return workerInLoop(wk)
+	}
+}
+
+func activeWorkerHUDCounts(w *World) (wood, water, idle int) {
+	for _, wk := range w.Workers {
+		switch activeWorkerKind(wk) {
+		case KindWood:
+			wood++
+		case KindWater:
+			water++
+		default:
+			idle++
+		}
+	}
+	return wood, water, idle
+}
+
+func reconcileLaborFocus(w *World) {
+	if len(w.LaborFocus) == 0 {
+		return
+	}
+	counts := activeWorkerCountsByKind(w)
+	for _, wk := range w.Workers {
+		kind := activeWorkerKind(wk)
+		if kind == focusKindNone {
+			continue
+		}
+		target := w.LaborFocus[kind]
+		if counts[kind] <= target {
+			continue
+		}
+		startReturnHome(w, wk)
+		wk.FocusedKind = focusKindNone
+		counts[kind]--
+	}
+}
+
+// assignFocusToNewWorker assigns a FocusedKind to a freshly spawned worker
+// based on the current LaborFocus targets and existing worker counts.
+func assignFocusToNewWorker(w *World, wk *Worker) {
+	if len(w.LaborFocus) == 0 {
+		return
+	}
+	counts := map[ResourceKind]int{}
+	for _, other := range w.Workers {
+		if other.ID == wk.ID || other.FocusedKind == focusKindNone {
+			continue
+		}
+		counts[other.FocusedKind]++
+	}
+	var bestKind ResourceKind = focusKindNone
+	bestDeficit := 0
+	for kind, target := range w.LaborFocus {
+		deficit := target - counts[kind]
+		// Use > for strict improvement; tiebreak by preferring higher ResourceKind
+		// value (KindWater > KindWood) so water workers are filled first on ties.
+		if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
+			bestDeficit = deficit
+			bestKind = kind
+		}
+	}
+	if bestKind != focusKindNone {
+		wk.FocusedKind = bestKind
+	}
+}
+
 func nodeFreeForWorker(w *World, n *ResourceNode, workerID int) bool {
 	if n.Interior {
 		return false
@@ -369,6 +533,10 @@ func reserveDelayedRebalance(w *World) {
 	worstRoute := -1.0
 	for _, wk := range w.Workers {
 		if wk.PendingNodeID != -1 || !workerInLoop(wk) {
+			continue
+		}
+		// Don't redirect a worker whose focus is incompatible with this node's kind.
+		if wk.FocusedKind != focusKindNone && wk.FocusedKind != free.Kind {
 			continue
 		}
 		node := findNode(w, wk.NodeID)
@@ -551,6 +719,37 @@ func dockServiceableSparkles(w *World, dock *Building) []*ResourceNode {
 	return result
 }
 
+// workerShouldAbortKind returns true when LaborFocus says the worker has
+// exceeded the quota for kind — enough other workers are already doing that
+// resource's loop. Safe to call mid-trip; relies on sequential stepWorker
+// processing so workers that already aborted this tick aren't counted.
+func workerShouldAbortKind(w *World, wk *Worker, kind ResourceKind) bool {
+	if len(w.LaborFocus) == 0 {
+		return false
+	}
+	target := w.LaborFocus[kind]
+	if target == 0 {
+		return true
+	}
+	count := 0
+	for _, other := range w.Workers {
+		if other.ID == wk.ID {
+			continue
+		}
+		switch kind {
+		case KindWater:
+			if workerInWaterLoop(other) {
+				count++
+			}
+		case KindWood:
+			if workerInLoop(other) {
+				count++
+			}
+		}
+	}
+	return count >= target
+}
+
 // workerInWaterLoop reports whether a worker is in the dock→dive→unload cycle.
 func workerInWaterLoop(wk *Worker) bool {
 	switch wk.State {
@@ -643,8 +842,16 @@ func returnToDockFromDive(w *World, wk *Worker, dock *Building) {
 // releases owned sparkles, then either starts another dive or returns home.
 func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	gross := wk.Carried
+	wasDiscovered := w.Economy.WaterDiscovered
 	if gross > 0 {
 		w.Economy.WaterDiscovered = true
+	}
+	// Auto proof split: on first water delivery with a dock that has reachable
+	// serviceable sparkles, default to 1 water worker + rest wood.
+	if !wasDiscovered && w.Economy.WaterDiscovered && len(w.LaborFocus) == 0 {
+		if dockHasServiceableSparkles(w) {
+			setAutoProofSplit(w)
+		}
 	}
 	banked := gross * (1 - woodFieldReturnRatio)
 	returned := gross * woodFieldReturnRatio
@@ -658,7 +865,7 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	wk.Carried = 0
 	releaseInteriorNodes(w, wk.ID)
 
-	if dock != nil {
+	if dock != nil && !workerShouldAbortKind(w, wk, KindWater) {
 		if next := nextDiveSparkle(w, dock, wk); next != nil {
 			wk.NodeID = next.ID
 			wk.Pos = dock.Pos
@@ -668,4 +875,35 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	}
 	wk.DockID = -1
 	startReturnHome(w, wk)
+}
+
+// dockHasServiceableSparkles reports whether any dock has at least one
+// sparkle that can be assigned to it (reachable dock work exists).
+func dockHasServiceableSparkles(w *World) bool {
+	for _, b := range w.Buildings {
+		if b.Kind != KindDock {
+			continue
+		}
+		if len(dockServiceableSparkles(w, b)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// setAutoProofSplit initialises LaborFocus to 1 water + rest wood worker,
+// preserving any subsequent manual overrides (only called when LaborFocus is nil).
+func setAutoProofSplit(w *World) {
+	total := len(w.Workers)
+	if total == 0 {
+		return
+	}
+	wood := total - 1
+	if wood < 0 {
+		wood = 0
+	}
+	w.LaborFocus = map[ResourceKind]int{
+		KindWater: 1,
+		KindWood:  wood,
+	}
 }

@@ -35,14 +35,14 @@ type QAPreset struct {
 	// NearWoodFieldSaturation fills the field leaving exactly one spawn slot.
 	// SaturateWoodField fills the field until no new tree node can spawn.
 	NearWoodFieldSaturation bool `json:"nearWoodFieldSaturation"`
-	SaturateWoodField        bool `json:"saturateWoodField"`
+	SaturateWoodField       bool `json:"saturateWoodField"`
 
 	// Reveal — calls triggerUnlock after all other overrides.
 	// Requires both mastery gates to be met; errors otherwise.
 	Reveal bool `json:"reveal"`
 
 	// Echo lifecycle — applied after Reveal in order: Awaken, Complete, Enter.
-	AwakenEchoes []int `json:"awakenEchoes"` // planet indices to awaken (bypasses wood cost)
+	AwakenEchoes   []int `json:"awakenEchoes"`   // planet indices to awaken (bypasses wood cost)
 	CompleteEchoes []int `json:"completeEchoes"` // planet indices to fully complete (awaken + build + saturate)
 
 	// SelectPlanet sets System.Selected after echo lifecycle processing.
@@ -67,11 +67,16 @@ type QAPreset struct {
 	EchoPlaceTownHall    bool      `json:"echoPlaceTownHall"`
 	EchoFillTownCapacity bool      `json:"echoFillTownCapacity"`
 	EchoNearSaturate     bool      `json:"echoNearSaturate"` // leave exactly one spawn slot
-	EchoDocks            []float64 `json:"echoDocks"`         // dock angles placed via free placement after EchoPlaceTownHall
+	EchoDocks            []float64 `json:"echoDocks"`        // dock angles placed via free placement after EchoPlaceTownHall
 
 	// Water sparkle saturation — applied after echo setup.
 	// SaturateWaterField fills all known water fields with sparkles until no more can spawn.
 	SaturateWaterField bool `json:"saturateWaterField"`
+
+	// LaborFocus stamps the labor focus ratio after all other overrides.
+	// Keys are string resource kind names ("wood", "water").
+	LaborFocusWood  *int `json:"laborFocusWood,omitempty"`
+	LaborFocusWater *int `json:"laborFocusWater,omitempty"`
 }
 
 // BuildQAWorld constructs a *World by applying preset overrides on top of NewWorld.
@@ -305,6 +310,22 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	// Wood — stamped last so it reflects the intended final balance exactly.
 	if p.Wood != nil {
 		w.Economy.Wood = *p.Wood
+	}
+
+	// Labor focus — applied after Wood so it can observe the full worker roster.
+	if p.LaborFocusWood != nil || p.LaborFocusWater != nil {
+		wood := 0
+		water := 0
+		if p.LaborFocusWood != nil {
+			wood = *p.LaborFocusWood
+		}
+		if p.LaborFocusWater != nil {
+			water = *p.LaborFocusWater
+		}
+		w.LaborFocus = map[ResourceKind]int{
+			KindWood:  wood,
+			KindWater: water,
+		}
 	}
 
 	return w, nil

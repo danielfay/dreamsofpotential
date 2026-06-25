@@ -17,6 +17,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	runSim(w, 5)
 
 	w.ResourceDiscovered = true // ensure the bool is tested in the round-trip
+	w.WorkerRatioSeen = true    // persistent tutorial/attention state
 	if err := Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -72,6 +73,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	if got.ResourceDiscovered != w.ResourceDiscovered {
 		t.Errorf("ResourceDiscovered: got %v, want %v", got.ResourceDiscovered, w.ResourceDiscovered)
+	}
+	if got.WorkerRatioSeen != w.WorkerRatioSeen {
+		t.Errorf("WorkerRatioSeen: got %v, want %v", got.WorkerRatioSeen, w.WorkerRatioSeen)
 	}
 	if len(got.Workers) != len(w.Workers) {
 		t.Fatalf("Workers count: got %d, want %d", len(got.Workers), len(w.Workers))

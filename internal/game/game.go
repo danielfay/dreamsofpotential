@@ -11,6 +11,7 @@ import (
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -25,33 +26,35 @@ const (
 
 // Game is the root ebiten game object.
 type Game struct {
-	world                     *World
-	scene                     *ebiten.Image // low-res 320×240 canvas; scaled up to the window
-	ui                        *ebitenui.UI
-	hud                       *HUD
-	placing                   bool              // true while waiting for player to click a camp location
-	freePlacing               bool              // debug-only: next placement ignores camp cost
-	preview                   *placementPreview // current frame's placement preview; nil when not placing
-	showMenu                  bool              // true when the settings overlay is open
-	debug                     bool              // F3 — verbose debug panel; session-only, not persisted
-	debugSection              int               // selected debug panel section; session-only
-	pulseTime                 float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget               int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
-	rejectTime                float64           // seconds remaining on invalid placement feedback
-	screenW                   int               // current screen dimensions, updated each Draw()
-	screenH                   int
-	hudScale                  int         // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits                 int         // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer                 float64     // counts down to next autosave
-	nurtureConfirmLeft        float64     // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown       float64 // counts down to next Nurture attention pulse
-	nurtureAttentionPulseLeft      float64 // seconds remaining on the Nurture attention flash
-	dockUpgradeAttentionCooldown   float64 // counts down to next dock-upgrade attention pulse
-	holdAction                int         // current held purchase action (holdNone, holdNurture, …)
-	holdTimer                 float64     // counts down to next repeat fire
-	holdDuration              float64     // total seconds the current hold has been active
-	importCh                  chan *World // receives a validated world from an import goroutine
-	dialogOpen                atomic.Bool // true while a file dialog is open; blocks UI input
+	world                        *World
+	scene                        *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	ui                           *ebitenui.UI
+	hud                          *HUD
+	placing                      bool              // true while waiting for player to click a camp location
+	freePlacing                  bool              // debug-only: next placement ignores camp cost
+	preview                      *placementPreview // current frame's placement preview; nil when not placing
+	showMenu                     bool              // true when the settings overlay is open
+	debug                        bool              // F3 — verbose debug panel; session-only, not persisted
+	debugSection                 int               // selected debug panel section; session-only
+	pulseTime                    float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget                  int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
+	rejectTime                   float64           // seconds remaining on invalid placement feedback
+	screenW                      int               // current screen dimensions, updated each Draw()
+	screenH                      int
+	hudScale                     int         // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits                    int         // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer                    float64     // counts down to next autosave
+	nurtureConfirmLeft           float64     // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown     float64     // counts down to next Nurture attention pulse
+	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
+	workerRatioAttentionCooldown float64     // counts down to next worker-ratio attention pulse
+	workerRatioAttentionLeft     float64     // seconds remaining on the worker-ratio attention flash
+	dockUpgradeAttentionCooldown float64     // counts down to next dock-upgrade attention pulse
+	holdAction                   int         // current held purchase action (holdNone, holdNurture, …)
+	holdTimer                    float64     // counts down to next repeat fire
+	holdDuration                 float64     // total seconds the current hold has been active
+	importCh                     chan *World // receives a validated world from an import goroutine
+	dialogOpen                   atomic.Bool // true while a file dialog is open; blocks UI input
 
 	// reveal state (transient — not saved)
 	revealActive  bool
@@ -70,6 +73,15 @@ type Game struct {
 	selectedBuildingID int     // index into w.Buildings; -1 = none
 	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
 	dockTrayRect       sysRect // entire tray background rect (clicking anywhere dismisses)
+
+	// labor focus control overlay
+	showFocusControl bool
+	focusDraftWater  int     // candidate water-worker count while control is open
+	focusCtrlRect    sysRect // entire control background rect
+	focusSlotsRect   sysRect // the clickable/draggable worker-slot bar
+	focusConfirmRect sysRect
+	focusCancelRect  sysRect
+	focusDragging    bool
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -84,16 +96,17 @@ func New() (*Game, error) {
 	}
 	const initialScale = 2
 	g := &Game{
-		world:                    w,
-		scene:                    ebiten.NewImage(virtW, virtH),
-		hudScale:                 initialScale,
-		hudDigits:                woodDigits(w.Economy.Wood),
-		saveTimer:                autoSavePeriod,
+		world:                        w,
+		scene:                        ebiten.NewImage(virtW, virtH),
+		hudScale:                     initialScale,
+		hudDigits:                    woodDigits(w.Economy.Wood),
+		saveTimer:                    autoSavePeriod,
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
+		workerRatioAttentionCooldown: nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
-		importCh:                 make(chan *World, 1),
-		sysDoubleClickPlanet:     -1,
-		selectedBuildingID:       -1,
+		importCh:                     make(chan *World, 1),
+		sysDoubleClickPlanet:         -1,
+		selectedBuildingID:           -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -235,11 +248,21 @@ func (g *Game) Update() error {
 		if g.nurtureAttentionPulseLeft > 0 {
 			g.nurtureAttentionPulseLeft -= dt
 		}
+		if g.workerRatioAttentionLeft > 0 {
+			g.workerRatioAttentionLeft -= dt
+		}
 		g.nurtureAttentionCooldown -= dt
 		if g.nurtureAttentionCooldown <= 0 {
 			g.nurtureAttentionCooldown = nurtureAttentionInterval
 			if nurtureAttentionActive(g.world) {
 				g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+			}
+		}
+		g.workerRatioAttentionCooldown -= dt
+		if g.workerRatioAttentionCooldown <= 0 {
+			g.workerRatioAttentionCooldown = nurtureAttentionInterval
+			if workerRatioAttentionActive(g.world) {
+				g.workerRatioAttentionLeft = nurtureAttentionPulseDur
 			}
 		}
 		g.dockUpgradeAttentionCooldown -= dt
@@ -431,10 +454,35 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			col.A = uint8(210 * t)
 			vector.FillRect(screen, srx, sry, srw, srh, col, false)
 		}
+
+		if g.workerRatioAttentionLeft > 0 && g.hud.workerSquare != nil {
+			wr := g.hud.workerSquare.GetWidget().Rect
+			wrx := float32(wr.Min.X)
+			wry := float32(wr.Min.Y)
+			wrw := float32(wr.Max.X - wr.Min.X)
+			wrh := float32(wr.Max.Y - wr.Min.Y)
+			t := float32(g.workerRatioAttentionLeft / nurtureAttentionPulseDur)
+			expand := 1 - t
+			cx := wrx + wrw/2
+			cy := wry + wrh/2
+			halfW := wrw / 2 * expand * 1.35
+			halfH := wrh / 2 * expand * 1.35
+			if halfW > 0.5 {
+				col := colNurtureAttention
+				col.A = uint8(220 * t)
+				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
+			}
+		}
 	}
 
 	// Selected-building dock tray.
 	g.drawDockTray(screen)
+
+	// Worker HUD slider icon + colored breakdown (shown when focus is active).
+	g.drawWorkerHUDOverlay(screen)
+
+	// Labor focus control overlay.
+	g.drawFocusControl(screen)
 
 	// Unaffordable-cost pulse flash: fades out over pulseDuration seconds.
 	if g.pulseTime > 0 {
@@ -726,6 +774,13 @@ func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, f
 	text.Draw(target, s, face, op)
 }
 
+func workerRatioAttentionActive(w *World) bool {
+	return !w.WorkerRatioSeen &&
+		len(w.Workers) > 0 &&
+		w.ResourceDiscovered &&
+		w.Economy.WaterDiscovered
+}
+
 // clearTransientUI resets all mid-action player state. Call on any view transition
 // so placement, holds, and menu state don't bleed across planet switches.
 func clearTransientUI(g *Game) {
@@ -734,8 +789,27 @@ func clearTransientUI(g *Game) {
 	g.holdAction = holdNone
 	g.holdDuration = 0
 	g.showMenu = false
+	g.showFocusControl = false
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
+}
+
+// openFocusControl opens the labor focus control, initialising the draft split
+// from the current LaborFocus (or a 1:rest default if none has been set).
+func (g *Game) openFocusControl() {
+	total := len(g.world.Workers)
+	if total == 0 {
+		return
+	}
+	g.world.WorkerRatioSeen = true
+	g.workerRatioAttentionLeft = 0
+	if w, ok := g.world.LaborFocus[KindWater]; ok {
+		g.focusDraftWater = w
+	} else {
+		g.focusDraftWater = 1
+	}
+	g.showFocusControl = true
+	g.focusDragging = false
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
@@ -906,5 +980,266 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		cx += iconSize + 2*sp
 		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
 		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
+	}
+}
+
+// drawWorkerHUDOverlay replaces the plain worker icon and ratio text with a
+// mini slider icon and per-kind worker counts once LaborFocus is set.
+func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
+	w := g.world
+	if len(w.LaborFocus) == 0 || len(w.Workers) == 0 {
+		return
+	}
+	if g.hud == nil {
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	sp := float32(scale)
+	face := g.hud.face
+	if face == nil {
+		return
+	}
+
+	nWood, nWater, nIdle := activeWorkerHUDCounts(w)
+
+	// ── Split worker icon (drawn over workerSquare button) ────────────────
+	sqR := g.hud.workerSquare.GetWidget().Rect
+	sqX := float32(sqR.Min.X)
+	sqY := float32(sqR.Min.Y)
+	sqW := float32(sqR.Dx())
+	sqH := float32(sqR.Dy())
+
+	vector.FillRect(screen, sqX, sqY, sqW, sqH, color.RGBA{R: 46, G: 40, B: 16, A: 235}, false)
+	vector.StrokeRect(screen, sqX, sqY, sqW, sqH, 1, colWorkerLaden, false)
+
+	inset := 3 * sp
+	innerX := sqX + inset
+	innerY := sqY + inset
+	innerW := sqW - inset*2
+	innerH := sqH - inset*2
+	halfW := innerW / 2
+	vector.FillRect(screen, innerX, innerY, halfW, innerH, colWoodResource, false)
+	vector.FillRect(screen, innerX+halfW, innerY, innerW-halfW, innerH, colSparkle, false)
+	vector.StrokeLine(screen, innerX+halfW, innerY, innerX+halfW, innerY+innerH, 1, colWorkerLaden, false)
+
+	// ── Colored count text (drawn over workerRatio text widget) ───────────
+	txtR := g.hud.workerRatio.GetWidget().Rect
+	txtX := float32(txtR.Min.X)
+	txtW := float32(txtR.Dx())
+
+	// Background behind text area.
+	vector.FillRect(screen, txtX-2*sp, sqY, txtW+4*sp, sqH, colSysTrayFill, false)
+
+	_, fontH := text.Measure("0", face, 0)
+	textY := sqY + (sqH-float32(fontH))/2
+
+	colSlash := colWorkerLaden
+	type seg struct {
+		s   string
+		col color.RGBA
+	}
+	segs := []seg{
+		{fmt.Sprintf("%d", nWood), colWoodResource},
+		{"/", colSlash},
+		{fmt.Sprintf("%d", nWater), color.RGBA{R: colSparkle.R, G: colSparkle.G, B: colSparkle.B, A: 240}},
+		{"/", colSlash},
+		{fmt.Sprintf("%d", nIdle), colWorkerLaden},
+	}
+	x := txtX
+	for _, seg := range segs {
+		drawSysText(screen, seg.s, x, textY, seg.col, face)
+		w, _ := text.Measure(seg.s, face, 0)
+		x += float32(w)
+	}
+}
+
+// drawFocusControl renders the two-resource labor focus overlay and records
+// hit-test rects for input handling.
+func (g *Game) drawFocusControl(screen *ebiten.Image) {
+	if !g.showFocusControl {
+		g.focusCtrlRect = sysRect{}
+		g.focusSlotsRect = sysRect{}
+		g.focusConfirmRect = sysRect{}
+		g.focusCancelRect = sysRect{}
+		return
+	}
+
+	total := len(g.world.Workers)
+	if total == 0 {
+		g.showFocusControl = false
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	sp := float32(scale)
+	face := g.hud.sysface
+	if face == nil {
+		return
+	}
+
+	nWater := g.focusDraftWater
+	if nWater < 0 {
+		nWater = 0
+	}
+	if nWater > total {
+		nWater = total
+	}
+	nWood := total - nWater
+
+	const (
+		trackW   = float64(86)
+		trackH   = float64(5)
+		hitH     = float64(18)
+		knobW    = float64(5)
+		labelW   = float64(14)
+		labelGap = float64(4)
+		padding  = float64(8)
+		btnSize  = float64(16)
+		btnGap   = float64(6)
+	)
+
+	panelW := trackW + 2*labelW + 2*labelGap + 2*padding
+	panelH := padding + hitH + padding*0.75 + btnSize + padding
+
+	pw := float32(panelW * float64(scale))
+	ph := float32(panelH * float64(scale))
+	px := float32(g.screenW)/2 - pw/2
+	py := float32(g.screenH)/2 - ph/2
+
+	vector.FillRect(screen, px, py, pw, ph, colSysTrayFill, false)
+	vector.StrokeRect(screen, px, py, pw, ph, 1, colSysTrayBorder, false)
+	g.focusCtrlRect = sysRect{x: px, y: py, w: pw, h: ph}
+
+	// Fixed-width split slider: green=wood, blue=water.
+	labelWpx := float32(labelW * float64(scale))
+	labelGapPx := float32(labelGap * float64(scale))
+	trackX := px + float32(padding*float64(scale)) + labelWpx + labelGapPx
+	trackWpx := float32(trackW * float64(scale))
+	trackHpx := float32(trackH * float64(scale))
+	hitHpx := float32(hitH * float64(scale))
+	trackY := py + float32(padding*float64(scale)) + (hitHpx-trackHpx)/2
+	splitT := float32(nWood) / float32(total)
+	splitX := trackX + trackWpx*splitT
+
+	labelCol := color.RGBA{R: 205, G: 220, B: 215, A: 235}
+	labelY := trackY + trackHpx/2 - 4*sp
+	woodStr := fmt.Sprintf("%d", nWood)
+	woodTextW, _ := text.Measure(woodStr, face, 0)
+	drawSysText(screen, woodStr, trackX-labelGapPx-float32(woodTextW), labelY, labelCol, face)
+	waterStr := fmt.Sprintf("%d", nWater)
+	drawSysText(screen, waterStr, trackX+trackWpx+labelGapPx, labelY, labelCol, face)
+
+	vector.FillRect(screen, trackX, trackY, trackWpx, trackHpx, color.RGBA{R: 18, G: 28, B: 36, A: 230}, false)
+	if nWood > 0 {
+		vector.FillRect(screen, trackX, trackY, splitX-trackX, trackHpx, colWoodResource, false)
+	}
+	if nWater > 0 {
+		vector.FillRect(screen, splitX, trackY, trackX+trackWpx-splitX, trackHpx, colSparkle, false)
+	}
+	vector.StrokeRect(screen, trackX, trackY, trackWpx, trackHpx, 1, color.RGBA{R: 95, G: 115, B: 125, A: 210}, false)
+
+	knobWpx := float32(knobW * float64(scale))
+	knobHpx := float32(14 * scale)
+	knobX := splitX - knobWpx/2
+	knobY := trackY + trackHpx/2 - knobHpx/2
+	vector.FillRect(screen, knobX, knobY, knobWpx, knobHpx, color.RGBA{R: 225, G: 235, B: 225, A: 240}, false)
+	vector.StrokeRect(screen, knobX, knobY, knobWpx, knobHpx, 1, color.RGBA{R: 30, G: 45, B: 40, A: 230}, false)
+
+	g.focusSlotsRect = sysRect{x: trackX, y: trackY - (hitHpx-trackHpx)/2, w: trackWpx, h: hitHpx}
+
+	// Confirm and cancel buttons
+	btnY := py + ph - float32((padding+btnSize)*float64(scale))
+	btnW := float32(btnSize * float64(scale))
+	gap := float32(btnGap * float64(scale))
+	btnStartX := px + pw/2 - btnW - gap/2
+	g.focusConfirmRect = sysRect{x: btnStartX, y: btnY, w: btnW, h: btnW}
+	g.focusCancelRect = sysRect{x: btnStartX + btnW + gap, y: btnY, w: btnW, h: btnW}
+
+	confirmCol := color.RGBA{R: 24, G: 76, B: 42, A: 215}
+	cancelCol := color.RGBA{R: 78, G: 30, B: 38, A: 215}
+	vector.FillRect(screen, g.focusConfirmRect.x, g.focusConfirmRect.y, g.focusConfirmRect.w, g.focusConfirmRect.h, confirmCol, false)
+	vector.StrokeRect(screen, g.focusConfirmRect.x, g.focusConfirmRect.y, g.focusConfirmRect.w, g.focusConfirmRect.h, 1, colSysTrayBorder, false)
+	vector.FillRect(screen, g.focusCancelRect.x, g.focusCancelRect.y, g.focusCancelRect.w, g.focusCancelRect.h, cancelCol, false)
+	vector.StrokeRect(screen, g.focusCancelRect.x, g.focusCancelRect.y, g.focusCancelRect.w, g.focusCancelRect.h, 1, colSysTrayBorder, false)
+
+	iconPad := 4 * sp
+	checkCol := color.RGBA{R: 178, G: 245, B: 190, A: 245}
+	vector.StrokeLine(screen,
+		g.focusConfirmRect.x+iconPad, g.focusConfirmRect.y+g.focusConfirmRect.h*0.55,
+		g.focusConfirmRect.x+g.focusConfirmRect.w*0.43, g.focusConfirmRect.y+g.focusConfirmRect.h-iconPad,
+		2, checkCol, false)
+	vector.StrokeLine(screen,
+		g.focusConfirmRect.x+g.focusConfirmRect.w*0.43, g.focusConfirmRect.y+g.focusConfirmRect.h-iconPad,
+		g.focusConfirmRect.x+g.focusConfirmRect.w-iconPad, g.focusConfirmRect.y+iconPad,
+		2, checkCol, false)
+
+	xCol := color.RGBA{R: 245, G: 175, B: 180, A: 245}
+	vector.StrokeLine(screen,
+		g.focusCancelRect.x+iconPad, g.focusCancelRect.y+iconPad,
+		g.focusCancelRect.x+g.focusCancelRect.w-iconPad, g.focusCancelRect.y+g.focusCancelRect.h-iconPad,
+		2, xCol, false)
+	vector.StrokeLine(screen,
+		g.focusCancelRect.x+g.focusCancelRect.w-iconPad, g.focusCancelRect.y+iconPad,
+		g.focusCancelRect.x+iconPad, g.focusCancelRect.y+g.focusCancelRect.h-iconPad,
+		2, xCol, false)
+}
+
+// handleFocusControlInput processes mouse events while the focus control is open.
+func (g *Game) handleFocusControlInput() {
+	total := len(g.world.Workers)
+	mx, my := ebiten.CursorPosition()
+	fmx, fmy := float32(mx), float32(my)
+
+	inRect := func(r sysRect) bool {
+		return r.w > 0 && fmx >= r.x && fmx < r.x+r.w && fmy >= r.y && fmy < r.y+r.h
+	}
+
+	// Update draft split when mouse is pressed/dragged in the slot bar.
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+		if inRect(g.focusSlotsRect) || g.focusDragging {
+			if inRect(g.focusSlotsRect) {
+				g.focusDragging = true
+			}
+			if g.focusDragging && g.focusSlotsRect.w > 0 {
+				t := (fmx - g.focusSlotsRect.x) / g.focusSlotsRect.w
+				if t < 0 {
+					t = 0
+				}
+				if t > 1 {
+					t = 1
+				}
+				rawWood := int(math.Round(float64(t) * float64(total)))
+				nWater := total - rawWood
+				if nWater < 0 {
+					nWater = 0
+				}
+				if nWater > total {
+					nWater = total
+				}
+				g.focusDraftWater = nWater
+			}
+		}
+	} else {
+		g.focusDragging = false
+	}
+
+	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		return
+	}
+
+	if inRect(g.focusConfirmRect) {
+		nWater := g.focusDraftWater
+		nWood := total - nWater
+		g.world.LaborFocus = map[ResourceKind]int{
+			KindWater: nWater,
+			KindWood:  nWood,
+		}
+		g.showFocusControl = false
+		return
+	}
+	if inRect(g.focusCancelRect) || !inRect(g.focusCtrlRect) {
+		g.showFocusControl = false
+		return
 	}
 }

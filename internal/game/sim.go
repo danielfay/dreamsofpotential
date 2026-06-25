@@ -22,18 +22,39 @@ func assignNodes(w *World) {
 		return
 	}
 	releaseInvalidReservations(w)
+	reconcileLaborFocus(w)
 
 	assignedIdle := false
 	for _, wk := range w.Workers {
 		if wk.State != StateIdleWaiting {
 			continue
 		}
-		if node := bestFreeNode(w); node != nil {
-			startReaction(wk, node)
-			assignedIdle = true
-		} else if dock := bestFreeDock(w); dock != nil {
-			startWaterDeparture(w, wk, dock)
-			assignedIdle = true
+		assignFocusToIdleWorker(w, wk)
+		switch wk.FocusedKind {
+		case KindWood:
+			if node := bestFreeNodeForKind(w, KindWood); node != nil {
+				startReaction(wk, node)
+				assignedIdle = true
+			}
+			// else: stay idle at Town Hall (focus-gated)
+		case KindWater:
+			if dock := bestFreeDock(w); dock != nil {
+				startWaterDeparture(w, wk, dock)
+				assignedIdle = true
+			}
+			// else: stay idle at Town Hall (focus-gated)
+		default:
+			if len(w.LaborFocus) > 0 {
+				// Ratio is active but every eligible target is full or unavailable.
+				continue
+			}
+			if node := bestFreeNode(w); node != nil {
+				startReaction(wk, node)
+				assignedIdle = true
+			} else if dock := bestFreeDock(w); dock != nil {
+				startWaterDeparture(w, wk, dock)
+				assignedIdle = true
+			}
 		}
 	}
 	if assignedIdle || hasEligibleIdleWorker(w) {
