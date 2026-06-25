@@ -30,16 +30,16 @@ func WriteScreenshotSet(dir string) error {
 }
 
 type screenshotScenario struct {
-	name          string
-	world         *World
-	preview       *placementPreview
-	fullHUD       bool
-	debug         bool
-	debugSection  int
-	placing       bool
-	revealActive  bool
-	revealElapsed float64
-	selectBuilding  *int // non-nil: select this building index (for tray screenshots)
+	name             string
+	world            *World
+	preview          *placementPreview
+	fullHUD          bool
+	debug            bool
+	debugSection     int
+	placing          bool
+	revealActive     bool
+	revealElapsed    float64
+	selectBuilding   *int // non-nil: select this building index (for tray screenshots)
 	showFocusControl bool
 	focusDraftWater  int
 }
@@ -431,7 +431,7 @@ func systemViewEchoAwakenedScenario() screenshotScenario {
 		SaturateWoodField: true, Reveal: true,
 		AwakenEchoes: []int{1},
 		SelectPlanet: intPtr(1),
-		Wood: &wood,
+		Wood:         &wood,
 	})
 	return screenshotScenario{name: "20-system-view-echo-awakened", world: w, fullHUD: true}
 }
@@ -454,8 +454,8 @@ func systemViewOneEchoCompletedScenario() screenshotScenario {
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1},
-		SelectPlanet: intPtr(1),
-		Wood: &wood,
+		SelectPlanet:   intPtr(1),
+		Wood:           &wood,
 	})
 	return screenshotScenario{name: "22-system-view-one-echo-completed", world: w, fullHUD: true}
 }
@@ -466,7 +466,7 @@ func systemViewBothEchoesCompletedScenario() screenshotScenario {
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1, 2},
-		Wood: &wood,
+		Wood:           &wood,
 	})
 	return screenshotScenario{name: "23-system-view-both-echoes-completed", world: w, fullHUD: true}
 }
@@ -499,12 +499,12 @@ func lakewoodNearCompleteScenario() screenshotScenario {
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
-		AwakenEchoes:        []int{1},
-		EnterPlanet:         intPtr(1),
-		EchoPlaceTownHall:   true,
+		AwakenEchoes:         []int{1},
+		EnterPlanet:          intPtr(1),
+		EchoPlaceTownHall:    true,
 		EchoFillTownCapacity: true,
-		EchoNearSaturate:    true,
-		Wood:                &wood,
+		EchoNearSaturate:     true,
+		Wood:                 &wood,
 	})
 	return screenshotScenario{name: "26-lakewood-near-complete", world: w, fullHUD: true}
 }
@@ -698,11 +698,11 @@ func dockConeVisibilityScenario() screenshotScenario {
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
-		CompleteEchoes: []int{1},
-		AwakenFrontier: true,
-		EnterPlanet:    &enter,
+		CompleteEchoes:    []int{1},
+		AwakenFrontier:    true,
+		EnterPlanet:       &enter,
 		EchoPlaceTownHall: true,
-		EchoDocks:      []float64{dockAngle},
+		EchoDocks:         []float64{dockAngle},
 	})
 	return screenshotScenario{name: "37-dock-cone-visibility", world: w, fullHUD: false}
 }
@@ -790,7 +790,6 @@ func mustPlace(w *World, angle float64) {
 		panic(fmt.Sprintf("screenshot setup failed to place building at %.3f", angle))
 	}
 }
-
 
 func mustBuyWorker(w *World) {
 	w.Economy.WorkerCapacity++

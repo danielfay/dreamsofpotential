@@ -27,8 +27,8 @@ const (
 //
 // Debug mode (F3) replaces both with a single verbose debugPanel.
 type HUD struct {
-	face    text.Face
-	sysface text.Face // fixed 8 px face for system overlay; drawn on scene so it scales naturally
+	face         text.Face
+	sysface      text.Face // fixed 8 px face for system overlay; drawn on scene so it scales naturally
 	debugSection int
 
 	// debug panel

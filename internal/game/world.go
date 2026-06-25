@@ -44,7 +44,7 @@ type PotentialKind int
 
 const (
 	PotentialForest PotentialKind = iota // green circle — spent to awaken forest planets
-	PotentialWater                        // blue circle — hinted by Lakewood; not yet spendable
+	PotentialWater                       // blue circle — hinted by Lakewood; not yet spendable
 )
 
 // WorkerState is the leg of the delivery loop a worker is currently on.
@@ -132,7 +132,7 @@ type ViewMode int
 
 const (
 	ViewPlanet ViewMode = iota // player is operating on the starting planet
-	ViewSystem                  // player is looking at the planetary system
+	ViewSystem                 // player is looking at the planetary system
 )
 
 // PlanetKind categorises a system-view planet record.
@@ -140,8 +140,8 @@ type PlanetKind int
 
 const (
 	PlanetStarting PlanetKind = iota // the live-simulated starting planet
-	PlanetEcho                        // an awakened forest producer (abstract only for now)
-	PlanetUnknown                     // distant locked frontier silhouette
+	PlanetEcho                       // an awakened forest producer (abstract only for now)
+	PlanetUnknown                    // distant locked frontier silhouette
 )
 
 // SystemPlanet is a persistent record for one planet in the system view.
@@ -170,18 +170,18 @@ func (p SystemPlanet) zoomable() bool {
 // PlanetState is one planet's durable live sim state when it is NOT the active
 // (viewed) planet. The active planet's state lives in the top-level World fields.
 type PlanetState struct {
-	Planet             Planet
-	Buildings          []*Building
-	Nodes              []*ResourceNode
-	Workers            []*Worker
-	NextNodeID         int
-	NextWorkerID       int
-	NextBuildingID     int
-	ResourceDiscovered bool
-	SimTime            float64
-	WorkerCapacity     int
-	CapacityBought     int
-	CampsBought        int
+	Planet              Planet
+	Buildings           []*Building
+	Nodes               []*ResourceNode
+	Workers             []*Worker
+	NextNodeID          int
+	NextWorkerID        int
+	NextBuildingID      int
+	ResourceDiscovered  bool
+	SimTime             float64
+	WorkerCapacity      int
+	CapacityBought      int
+	CampsBought         int
 	TownGrowth          float64
 	TownGrowthCap       float64
 	TownGrowthOverflow  float64
@@ -238,11 +238,11 @@ const (
 )
 
 type growthResult struct {
-	Outcome        growthOutcome
-	Kind           ResourceKind
-	CenterAngle    float64
-	HalfArc        float64
-	NodeID         int
+	Outcome         growthOutcome
+	Kind            ResourceKind
+	CenterAngle     float64
+	HalfArc         float64
+	NodeID          int
 	WaterInfluenced bool
 }
 
@@ -291,17 +291,17 @@ func normAngle(a float64) float64 {
 
 // Economy tracks global resource counts and purchase history.
 type Economy struct {
-	Wood            float64
-	Water           float64 // harvested blue water material; revealed on first dock delivery
-	WaterDiscovered bool    // true after the first water delivery (controls HUD visibility)
-	WorkerCapacity int // total worker slots unlocked (founding slot + paid capacity)
-	CapacityBought int // paid capacity purchases; drives the cost curve
-	CampsBought    int
-	TownGrowth         float64 // accumulates gross delivery amount; clamped at TownGrowthCap
-	TownGrowthCap      float64 // spawns a worker when TownGrowth reaches this; grows each arrival
-	TownGrowthOverflow float64 // excess growth banked while capacity-blocked; drains on next open slot
-	LastWorkerSpawnTime float64 // SimTime of most recent spawn; used to enforce workerSpawnCooldown
-	Potential      map[PotentialKind]int // banked system-tier Potential tokens, indexed by kind
+	Wood                float64
+	Water               float64 // harvested blue water material; revealed on first dock delivery
+	WaterDiscovered     bool    // true after the first water delivery (controls HUD visibility)
+	WorkerCapacity      int     // total worker slots unlocked (founding slot + paid capacity)
+	CapacityBought      int     // paid capacity purchases; drives the cost curve
+	CampsBought         int
+	TownGrowth          float64               // accumulates gross delivery amount; clamped at TownGrowthCap
+	TownGrowthCap       float64               // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowthOverflow  float64               // excess growth banked while capacity-blocked; drains on next open slot
+	LastWorkerSpawnTime float64               // SimTime of most recent spawn; used to enforce workerSpawnCooldown
+	Potential           map[PotentialKind]int // banked system-tier Potential tokens, indexed by kind
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
@@ -336,7 +336,7 @@ type World struct {
 	pendingGrowthCues []growthCueState
 	lastDelivery      deliverySplit
 	abstractRateWins  []abstractRateWindow // one per entry in activeAbstractRateSpecs; nil = uninitialised
-	rng               *rand.Rand // seeded per-world; use this instead of the global source
+	rng               *rand.Rand           // seeded per-world; use this instead of the global source
 }
 
 type abstractRateWindow struct {
@@ -890,18 +890,18 @@ func upgradeNearestSparkle(w *World, f *ResourceField) *ResourceNode {
 // are still live. Call loadPlanet afterwards to complete a switch.
 func parkActive(w *World) {
 	w.PlanetStates[w.Active] = &PlanetState{
-		Planet:             w.Planet,
-		Buildings:          w.Buildings,
-		Nodes:              w.Nodes,
-		Workers:            w.Workers,
-		NextNodeID:         w.NextNodeID,
-		NextWorkerID:       w.NextWorkerID,
-		NextBuildingID:     w.NextBuildingID,
-		ResourceDiscovered: w.ResourceDiscovered,
-		SimTime:            w.SimTime,
-		WorkerCapacity:     w.Economy.WorkerCapacity,
-		CapacityBought:     w.Economy.CapacityBought,
-		CampsBought:        w.Economy.CampsBought,
+		Planet:              w.Planet,
+		Buildings:           w.Buildings,
+		Nodes:               w.Nodes,
+		Workers:             w.Workers,
+		NextNodeID:          w.NextNodeID,
+		NextWorkerID:        w.NextWorkerID,
+		NextBuildingID:      w.NextBuildingID,
+		ResourceDiscovered:  w.ResourceDiscovered,
+		SimTime:             w.SimTime,
+		WorkerCapacity:      w.Economy.WorkerCapacity,
+		CapacityBought:      w.Economy.CapacityBought,
+		CampsBought:         w.Economy.CampsBought,
 		TownGrowth:          w.Economy.TownGrowth,
 		TownGrowthCap:       w.Economy.TownGrowthCap,
 		TownGrowthOverflow:  w.Economy.TownGrowthOverflow,
@@ -916,28 +916,28 @@ func parkActive(w *World) {
 // and is never touched. Transient cue state is cleared; it rebuilds at runtime.
 func loadPlanet(w *World, idx int) {
 	ps := w.PlanetStates[idx]
-	w.Planet             = ps.Planet
-	w.Buildings          = ps.Buildings
-	w.Nodes              = ps.Nodes
-	w.Workers            = ps.Workers
-	w.NextNodeID         = ps.NextNodeID
-	w.NextWorkerID       = ps.NextWorkerID
-	w.NextBuildingID     = ps.NextBuildingID
+	w.Planet = ps.Planet
+	w.Buildings = ps.Buildings
+	w.Nodes = ps.Nodes
+	w.Workers = ps.Workers
+	w.NextNodeID = ps.NextNodeID
+	w.NextWorkerID = ps.NextWorkerID
+	w.NextBuildingID = ps.NextBuildingID
 	w.ResourceDiscovered = ps.ResourceDiscovered
-	w.SimTime            = ps.SimTime
-	w.LaborFocus         = ps.LaborFocus
+	w.SimTime = ps.SimTime
+	w.LaborFocus = ps.LaborFocus
 	w.Economy.WorkerCapacity = ps.WorkerCapacity
 	w.Economy.CapacityBought = ps.CapacityBought
-	w.Economy.CampsBought    = ps.CampsBought
-	w.Economy.TownGrowth          = ps.TownGrowth
-	w.Economy.TownGrowthCap       = ps.TownGrowthCap
-	w.Economy.TownGrowthOverflow  = ps.TownGrowthOverflow
+	w.Economy.CampsBought = ps.CampsBought
+	w.Economy.TownGrowth = ps.TownGrowth
+	w.Economy.TownGrowthCap = ps.TownGrowthCap
+	w.Economy.TownGrowthOverflow = ps.TownGrowthOverflow
 	w.Economy.LastWorkerSpawnTime = ps.LastWorkerSpawnTime
-	w.PlanetStates[idx]  = nil // active slot is always nil
-	w.Active             = idx
-	w.growthCue          = growthCueState{}
-	w.pendingGrowthCues  = nil
-	w.lastDelivery       = deliverySplit{}
+	w.PlanetStates[idx] = nil // active slot is always nil
+	w.Active = idx
+	w.growthCue = growthCueState{}
+	w.pendingGrowthCues = nil
+	w.lastDelivery = deliverySplit{}
 }
 
 // switchToPlanet parks the current active planet and loads the one at idx.

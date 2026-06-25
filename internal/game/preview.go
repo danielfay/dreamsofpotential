@@ -32,7 +32,7 @@ type previewRoute struct {
 // Extension is true when the dock variant is a water-extension (not a shore dock).
 type placementPreview struct {
 	Kind             BuildingKind
-	Extension        bool            // dock only: extension dock connected to an existing dock
+	Extension        bool // dock only: extension dock connected to an existing dock
 	Angle            float64
 	Pos              Vec
 	Valid            bool
@@ -227,7 +227,6 @@ func isShore(w *World, angle, halfArc float64) bool {
 	}
 	return false
 }
-
 
 func placementBlockedNodes(w *World, kind BuildingKind, angle float64) []*ResourceNode {
 	var blocked []*ResourceNode

@@ -6,7 +6,7 @@ import "image/color"
 // Use these everywhere a wood swatch or label appears so all UI elements share
 // the same visual identity for the wood resource.
 var (
-	colWoodResource = color.RGBA{R: 40, G: 160, B: 60, A: 255}  // swatch fill — matches planet HUD wood button
+	colWoodResource = color.RGBA{R: 40, G: 160, B: 60, A: 255}   // swatch fill — matches planet HUD wood button
 	colWoodLabel    = color.RGBA{R: 140, G: 210, B: 140, A: 230} // text labels for wood amounts and rates
 
 	// Potential token colours. Circles (not squares) are the visual convention for Potential.
@@ -39,10 +39,10 @@ var (
 	colReturnDot   = color.RGBA{R: 140, G: 200, B: 220, A: 120}
 
 	// System-view tray (bottom panel).
-	colSysTrayFill        = color.RGBA{R: 8, G: 8, B: 18, A: 210}
-	colSysTrayBorder      = color.RGBA{R: 60, G: 60, B: 90, A: 200}
-	colSysUnknownSwatch   = color.RGBA{R: 60, G: 60, B: 80, A: 255}  // planet swatch for unknown kind (dormant)
-	colSysFrontierSwatch  = color.RGBA{R: 40, G: 100, B: 190, A: 255} // planet swatch for awakened water frontier
+	colSysTrayFill       = color.RGBA{R: 8, G: 8, B: 18, A: 210}
+	colSysTrayBorder     = color.RGBA{R: 60, G: 60, B: 90, A: 200}
+	colSysUnknownSwatch  = color.RGBA{R: 60, G: 60, B: 80, A: 255}   // planet swatch for unknown kind (dormant)
+	colSysFrontierSwatch = color.RGBA{R: 40, G: 100, B: 190, A: 255} // planet swatch for awakened water frontier
 
 	// Wood gauge (thin bar below the resource HUD button in planet view).
 	colWoodGaugeFill  = color.RGBA{R: 40, G: 160, B: 60, A: 180}
@@ -71,8 +71,8 @@ var (
 	colTownGrowthGaugeFill  = color.RGBA{R: 220, G: 200, B: 60, A: 200}
 
 	// Worker colours.
-	colWorkerEmpty  = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
-	colWorkerReturn = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty
+	colWorkerEmpty      = color.RGBA{R: 220, G: 200, B: 150, A: 255} // idle/unladen
+	colWorkerReturn     = color.RGBA{R: 125, G: 115, B: 95, A: 255}  // returning empty
 	colWorkerLaden      = color.RGBA{R: 255, G: 240, B: 80, A: 255}  // carrying wood (worker yellow)
 	colWorkerLadenWater = color.RGBA{R: 60, G: 160, B: 255, A: 255}  // carrying water (blue)
 
@@ -98,12 +98,12 @@ const (
 	microPulseTime   = 0.30 // seconds for worker/node/building activity pulse
 	pulseMinInterval = 0.50 // activations faster than this become steady-lit
 
-	nurtureConfirmDuration   = 0.18 // seconds for the nurture success flash
+	nurtureConfirmDuration = 0.18 // seconds for the nurture success flash
 
-	holdInitialDelay   = 0.50  // seconds before first repeat fires
-	holdRepeatInterval = 0.15  // starting interval between repeats
-	holdMinInterval    = 0.03  // fastest repeat interval (reached after ~4 s of holding)
-	holdRampRate       = 0.03  // interval reduction per second of hold duration
+	holdInitialDelay         = 0.50 // seconds before first repeat fires
+	holdRepeatInterval       = 0.15 // starting interval between repeats
+	holdMinInterval          = 0.03 // fastest repeat interval (reached after ~4 s of holding)
+	holdRampRate             = 0.03 // interval reduction per second of hold duration
 	nurtureAttentionInterval = 7.0  // seconds between attention pulse fires
 	nurtureAttentionPulseDur = 0.70 // duration of each attention pulse (expanding rect needs more time)
 
@@ -119,7 +119,7 @@ const (
 	revealWaveSpeedPxS = 200.0 // pixels/second the reveal wave expands
 
 	// Completion atmosphere — wide coloured glow drawn behind the planet on completion.
-	atmosphereIntroDur  = 3.0  // seconds for the atmosphere to expand into place
+	atmosphereIntroDur   = 3.0  // seconds for the atmosphere to expand into place
 	atmosphereBreathFreq = 0.35 // rad/s — one full breath every ~18 s
 )
 

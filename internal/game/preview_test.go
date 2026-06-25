@@ -110,7 +110,6 @@ func TestBuildPreviewTownHallBlockedByNodeFootprint(t *testing.T) {
 	}
 }
 
-
 func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
