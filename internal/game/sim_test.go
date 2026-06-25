@@ -2793,8 +2793,9 @@ func newWaterHarvestFixture(t *testing.T) *World {
 	return w
 }
 
-// TestAssignServicingDocksInWedge verifies that sparkles within dockWedgeHalfArc of
-// the dock angle get ServicingDockID set to that dock's ID.
+// TestAssignServicingDocksInWedge verifies that sparkles reachable by the dock
+// (within dockWedgeHalfArc AND within the level's depth limit) get assigned,
+// while sparkles outside either constraint are not.
 func TestAssignServicingDocksInWedge(t *testing.T) {
 	w := newWaterHarvestFixture(t)
 
@@ -2809,25 +2810,33 @@ func TestAssignServicingDocksInWedge(t *testing.T) {
 		t.Fatal("no dock found")
 	}
 
-	inWedge := 0
-	outWedge := 0
+	maxDepth := w.Planet.Radius / 3 // L1
+	if dock.Level >= 2 {
+		maxDepth = w.Planet.Radius
+	}
+
+	inReach := 0
+	outReach := 0
 	for _, n := range w.Nodes {
 		if !n.Interior || n.Kind != KindWater {
 			continue
 		}
-		if angularDistance(n.Angle, dock.Angle) <= dockWedgeHalfArc {
-			inWedge++
+		depthFromRim := w.Planet.Radius - w.Planet.Center.Dist(n.Pos)
+		inAngular := angularDistance(n.Angle, dock.Angle) <= dockWedgeHalfArc
+		inDepth := depthFromRim <= maxDepth
+		if inAngular && inDepth {
+			inReach++
 			if n.ServicingDockID != dock.ID {
-				t.Errorf("sparkle within wedge has ServicingDockID=%d, want %d", n.ServicingDockID, dock.ID)
+				t.Errorf("reachable sparkle has ServicingDockID=%d, want %d", n.ServicingDockID, dock.ID)
 			}
 		} else {
-			outWedge++
+			outReach++
 			if n.ServicingDockID == dock.ID {
-				t.Errorf("sparkle outside wedge has ServicingDockID=%d (should not be assigned to this dock)", dock.ID)
+				t.Errorf("unreachable sparkle has ServicingDockID=%d (should not be assigned)", dock.ID)
 			}
 		}
 	}
-	t.Logf("sparkles in wedge: %d, out of wedge: %d", inWedge, outWedge)
+	t.Logf("sparkles in reach: %d, out of reach: %d", inReach, outReach)
 }
 
 // TestUnreachableSparklesUnserviced verifies that sparkles outside all dock wedges

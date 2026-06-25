@@ -80,6 +80,7 @@ func screenshotScenarios() []screenshotScenario {
 		waterPlanetSparklesScenario(),
 		waterPlanetDockUpgradeSelectedScenario(),
 		waterPlanetNearCompleteNoL2DockScenario(),
+		dockConeVisibilityScenario(),
 	}
 }
 
@@ -679,6 +680,25 @@ func waterPlanetNearCompleteNoL2DockScenario() screenshotScenario {
 		Wood:               &wood,
 	})
 	return screenshotScenario{name: "36-water-planet-near-complete-no-l2-dock", world: w, fullHUD: true}
+}
+
+// dockConeVisibilityScenario places a single L1 dock at the bottom-center of the
+// water field (most visible position) with no other clutter, specifically to
+// verify the cone color and transparency.
+func dockConeVisibilityScenario() screenshotScenario {
+	enter := 3
+	// waterFrontierLakeAngle = Pi/2, the bottom-center of the water arc.
+	dockAngle := waterFrontierLakeAngle
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		AwakenFrontier: true,
+		EnterPlanet:    &enter,
+		EchoPlaceTownHall: true,
+		EchoDocks:      []float64{dockAngle},
+	})
+	return screenshotScenario{name: "37-dock-cone-visibility", world: w, fullHUD: false}
 }
 
 func intPtr(v int) *int { return &v }

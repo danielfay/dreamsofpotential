@@ -39,7 +39,7 @@ var (
 
 	colInfluenceDebugFill = color.RGBA{R: 20, G: 60, B: 160, A: 28}  // debug-only: transparent blue wedge for KindWaterInfluence
 	colInfluenceDebugEdge = color.RGBA{R: 55, G: 130, B: 215, A: 80} // debug-only: water-blue rim
-	colDockWedge          = color.RGBA{R: 80, G: 160, B: 220, A: 28} // dock placement: dive-reach wedge fill
+	colDockWedge          = color.RGBA{R: 200, G: 210, B: 220, A: 12} // dock dive-reach cone: subtle grey-white
 )
 
 // planetViewPalette holds the planet-view colors that vary by planet identity.
