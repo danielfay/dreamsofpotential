@@ -26,33 +26,33 @@ const (
 
 // Game is the root ebiten game object.
 type Game struct {
-	world                     *World
-	scene                     *ebiten.Image // low-res 320×240 canvas; scaled up to the window
-	ui                        *ebitenui.UI
-	hud                       *HUD
-	placing                   bool              // true while waiting for player to click a camp location
-	freePlacing               bool              // debug-only: next placement ignores camp cost
-	preview                   *placementPreview // current frame's placement preview; nil when not placing
-	showMenu                  bool              // true when the settings overlay is open
-	debug                     bool              // F3 — verbose debug panel; session-only, not persisted
-	debugSection              int               // selected debug panel section; session-only
-	pulseTime                 float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget               int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
-	rejectTime                float64           // seconds remaining on invalid placement feedback
-	screenW                   int               // current screen dimensions, updated each Draw()
-	screenH                   int
-	hudScale                  int         // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits                 int         // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer                 float64     // counts down to next autosave
-	nurtureConfirmLeft        float64     // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown       float64 // counts down to next Nurture attention pulse
-	nurtureAttentionPulseLeft      float64 // seconds remaining on the Nurture attention flash
-	dockUpgradeAttentionCooldown   float64 // counts down to next dock-upgrade attention pulse
-	holdAction                int         // current held purchase action (holdNone, holdNurture, …)
-	holdTimer                 float64     // counts down to next repeat fire
-	holdDuration              float64     // total seconds the current hold has been active
-	importCh                  chan *World // receives a validated world from an import goroutine
-	dialogOpen                atomic.Bool // true while a file dialog is open; blocks UI input
+	world                        *World
+	scene                        *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	ui                           *ebitenui.UI
+	hud                          *HUD
+	placing                      bool              // true while waiting for player to click a camp location
+	freePlacing                  bool              // debug-only: next placement ignores camp cost
+	preview                      *placementPreview // current frame's placement preview; nil when not placing
+	showMenu                     bool              // true when the settings overlay is open
+	debug                        bool              // F3 — verbose debug panel; session-only, not persisted
+	debugSection                 int               // selected debug panel section; session-only
+	pulseTime                    float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget                  int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
+	rejectTime                   float64           // seconds remaining on invalid placement feedback
+	screenW                      int               // current screen dimensions, updated each Draw()
+	screenH                      int
+	hudScale                     int         // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits                    int         // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer                    float64     // counts down to next autosave
+	nurtureConfirmLeft           float64     // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown     float64     // counts down to next Nurture attention pulse
+	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
+	dockUpgradeAttentionCooldown float64     // counts down to next dock-upgrade attention pulse
+	holdAction                   int         // current held purchase action (holdNone, holdNurture, …)
+	holdTimer                    float64     // counts down to next repeat fire
+	holdDuration                 float64     // total seconds the current hold has been active
+	importCh                     chan *World // receives a validated world from an import goroutine
+	dialogOpen                   atomic.Bool // true while a file dialog is open; blocks UI input
 
 	// reveal state (transient — not saved)
 	revealActive  bool
@@ -94,16 +94,16 @@ func New() (*Game, error) {
 	}
 	const initialScale = 2
 	g := &Game{
-		world:                    w,
-		scene:                    ebiten.NewImage(virtW, virtH),
-		hudScale:                 initialScale,
-		hudDigits:                woodDigits(w.Economy.Wood),
-		saveTimer:                autoSavePeriod,
+		world:                        w,
+		scene:                        ebiten.NewImage(virtW, virtH),
+		hudScale:                     initialScale,
+		hudDigits:                    woodDigits(w.Economy.Wood),
+		saveTimer:                    autoSavePeriod,
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
-		importCh:                 make(chan *World, 1),
-		sysDoubleClickPlanet:     -1,
-		selectedBuildingID:       -1,
+		importCh:                     make(chan *World, 1),
+		sysDoubleClickPlanet:         -1,
+		selectedBuildingID:           -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -963,17 +963,29 @@ func (g *Game) drawFocusControl(screen *ebiten.Image) {
 		return
 	}
 
-	const slotSize = float64(14)
-	const slotGap = float64(2)
-	const padding = float64(8)
-	const btnH = float64(16)
-
-	slotRowW := float64(total)*slotSize + float64(total-1)*slotGap
-	panelW := slotRowW + 2*padding
-	if panelW < 80 {
-		panelW = 80
+	nWater := g.focusDraftWater
+	if nWater < 0 {
+		nWater = 0
 	}
-	panelH := padding + slotSize + padding*0.75 + btnH + padding
+	if nWater > total {
+		nWater = total
+	}
+	nWood := total - nWater
+
+	const (
+		trackW   = float64(86)
+		trackH   = float64(5)
+		hitH     = float64(18)
+		knobW    = float64(5)
+		labelW   = float64(14)
+		labelGap = float64(4)
+		padding  = float64(8)
+		btnSize  = float64(16)
+		btnGap   = float64(6)
+	)
+
+	panelW := trackW + 2*labelW + 2*labelGap + 2*padding
+	panelH := padding + hitH + padding*0.75 + btnSize + padding
 
 	pw := float32(panelW * float64(scale))
 	ph := float32(panelH * float64(scale))
@@ -984,66 +996,78 @@ func (g *Game) drawFocusControl(screen *ebiten.Image) {
 	vector.StrokeRect(screen, px, py, pw, ph, 1, colSysTrayBorder, false)
 	g.focusCtrlRect = sysRect{x: px, y: py, w: pw, h: ph}
 
-	// Slot row: colored blocks, green=wood, blue=water
-	slotW := float32(slotSize * float64(scale))
-	slotH := slotW
-	slotY := py + float32(padding*float64(scale))
-	slotStartX := px + float32(padding*float64(scale))
-	nWater := g.focusDraftWater
-	if nWater < 0 {
-		nWater = 0
-	}
-	if nWater > total {
-		nWater = total
-	}
-	nWood := total - nWater
+	// Fixed-width split slider: green=wood, blue=water.
+	labelWpx := float32(labelW * float64(scale))
+	labelGapPx := float32(labelGap * float64(scale))
+	trackX := px + float32(padding*float64(scale)) + labelWpx + labelGapPx
+	trackWpx := float32(trackW * float64(scale))
+	trackHpx := float32(trackH * float64(scale))
+	hitHpx := float32(hitH * float64(scale))
+	trackY := py + float32(padding*float64(scale)) + (hitHpx-trackHpx)/2
+	splitT := float32(nWood) / float32(total)
+	splitX := trackX + trackWpx*splitT
 
-	for i := 0; i < total; i++ {
-		sx := slotStartX + float32(i)*(slotW+float32(slotGap*float64(scale)))
-		var col color.RGBA
-		if i < nWood {
-			col = colWoodResource
-		} else {
-			col = colSparkle
-		}
-		vector.FillRect(screen, sx, slotY, slotW, slotH, col, false)
+	labelCol := color.RGBA{R: 205, G: 220, B: 215, A: 235}
+	labelY := trackY + trackHpx/2 - 4*sp
+	woodStr := fmt.Sprintf("%d", nWood)
+	woodTextW, _ := text.Measure(woodStr, face, 0)
+	drawSysText(screen, woodStr, trackX-labelGapPx-float32(woodTextW), labelY, labelCol, face)
+	waterStr := fmt.Sprintf("%d", nWater)
+	drawSysText(screen, waterStr, trackX+trackWpx+labelGapPx, labelY, labelCol, face)
+
+	vector.FillRect(screen, trackX, trackY, trackWpx, trackHpx, color.RGBA{R: 18, G: 28, B: 36, A: 230}, false)
+	if nWood > 0 {
+		vector.FillRect(screen, trackX, trackY, splitX-trackX, trackHpx, colWoodResource, false)
 	}
-
-	// Divider line between wood and water sections
-	if nWood > 0 && nWater > 0 {
-		divX := slotStartX + float32(nWood)*(slotW+float32(slotGap*float64(scale))) - float32(slotGap*float64(scale))/2
-		vector.StrokeLine(screen, divX, slotY-2*sp, divX, slotY+slotH+2*sp, 2, color.RGBA{R: 220, G: 220, B: 220, A: 200}, false)
+	if nWater > 0 {
+		vector.FillRect(screen, splitX, trackY, trackX+trackWpx-splitX, trackHpx, colSparkle, false)
 	}
+	vector.StrokeRect(screen, trackX, trackY, trackWpx, trackHpx, 1, color.RGBA{R: 95, G: 115, B: 125, A: 210}, false)
 
-	slotsW := float32(slotRowW * float64(scale))
-	g.focusSlotsRect = sysRect{x: slotStartX, y: slotY, w: slotsW, h: slotH}
+	knobWpx := float32(knobW * float64(scale))
+	knobHpx := float32(14 * scale)
+	knobX := splitX - knobWpx/2
+	knobY := trackY + trackHpx/2 - knobHpx/2
+	vector.FillRect(screen, knobX, knobY, knobWpx, knobHpx, color.RGBA{R: 225, G: 235, B: 225, A: 240}, false)
+	vector.StrokeRect(screen, knobX, knobY, knobWpx, knobHpx, 1, color.RGBA{R: 30, G: 45, B: 40, A: 230}, false)
 
-	// Count labels
-	woodCountStr := fmt.Sprintf("%d", nWood)
-	waterCountStr := fmt.Sprintf("%d", nWater)
-	woodLabelX := slotStartX
-	waterLabelX := slotStartX + slotsW - 6*sp
-	labelY := slotY + slotH + 2*sp
-	drawSysText(screen, woodCountStr, woodLabelX, labelY, color.RGBA{R: 160, G: 220, B: 160, A: 220}, face)
-	drawSysText(screen, waterCountStr, waterLabelX, labelY, color.RGBA{R: 100, G: 190, B: 255, A: 220}, face)
+	g.focusSlotsRect = sysRect{x: trackX, y: trackY - (hitHpx-trackHpx)/2, w: trackWpx, h: hitHpx}
 
 	// Confirm and cancel buttons
-	btnY := py + ph - float32((padding+btnH)*float64(scale))
-	halfW := (pw - 3*sp) / 2
-	g.focusConfirmRect = sysRect{x: px + sp, y: btnY, w: halfW, h: float32(btnH * float64(scale))}
-	g.focusCancelRect = sysRect{x: px + halfW + 2*sp, y: btnY, w: halfW, h: float32(btnH * float64(scale))}
+	btnY := py + ph - float32((padding+btnSize)*float64(scale))
+	btnW := float32(btnSize * float64(scale))
+	gap := float32(btnGap * float64(scale))
+	btnStartX := px + pw/2 - btnW - gap/2
+	g.focusConfirmRect = sysRect{x: btnStartX, y: btnY, w: btnW, h: btnW}
+	g.focusCancelRect = sysRect{x: btnStartX + btnW + gap, y: btnY, w: btnW, h: btnW}
 
-	confirmCol := color.RGBA{R: 30, G: 80, B: 30, A: 200}
-	cancelCol := color.RGBA{R: 80, G: 25, B: 25, A: 200}
+	confirmCol := color.RGBA{R: 24, G: 76, B: 42, A: 215}
+	cancelCol := color.RGBA{R: 78, G: 30, B: 38, A: 215}
 	vector.FillRect(screen, g.focusConfirmRect.x, g.focusConfirmRect.y, g.focusConfirmRect.w, g.focusConfirmRect.h, confirmCol, false)
 	vector.StrokeRect(screen, g.focusConfirmRect.x, g.focusConfirmRect.y, g.focusConfirmRect.w, g.focusConfirmRect.h, 1, colSysTrayBorder, false)
 	vector.FillRect(screen, g.focusCancelRect.x, g.focusCancelRect.y, g.focusCancelRect.w, g.focusCancelRect.h, cancelCol, false)
 	vector.StrokeRect(screen, g.focusCancelRect.x, g.focusCancelRect.y, g.focusCancelRect.w, g.focusCancelRect.h, 1, colSysTrayBorder, false)
 
-	confirmLabelX := g.focusConfirmRect.x + g.focusConfirmRect.w/2 - 4*sp
-	cancelLabelX := g.focusCancelRect.x + g.focusCancelRect.w/2 - 4*sp
-	drawSysText(screen, "Apply", confirmLabelX, g.focusConfirmRect.y+sp, color.RGBA{R: 180, G: 240, B: 180, A: 230}, face)
-	drawSysText(screen, "Cancel", cancelLabelX, g.focusCancelRect.y+sp, color.RGBA{R: 240, G: 160, B: 160, A: 230}, face)
+	iconPad := 4 * sp
+	checkCol := color.RGBA{R: 178, G: 245, B: 190, A: 245}
+	vector.StrokeLine(screen,
+		g.focusConfirmRect.x+iconPad, g.focusConfirmRect.y+g.focusConfirmRect.h*0.55,
+		g.focusConfirmRect.x+g.focusConfirmRect.w*0.43, g.focusConfirmRect.y+g.focusConfirmRect.h-iconPad,
+		2, checkCol, false)
+	vector.StrokeLine(screen,
+		g.focusConfirmRect.x+g.focusConfirmRect.w*0.43, g.focusConfirmRect.y+g.focusConfirmRect.h-iconPad,
+		g.focusConfirmRect.x+g.focusConfirmRect.w-iconPad, g.focusConfirmRect.y+iconPad,
+		2, checkCol, false)
+
+	xCol := color.RGBA{R: 245, G: 175, B: 180, A: 245}
+	vector.StrokeLine(screen,
+		g.focusCancelRect.x+iconPad, g.focusCancelRect.y+iconPad,
+		g.focusCancelRect.x+g.focusCancelRect.w-iconPad, g.focusCancelRect.y+g.focusCancelRect.h-iconPad,
+		2, xCol, false)
+	vector.StrokeLine(screen,
+		g.focusCancelRect.x+g.focusCancelRect.w-iconPad, g.focusCancelRect.y+iconPad,
+		g.focusCancelRect.x+iconPad, g.focusCancelRect.y+g.focusCancelRect.h-iconPad,
+		2, xCol, false)
 }
 
 // handleFocusControlInput processes mouse events while the focus control is open.
@@ -1063,10 +1087,14 @@ func (g *Game) handleFocusControlInput() {
 				g.focusDragging = true
 			}
 			if g.focusDragging && g.focusSlotsRect.w > 0 {
-				scale, _, _ := viewGeom(g.screenW, g.screenH)
-				const slotGap = float64(2)
-				slotW := g.focusSlotsRect.w / float32(total)
-				rawWood := int((fmx - g.focusSlotsRect.x + float32(slotGap*scale)/2) / slotW)
+				t := (fmx - g.focusSlotsRect.x) / g.focusSlotsRect.w
+				if t < 0 {
+					t = 0
+				}
+				if t > 1 {
+					t = 1
+				}
+				rawWood := int(math.Round(float64(t) * float64(total)))
 				nWater := total - rawWood
 				if nWater < 0 {
 					nWater = 0
