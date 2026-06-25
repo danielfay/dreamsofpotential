@@ -463,6 +463,85 @@ func TestWaterWorkerAbortsMidUnload(t *testing.T) {
 	}
 }
 
+// TestRatioBalancedOverflow verifies that workers spawned after the LaborFocus
+// total is exhausted are assigned to the kind that best maintains the saved
+// ratio, and that LaborFocus is incremented so subsequent spawns compute
+// correctly.
+func TestRatioBalancedOverflow(t *testing.T) {
+	w := newFocusWorld(t, 6)
+	w.Economy.WorkerCapacity = 20
+
+	// Simulate: player saved a 1:1 ratio (3 wood / 3 water) and workers are
+	// already assigned accordingly. FocusedKind must reflect the ratio so the
+	// deficit pass in assignFocusToNewWorker sees counts == targets and falls
+	// through to the overflow path.
+	w.LaborFocus = map[ResourceKind]int{KindWood: 3, KindWater: 3}
+	w.SavedLaborRatio = map[ResourceKind]int{KindWood: 3, KindWater: 3}
+	for i, wk := range w.Workers {
+		if i < 3 {
+			wk.FocusedKind = KindWood
+		} else {
+			wk.FocusedKind = KindWater
+		}
+	}
+
+	// 7th spawn: ideal is 3.5/3.5; wood and water both have count=3 from LaborFocus.
+	// deficit(wood) = 0.5, deficit(water) = 0.5 — tie; lower kind value (KindWood=0) wins.
+	wk7 := spawnWorkerAtTownHall(w)
+	if wk7 == nil {
+		t.Fatal("could not spawn 7th worker")
+	}
+	if wk7.FocusedKind != KindWood {
+		t.Errorf("7th worker: FocusedKind = %v, want KindWood", wk7.FocusedKind)
+	}
+	if w.LaborFocus[KindWood] != 4 || w.LaborFocus[KindWater] != 3 {
+		t.Errorf("after 7th spawn LaborFocus = %v, want wood:4 water:3", w.LaborFocus)
+	}
+
+	// 8th spawn: ideal 4/4; wood=4, water=3 → deficit(water)=1 > deficit(wood)=0.
+	wk7.FocusedKind = KindWood // ensure it's counted in the next spawn's pass
+	wk8 := spawnWorkerAtTownHall(w)
+	if wk8 == nil {
+		t.Fatal("could not spawn 8th worker")
+	}
+	if wk8.FocusedKind != KindWater {
+		t.Errorf("8th worker: FocusedKind = %v, want KindWater", wk8.FocusedKind)
+	}
+	if w.LaborFocus[KindWood] != 4 || w.LaborFocus[KindWater] != 4 {
+		t.Errorf("after 8th spawn LaborFocus = %v, want wood:4 water:4", w.LaborFocus)
+	}
+
+	// 9th spawn: ideal 4.5/4.5; wood=4, water=4 — tie again; KindWood wins.
+	wk8.FocusedKind = KindWater
+	wk9 := spawnWorkerAtTownHall(w)
+	if wk9 == nil {
+		t.Fatal("could not spawn 9th worker")
+	}
+	if wk9.FocusedKind != KindWood {
+		t.Errorf("9th worker: FocusedKind = %v, want KindWood", wk9.FocusedKind)
+	}
+}
+
+// TestRatioBalancedOverflowWoodOnly verifies that a 6:0 saved ratio always
+// sends overflow workers to wood.
+func TestRatioBalancedOverflowWoodOnly(t *testing.T) {
+	w := newFocusWorld(t, 6)
+	w.Economy.WorkerCapacity = 20
+
+	w.LaborFocus = map[ResourceKind]int{KindWood: 6, KindWater: 0}
+	w.SavedLaborRatio = map[ResourceKind]int{KindWood: 6, KindWater: 0}
+
+	for i := 7; i <= 9; i++ {
+		wk := spawnWorkerAtTownHall(w)
+		if wk == nil {
+			t.Fatalf("could not spawn worker %d", i)
+		}
+		if wk.FocusedKind != KindWood {
+			t.Errorf("worker %d: FocusedKind = %v, want KindWood", i, wk.FocusedKind)
+		}
+	}
+}
+
 // TestOverflowWorkerStartsWorking verifies that a worker spawned beyond the
 // LaborFocus total (e.g. population growth after a 5-wood/0-water ratio is set)
 // ends up working rather than sitting idle. The UI always sets focus sum ==

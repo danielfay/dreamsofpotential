@@ -1570,6 +1570,10 @@ func (g *Game) handleFocusControlInput() {
 			KindWater: nWater,
 			KindWood:  nWood,
 		}
+		g.world.SavedLaborRatio = map[ResourceKind]int{
+			KindWater: nWater,
+			KindWood:  nWood,
+		}
 		g.showFocusControl = false
 		return
 	}

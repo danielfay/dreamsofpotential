@@ -538,22 +538,52 @@ func assignFocusToNewWorker(w *World, wk *Worker) {
 			bestKind = kind
 		}
 	}
-	// Overflow: all targets met. Spill to the kind with the largest positive target.
+	// Overflow: all targets met. Pick the kind that best maintains the saved ratio
+	// and extend LaborFocus so the sum stays equal to len(w.Workers).
 	if bestKind == focusKindNone {
-		bestTarget := 0
-		for kind, target := range w.LaborFocus {
-			if target <= 0 {
-				continue
-			}
-			if target > bestTarget || (target == bestTarget && kind > bestKind) {
-				bestTarget = target
-				bestKind = kind
-			}
+		bestKind = ratioBalancedKind(w)
+		if bestKind != focusKindNone {
+			w.LaborFocus[bestKind]++
 		}
 	}
 	if bestKind != focusKindNone {
 		wk.FocusedKind = bestKind
 	}
+}
+
+// ratioBalancedKind returns the resource kind a new overflow worker should be
+// assigned to in order to best maintain the player's saved ratio. It compares
+// the ideal per-kind count (total workers × saved weight / total weight) against
+// the current LaborFocus values and picks the most underrepresented kind.
+// Ties resolve toward the lower ResourceKind value (KindWood = left side of the
+// slider). Falls back to the dominant-target kind if no saved ratio exists.
+func ratioBalancedKind(w *World) ResourceKind {
+	src := w.SavedLaborRatio
+	if len(src) == 0 {
+		src = w.LaborFocus
+	}
+	ratioSum := 0
+	for _, t := range src {
+		ratioSum += t
+	}
+	if ratioSum == 0 {
+		return focusKindNone
+	}
+	total := len(w.Workers)
+	var bestKind ResourceKind = focusKindNone
+	bestDeficit := -math.MaxFloat64
+	for kind, weight := range src {
+		if weight <= 0 {
+			continue
+		}
+		ideal := float64(total) * float64(weight) / float64(ratioSum)
+		deficit := ideal - float64(w.LaborFocus[kind])
+		if deficit > bestDeficit || (deficit == bestDeficit && (bestKind == focusKindNone || kind < bestKind)) {
+			bestDeficit = deficit
+			bestKind = kind
+		}
+	}
+	return bestKind
 }
 
 func nodeFreeForWorker(w *World, n *ResourceNode, workerID int) bool {
