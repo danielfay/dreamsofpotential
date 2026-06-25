@@ -67,8 +67,9 @@ type Game struct {
 	sysDoubleClickTime   time.Time // time of that click
 
 	// planet-view selected building (dock tray with upgrade action)
-	selectedBuildingID int    // index into w.Buildings; -1 = none
+	selectedBuildingID int     // index into w.Buildings; -1 = none
 	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
+	dockTrayRect       sysRect // entire tray background rect (clicking anywhere dismisses)
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -726,17 +727,21 @@ func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
 func (g *Game) drawDockTray(screen *ebiten.Image) {
 	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
 		g.dockUpgradeRect = sysRect{}
+		g.dockTrayRect = sysRect{}
 		return
 	}
 	b := g.world.Buildings[g.selectedBuildingID]
 	if b.Kind != KindDock {
 		g.dockUpgradeRect = sysRect{}
+		g.dockTrayRect = sysRect{}
 		return
 	}
 
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
 	if face == nil {
+		g.dockUpgradeRect = sysRect{}
+		g.dockTrayRect = sysRect{}
 		return
 	}
 
@@ -749,6 +754,7 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 
 	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
 	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
+	g.dockTrayRect = sysRect{x: tx, y: ty, w: tw, h: th}
 
 	sp := float32(scale)
 
@@ -795,20 +801,35 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		vector.FillRect(screen, qX, qY, qSize, qSize, greyCol, false)
 		drawSysText(screen, "L3 ???", qX+qSize+3*sp, qY, greyCol, face)
 	} else {
-		// Level-1 upgrade button: shows cost and is clickable.
+		// Level-1 upgrade button: fills from bottom as resources accumulate.
 		btnX := axLeft + 2*sp
 		btnW := tw - float32(actionW*scale) - 4*sp
 		btnH := actionH
 
 		affordable := canUpgradeDock(g.world, b)
-		btnFill := colSysTrayFill
-		if affordable {
-			btnFill = color.RGBA{R: 18, G: 22, B: 36, A: 220}
+
+		// Dark base.
+		vector.FillRect(screen, btnX, ayTop, btnW, btnH, colSysTrayFill, false)
+
+		// Fill from bottom to top based on the scarcer of the two resources.
+		woodFrac := affordabilityFrac(g.world.Economy.Wood, dockL2WoodCost)
+		waterFrac := affordabilityFrac(g.world.Economy.Water, dockL2WaterCost)
+		frac := woodFrac
+		if waterFrac < frac {
+			frac = waterFrac
 		}
-		vector.FillRect(screen, btnX, ayTop, btnW, btnH, btnFill, false)
+		if frac > 0 && frac < 1 {
+			fillH := btnH * frac
+			vector.FillRect(screen, btnX, ayTop+btnH-fillH, btnW, fillH,
+				color.RGBA{R: 30, G: 55, B: 100, A: 200}, false)
+		} else if affordable {
+			vector.FillRect(screen, btnX, ayTop, btnW, btnH,
+				color.RGBA{R: 30, G: 55, B: 100, A: 200}, false)
+		}
+
 		borderCol := colSysTrayBorder
 		if affordable {
-			borderCol = color.RGBA{R: 80, G: 100, B: 160, A: 200}
+			borderCol = color.RGBA{R: 80, G: 120, B: 200, A: 220}
 		}
 		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
 
@@ -821,40 +842,28 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 
 		g.dockUpgradeRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
 
-		// Cost icons inside button.
+		// Cost icons: always use full color so they're visible against the dark/fill background.
 		iconSize := float32(6 * scale)
 		iconY := ayTop + (btnH-iconSize)/2
 		cx := btnX + 4*sp
 
-		// Arrow "↑".
-		arrowCol := colWoodLabel
-		if !affordable {
-			arrowCol = colSysTrayBorder
-		}
-		drawSysText(screen, "▲", cx, iconY, arrowCol, face)
+		// Arrow "▲".
+		drawSysText(screen, "▲", cx, iconY, colWoodLabel, face)
 		_, ah := text.Measure("▲", face, 0)
 		cx += float32(ah) + 2*sp
 
-		// Wood cost.
+		// Wood cost icon + amount.
 		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colWoodResource, false)
 		cx += iconSize + 2*sp
 		woodStr := fmt.Sprintf("%.0f", dockL2WoodCost)
-		woodCol := colWoodLabel
-		if !affordable {
-			woodCol = colSysTrayBorder
-		}
-		drawSysText(screen, woodStr, cx, iconY, woodCol, face)
+		drawSysText(screen, woodStr, cx, iconY, colWoodLabel, face)
 		ww, _ := text.Measure(woodStr, face, 0)
 		cx += float32(ww) + 3*sp
 
-		// Water cost.
+		// Water cost icon + amount.
 		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colSparkle, false)
 		cx += iconSize + 2*sp
 		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
-		waterCol := color.RGBA{R: 100, G: 180, B: 230, A: 200}
-		if !affordable {
-			waterCol = colSysTrayBorder
-		}
-		drawSysText(screen, waterStr, cx, iconY, waterCol, face)
+		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
 	}
 }

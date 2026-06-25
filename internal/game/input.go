@@ -144,14 +144,19 @@ func (g *Game) handleInput() {
 	if !g.placing {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			mx, my := ebiten.CursorPosition()
-			// Dock upgrade tray button (checked before world-space hit test).
-			if g.dockUpgradeRect.w > 0 {
-				rx := g.dockUpgradeRect
-				if float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
-					float32(my) >= rx.y && float32(my) < rx.y+rx.h {
-					if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
-						upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID])
+			// Dock tray: any click inside the tray is consumed (upgrade if on button; dismiss otherwise).
+			if g.dockTrayRect.w > 0 {
+				tr := g.dockTrayRect
+				if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
+					float32(my) >= tr.y && float32(my) < tr.y+tr.h {
+					rx := g.dockUpgradeRect
+					if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
+						float32(my) >= rx.y && float32(my) < rx.y+rx.h {
+						if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
+							upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID])
+						}
 					}
+					g.selectedBuildingID = -1
 					return
 				}
 			}
