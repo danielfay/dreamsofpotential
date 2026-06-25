@@ -85,6 +85,7 @@ func screenshotScenarios() []screenshotScenario {
 		waterPlanetNearCompleteNoL2DockScenario(),
 		dockConeVisibilityScenario(),
 		workerRatioUIOpenScenario(), // 38
+		workerRatioHUDScenario(),    // 39
 	}
 }
 
@@ -731,8 +732,10 @@ func workerRatioUIOpenScenario() screenshotScenario {
 	for len(p.Workers) < 4 {
 		spawnWorkerAtTownHall(p)
 	}
-	// Settle workers briefly.
-	for range 60 {
+	// Set a 3:1 wood/water focus ratio so the HUD overlay is active.
+	p.LaborFocus = map[ResourceKind]int{KindWood: 3, KindWater: 1}
+	// Settle workers so they pick up their focus kind.
+	for range 120 {
 		Step(p, dt)
 	}
 	return screenshotScenario{
@@ -741,6 +744,38 @@ func workerRatioUIOpenScenario() screenshotScenario {
 		fullHUD:          true,
 		showFocusControl: true,
 		focusDraftWater:  1,
+	}
+}
+
+// workerRatioHUDScenario shows the new per-kind worker counts in the HUD (no
+// focus control dialog).
+func workerRatioHUDScenario() screenshotScenario {
+	frontierIdx := 3
+	p, err := BuildQAWorld(QAPreset{
+		Name:                 "water-planet-worker-ratio",
+		AwakenFrontier:       true,
+		EnterPlanet:          &frontierIdx,
+		EchoPlaceTownHall:    true,
+		EchoFillTownCapacity: true,
+		SaturateWaterField:   true,
+	})
+	if err != nil {
+		return screenshotScenario{name: "39-worker-ratio-hud", world: NewWorld(), fullHUD: true}
+	}
+	p.Economy.WaterDiscovered = true
+	p.ResourceDiscovered = true
+	p.Economy.WorkerCapacity = 10
+	for len(p.Workers) < 4 {
+		spawnWorkerAtTownHall(p)
+	}
+	p.LaborFocus = map[ResourceKind]int{KindWood: 3, KindWater: 1}
+	for range 120 {
+		Step(p, dt)
+	}
+	return screenshotScenario{
+		name:    "39-worker-ratio-hud",
+		world:   p,
+		fullHUD: true,
 	}
 }
 

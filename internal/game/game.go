@@ -446,6 +446,9 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 	// Selected-building dock tray.
 	g.drawDockTray(screen)
 
+	// Worker HUD slider icon + colored breakdown (shown when focus is active).
+	g.drawWorkerHUDOverlay(screen)
+
 	// Labor focus control overlay.
 	g.drawFocusControl(screen)
 
@@ -936,6 +939,109 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		cx += iconSize + 2*sp
 		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
 		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
+	}
+}
+
+// drawWorkerHUDOverlay replaces the plain worker icon and ratio text with a
+// mini slider icon and per-kind worker counts once LaborFocus is set.
+func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
+	w := g.world
+	if len(w.LaborFocus) == 0 || len(w.Workers) == 0 {
+		return
+	}
+	if g.hud == nil {
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	sp := float32(scale)
+	face := g.hud.face
+	if face == nil {
+		return
+	}
+
+	// Count workers by focus kind.
+	var nWood, nWater int
+	for _, wk := range w.Workers {
+		switch wk.FocusedKind {
+		case KindWood:
+			nWood++
+		case KindWater:
+			nWater++
+		}
+	}
+	nIdle := len(w.Workers) - nWood - nWater
+	total := len(w.Workers)
+
+	// ── Slider icon (drawn over workerSquare button) ──────────────────────
+	sqR := g.hud.workerSquare.GetWidget().Rect
+	sqX := float32(sqR.Min.X)
+	sqY := float32(sqR.Min.Y)
+	sqW := float32(sqR.Dx())
+	sqH := float32(sqR.Dy())
+
+	// Dark background to erase the yellow button.
+	vector.FillRect(screen, sqX, sqY, sqW, sqH, colSysTrayFill, false)
+
+	trackPad := 4 * sp
+	trackX := sqX + trackPad
+	trackWpx := sqW - 2*trackPad
+	trackH := 2 * sp
+	trackY := sqY + sqH/2 - trackH/2
+
+	splitX := trackX + trackWpx*float32(nWood)/float32(total)
+
+	if nWood > 0 {
+		vector.FillRect(screen, trackX, trackY, splitX-trackX, trackH, colWoodResource, false)
+	}
+	if nWater > 0 {
+		vector.FillRect(screen, splitX, trackY, trackX+trackWpx-splitX, trackH, colSparkle, false)
+	}
+	if nWood == 0 || nWater == 0 {
+		// single-color track: draw full track in that color with dim border
+		col := colWoodResource
+		if nWater == total {
+			col = colSparkle
+		}
+		vector.FillRect(screen, trackX, trackY, trackWpx, trackH, col, false)
+	}
+	vector.StrokeRect(screen, trackX, trackY, trackWpx, trackH, 1, color.RGBA{R: 80, G: 90, B: 100, A: 180}, false)
+
+	knobW := 3 * sp
+	knobH := 10 * sp
+	knobX := splitX - knobW/2
+	knobY := sqY + sqH/2 - knobH/2
+	vector.FillRect(screen, knobX, knobY, knobW, knobH, colWorkerLaden, false)
+	vector.StrokeRect(screen, knobX, knobY, knobW, knobH, 1, color.RGBA{R: 30, G: 30, B: 10, A: 200}, false)
+
+	// ── Colored count text (drawn over workerRatio text widget) ───────────
+	txtR := g.hud.workerRatio.GetWidget().Rect
+	txtX := float32(txtR.Min.X)
+	txtH := float32(txtR.Dy())
+
+	// Background behind text area.
+	vector.FillRect(screen, txtX-2*sp, float32(txtR.Min.Y), float32(txtR.Dx())+4*sp, txtH, colSysTrayFill, false)
+
+	_, fontH := text.Measure("0", face, 0)
+	textY := float32(txtR.Min.Y) + (txtH-float32(fontH))/2
+
+	colSlash := colWorkerLaden
+	type seg struct {
+		s   string
+		col color.RGBA
+	}
+	segs := []seg{
+		{fmt.Sprintf("%d", nWood), colWoodResource},
+		{"/", colSlash},
+		{fmt.Sprintf("%d", nWater), color.RGBA{R: colSparkle.R, G: colSparkle.G, B: colSparkle.B, A: 240}},
+		{"/", colSlash},
+		{fmt.Sprintf("%d", nIdle), colWorkerLaden},
+	}
+	x := txtX
+	for _, seg := range segs {
+		drawSysText(screen, seg.s, x, textY, seg.col, face)
+		w, _ := text.Measure(seg.s, face, 0)
+		x += float32(w)
 	}
 }
 

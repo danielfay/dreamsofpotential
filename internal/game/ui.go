@@ -333,7 +333,9 @@ func (h *HUD) refreshNormal(w *World) {
 	if len(w.Workers) > 0 {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		if len(w.LaborFocus) > 0 {
-			h.workerRatio.Label = fmt.Sprintf("%d/%d", w.LaborFocus[KindWater], len(w.Workers))
+			// Icon and text are drawn by drawWorkerHUDOverlay; blank the label so
+			// the EbitenUI text doesn't render underneath the overlay.
+			h.workerRatio.Label = ""
 		} else {
 			h.workerRatio.Label = fmt.Sprintf("%d", len(w.Workers))
 		}
