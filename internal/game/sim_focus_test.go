@@ -462,3 +462,28 @@ func TestWaterWorkerAbortsMidUnload(t *testing.T) {
 		t.Errorf("worker re-entered water loop after completeWaterUnload with 0 water quota (state=%v)", wk.State)
 	}
 }
+
+// TestOverflowWorkerAtSpawnGetsWoodFocus verifies that a worker spawned beyond
+// the LaborFocus total gets assigned to the dominant kind at spawn time, so it
+// can start working immediately rather than sitting idle.
+func TestOverflowWorkerAtSpawnGetsWoodFocus(t *testing.T) {
+	// 5 workers, focus 5 wood / 0 water — all targets exactly met.
+	w := newFocusWorld(t, 5)
+	w.LaborFocus = map[ResourceKind]int{KindWood: 5, KindWater: 0}
+
+	for range 120 {
+		Step(w, dt)
+	}
+
+	// Spawn a 6th worker beyond the focus total.
+	w.Economy.WorkerCapacity = 10
+	wk6 := spawnWorkerAtTownHall(w)
+	if wk6 == nil {
+		t.Fatal("could not spawn 6th worker")
+	}
+
+	// assignFocusToNewWorker should overflow to KindWood (largest positive target).
+	if wk6.FocusedKind != KindWood {
+		t.Errorf("new overflow worker FocusedKind = %v, want KindWood", wk6.FocusedKind)
+	}
+}

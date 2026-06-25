@@ -488,6 +488,19 @@ func assignFocusToNewWorker(w *World, wk *Worker) {
 			bestKind = kind
 		}
 	}
+	// Overflow: all targets met. Spill to the kind with the largest positive target.
+	if bestKind == focusKindNone {
+		bestTarget := 0
+		for kind, target := range w.LaborFocus {
+			if target <= 0 {
+				continue
+			}
+			if target > bestTarget || (target == bestTarget && kind > bestKind) {
+				bestTarget = target
+				bestKind = kind
+			}
+		}
+	}
 	if bestKind != focusKindNone {
 		wk.FocusedKind = bestKind
 	}
