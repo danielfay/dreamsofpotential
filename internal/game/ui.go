@@ -56,6 +56,8 @@ type HUD struct {
 	normalTopBar *widget.Container
 	resourceHUD  *widget.Container // green icon + amount; hidden until discovered
 	resourceText *widget.Text
+	waterHUD     *widget.Container // blue icon + amount; hidden until first water delivery
+	waterText    *widget.Text
 	workerHUD    *widget.Container // yellow icon + ratio; hidden until first worker
 	workerRatio  *widget.Text
 
@@ -316,6 +318,14 @@ func (h *HUD) refreshNormal(w *World) {
 		h.resourceSquare.GetWidget().Disabled = saturated || nurtureGrowthCuePending(w)
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
+	}
+
+	// Water HUD: hidden until first water delivery.
+	if w.Economy.WaterDiscovered {
+		h.waterHUD.GetWidget().SetVisibility(widget.Visibility_Show)
+		h.waterText.Label = fmt.Sprintf("%.0f", w.Economy.Water)
+	} else {
+		h.waterHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
 
 	// Worker HUD: hidden until first worker exists.
@@ -619,6 +629,20 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.resourceHUD.AddChild(hud.resourceText)
 	hud.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 
+	hud.waterText = widget.NewText(
+		widget.TextOpts.Text("0", face, color.NRGBA{R: 100, G: 200, B: 255, A: 255}),
+		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*minResourceDigits, 0)),
+	)
+	hud.waterHUD = widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
+			widget.RowLayoutOpts.Spacing(sz(4)),
+		)),
+	)
+	hud.waterHUD.AddChild(smallSquare(colSparkle, iconSz))
+	hud.waterHUD.AddChild(hud.waterText)
+	hud.waterHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
+
 	hud.workerRatio = widget.NewText(
 		widget.TextOpts.Text("0/0", face, color.NRGBA{R: 255, G: 240, B: 180, A: 255}),
 		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*5, 0)),
@@ -648,6 +672,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 	hud.normalTopBar.AddChild(hud.resourceHUD)
+	hud.normalTopBar.AddChild(hud.waterHUD)
 	hud.normalTopBar.AddChild(hud.workerHUD)
 
 	// --- normal mode: left sidebar (action buttons) ---

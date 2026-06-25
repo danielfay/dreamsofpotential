@@ -515,21 +515,33 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
 
-	// Global wood amount and rate — top-left, drawn on screen at native resolution.
+	// Global resources — top-left, drawn on screen at native resolution.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
-		hudStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world)))
 		swSize := float32(8 * scale)
 		swX := float32(4 * scale)
 		swY := float32(4 * scale)
+		rowGap := swSize + float32(3*scale)
+
+		// Wood row.
+		woodStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world)))
 		vector.FillRect(screen, swX, swY, swSize, swSize, colWoodResource, false)
 		textX := swX + swSize + float32(3*scale)
-		_, textH := text.Measure(hudStr, face, 0)
-		textY := swY + swSize - float32(textH)
-		drawSysText(screen, hudStr, textX, textY, colWoodLabel, face)
+		_, textH := text.Measure(woodStr, face, 0)
+		drawSysText(screen, woodStr, textX, swY+swSize-float32(textH), colWoodLabel, face)
+
+		// Water row: shown after first water delivery.
+		nextRowY := swY + rowGap
+		if g.world.Economy.WaterDiscovered {
+			waterStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(abstractWaterIncome(g.world)))
+			vector.FillRect(screen, swX, nextRowY, swSize, swSize, colSparkle, false)
+			_, wTextH := text.Measure(waterStr, face, 0)
+			drawSysText(screen, waterStr, textX, nextRowY+swSize-float32(wTextH),
+				color.RGBA{R: 100, G: 200, B: 255, A: 220}, face)
+			nextRowY += rowGap
+		}
 
 		// Earned Potential circles — one per kind, shown only after first award.
-		// Rendered in enum order so layout is deterministic.
-		potRow := swY + swSize + float32(3*scale)
+		potRow := nextRowY
 		potR := float32(4 * scale)
 		potCols := []struct {
 			kind PotentialKind
