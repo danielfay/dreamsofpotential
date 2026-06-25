@@ -47,6 +47,8 @@ type Game struct {
 	nurtureConfirmLeft           float64     // seconds remaining on the nurture success flash
 	nurtureAttentionCooldown     float64     // counts down to next Nurture attention pulse
 	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
+	workerRatioAttentionCooldown float64     // counts down to next worker-ratio attention pulse
+	workerRatioAttentionLeft     float64     // seconds remaining on the worker-ratio attention flash
 	dockUpgradeAttentionCooldown float64     // counts down to next dock-upgrade attention pulse
 	holdAction                   int         // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                    float64     // counts down to next repeat fire
@@ -100,6 +102,7 @@ func New() (*Game, error) {
 		hudDigits:                    woodDigits(w.Economy.Wood),
 		saveTimer:                    autoSavePeriod,
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
+		workerRatioAttentionCooldown: nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
@@ -245,11 +248,21 @@ func (g *Game) Update() error {
 		if g.nurtureAttentionPulseLeft > 0 {
 			g.nurtureAttentionPulseLeft -= dt
 		}
+		if g.workerRatioAttentionLeft > 0 {
+			g.workerRatioAttentionLeft -= dt
+		}
 		g.nurtureAttentionCooldown -= dt
 		if g.nurtureAttentionCooldown <= 0 {
 			g.nurtureAttentionCooldown = nurtureAttentionInterval
 			if nurtureAttentionActive(g.world) {
 				g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+			}
+		}
+		g.workerRatioAttentionCooldown -= dt
+		if g.workerRatioAttentionCooldown <= 0 {
+			g.workerRatioAttentionCooldown = nurtureAttentionInterval
+			if workerRatioAttentionActive(g.world) {
+				g.workerRatioAttentionLeft = nurtureAttentionPulseDur
 			}
 		}
 		g.dockUpgradeAttentionCooldown -= dt
@@ -440,6 +453,25 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			col := colNurtureConfirm
 			col.A = uint8(210 * t)
 			vector.FillRect(screen, srx, sry, srw, srh, col, false)
+		}
+
+		if g.workerRatioAttentionLeft > 0 && g.hud.workerSquare != nil {
+			wr := g.hud.workerSquare.GetWidget().Rect
+			wrx := float32(wr.Min.X)
+			wry := float32(wr.Min.Y)
+			wrw := float32(wr.Max.X - wr.Min.X)
+			wrh := float32(wr.Max.Y - wr.Min.Y)
+			t := float32(g.workerRatioAttentionLeft / nurtureAttentionPulseDur)
+			expand := 1 - t
+			cx := wrx + wrw/2
+			cy := wry + wrh/2
+			halfW := wrw / 2 * expand * 1.35
+			halfH := wrh / 2 * expand * 1.35
+			if halfW > 0.5 {
+				col := colNurtureAttention
+				col.A = uint8(220 * t)
+				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
+			}
 		}
 	}
 
@@ -742,6 +774,13 @@ func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, f
 	text.Draw(target, s, face, op)
 }
 
+func workerRatioAttentionActive(w *World) bool {
+	return !w.WorkerRatioSeen &&
+		len(w.Workers) > 0 &&
+		w.ResourceDiscovered &&
+		w.Economy.WaterDiscovered
+}
+
 // clearTransientUI resets all mid-action player state. Call on any view transition
 // so placement, holds, and menu state don't bleed across planet switches.
 func clearTransientUI(g *Game) {
@@ -762,7 +801,9 @@ func (g *Game) openFocusControl() {
 	if total == 0 {
 		return
 	}
-	if w := g.world.LaborFocus[KindWater]; w > 0 {
+	g.world.WorkerRatioSeen = true
+	g.workerRatioAttentionLeft = 0
+	if w, ok := g.world.LaborFocus[KindWater]; ok {
 		g.focusDraftWater = w
 	} else {
 		g.focusDraftWater = 1
@@ -971,7 +1012,6 @@ func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 		}
 	}
 	nIdle := len(w.Workers) - nWood - nWater
-	total := len(w.Workers)
 
 	// ── Slider icon (drawn over workerSquare button) ──────────────────────
 	sqR := g.hud.workerSquare.GetWidget().Rect
@@ -980,50 +1020,35 @@ func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 	sqW := float32(sqR.Dx())
 	sqH := float32(sqR.Dy())
 
-	// Dark background to erase the yellow button.
-	vector.FillRect(screen, sqX, sqY, sqW, sqH, colSysTrayFill, false)
+	// Dark backing keeps the icon distinct from the plain worker-count swatch.
+	vector.FillRect(screen, sqX, sqY, sqW, sqH, color.RGBA{R: 34, G: 34, B: 22, A: 235}, false)
 
-	trackPad := 4 * sp
+	iconCol := colWorkerLaden
+	trackPad := 3 * sp
 	trackX := sqX + trackPad
 	trackWpx := sqW - 2*trackPad
-	trackH := 2 * sp
-	trackY := sqY + sqH/2 - trackH/2
+	trackY := sqY + sqH/2
 
-	splitX := trackX + trackWpx*float32(nWood)/float32(total)
-
-	if nWood > 0 {
-		vector.FillRect(screen, trackX, trackY, splitX-trackX, trackH, colWoodResource, false)
-	}
-	if nWater > 0 {
-		vector.FillRect(screen, splitX, trackY, trackX+trackWpx-splitX, trackH, colSparkle, false)
-	}
-	if nWood == 0 || nWater == 0 {
-		// single-color track: draw full track in that color with dim border
-		col := colWoodResource
-		if nWater == total {
-			col = colSparkle
-		}
-		vector.FillRect(screen, trackX, trackY, trackWpx, trackH, col, false)
-	}
-	vector.StrokeRect(screen, trackX, trackY, trackWpx, trackH, 1, color.RGBA{R: 80, G: 90, B: 100, A: 180}, false)
-
-	knobW := 3 * sp
-	knobH := 10 * sp
-	knobX := splitX - knobW/2
+	knobW := 5 * sp
+	knobH := 8 * sp
+	knobX := trackX + trackWpx/2 - knobW/2
 	knobY := sqY + sqH/2 - knobH/2
-	vector.FillRect(screen, knobX, knobY, knobW, knobH, colWorkerLaden, false)
-	vector.StrokeRect(screen, knobX, knobY, knobW, knobH, 1, color.RGBA{R: 30, G: 30, B: 10, A: 200}, false)
+
+	vector.StrokeLine(screen, trackX, trackY, knobX-1, trackY, 1.5, iconCol, false)
+	vector.StrokeLine(screen, knobX+knobW+1, trackY, trackX+trackWpx, trackY, 1.5, iconCol, false)
+	vector.FillRect(screen, knobX, knobY, knobW, knobH, iconCol, false)
+	vector.StrokeRect(screen, knobX, knobY, knobW, knobH, 1, color.RGBA{R: 70, G: 58, B: 12, A: 230}, false)
 
 	// ── Colored count text (drawn over workerRatio text widget) ───────────
 	txtR := g.hud.workerRatio.GetWidget().Rect
 	txtX := float32(txtR.Min.X)
-	txtH := float32(txtR.Dy())
+	txtW := float32(txtR.Dx())
 
 	// Background behind text area.
-	vector.FillRect(screen, txtX-2*sp, float32(txtR.Min.Y), float32(txtR.Dx())+4*sp, txtH, colSysTrayFill, false)
+	vector.FillRect(screen, txtX-2*sp, sqY, txtW+4*sp, sqH, colSysTrayFill, false)
 
 	_, fontH := text.Measure("0", face, 0)
-	textY := float32(txtR.Min.Y) + (txtH-float32(fontH))/2
+	textY := sqY + (sqH-float32(fontH))/2
 
 	colSlash := colWorkerLaden
 	type seg struct {

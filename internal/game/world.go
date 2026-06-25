@@ -322,7 +322,8 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 	LaborFocus         map[ResourceKind]int // target worker counts per resource kind; nil = no focus
-	System             System // system-view unlock state; persisted
+	WorkerRatioSeen    bool                 // true once the labor focus HUD button has been opened
+	System             System               // system-view unlock state; persisted
 
 	// Multi-planet support: PlanetStates holds parked live state for non-active
 	// planets, index-aligned to System.Planets. The entry for Active is always nil

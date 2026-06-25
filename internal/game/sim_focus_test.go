@@ -79,6 +79,32 @@ func focusedCounts(w *World) (wood, water, none int) {
 	return
 }
 
+func TestOpenFocusControlPreservesZeroWaterTarget(t *testing.T) {
+	g := &Game{world: newFocusWorld(t, 3)}
+	g.world.LaborFocus = map[ResourceKind]int{KindWood: 3, KindWater: 0}
+
+	g.openFocusControl()
+
+	if g.focusDraftWater != 0 {
+		t.Errorf("focusDraftWater = %d, want 0", g.focusDraftWater)
+	}
+}
+
+func TestFocusZeroWaterTargetAssignsAllWood(t *testing.T) {
+	w := newFocusWorld(t, 3)
+	w.LaborFocus = map[ResourceKind]int{KindWood: 3, KindWater: 0}
+	for _, wk := range w.Workers {
+		wk.FocusedKind = focusKindNone
+		wk.State = StateIdleWaiting
+		assignFocusToIdleWorker(w, wk)
+	}
+
+	wood, water, none := focusedCounts(w)
+	if wood != 3 || water != 0 || none != 0 {
+		t.Fatalf("focused counts = wood:%d water:%d none:%d, want 3/0/0", wood, water, none)
+	}
+}
+
 // TestFocusGatedJobSeeking verifies that wood-focused workers never take water
 // jobs and water-focused workers never take wood jobs.
 func TestFocusGatedJobSeeking(t *testing.T) {

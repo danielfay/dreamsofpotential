@@ -372,8 +372,11 @@ func assignFocusToIdleWorker(w *World, wk *Worker) {
 		}
 	}
 	if bestKind == focusKindNone {
-		// All targets met; prefer the kind with the highest ResourceKind value.
-		for kind := range w.LaborFocus {
+		// All targets met; prefer the highest positive-target kind.
+		for kind, target := range w.LaborFocus {
+			if target <= 0 {
+				continue
+			}
 			if kind > bestKind {
 				bestKind = kind
 			}
