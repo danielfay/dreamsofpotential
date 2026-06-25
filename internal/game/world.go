@@ -329,7 +329,7 @@ type World struct {
 	growthCue         growthCueState
 	pendingGrowthCues []growthCueState
 	lastDelivery      deliverySplit
-	abstractRateWin   abstractRateWindow
+	abstractRateWins  []abstractRateWindow // one per entry in activeAbstractRateSpecs; nil = uninitialised
 	rng               *rand.Rand // seeded per-world; use this instead of the global source
 }
 

@@ -510,6 +510,19 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 // ── System-view overlay (native screen space) ─────────────────────────────────
 
+// sysTrayRateSpec describes one resource row in the system planet tray.
+// Add an entry here to display any new resource — the tray loop handles the rest.
+type sysTrayRateSpec struct {
+	getRate func(SystemPlanet) float64
+	iconCol color.RGBA
+	textCol color.RGBA
+}
+
+var sysTrayRateSpecs = []sysTrayRateSpec{
+	{func(p SystemPlanet) float64 { return p.AbstractRate }, colWoodResource, colWoodLabel},
+	{func(p SystemPlanet) float64 { return p.AbstractWaterRate }, colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220}},
+}
+
 // drawSystemOverlay draws the system HUD and selected-planet tray.
 func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
@@ -587,12 +600,31 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	swY := ty + (th-swSize)/2
 	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
 
-	// Rate text — align the measured text box bottom with the swatch bottom so
-	// both elements have the same bottom margin inside the tray.
-	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
-	_, rateH := text.Measure(rateStr, face, 0)
+	// Resource rates — draw each non-zero rate as [icon] [N.N/s], left-to-right.
+	// Text bottom is aligned with the swatch bottom for a consistent baseline.
+	iconSz := float32(6 * scale)
+	iconY := swY + (swSize-iconSz)/2
+	_, rateH := text.Measure("0", face, 0)
 	rateY := swY + swSize - float32(rateH)
-	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), rateY, colWoodLabel, face)
+	cx := swX + swSize + float32(4*scale)
+	drewAny := false
+	for _, spec := range sysTrayRateSpecs {
+		rate := spec.getRate(p)
+		if rate <= 0 {
+			continue
+		}
+		vector.FillRect(screen, cx, iconY, iconSz, iconSz, spec.iconCol, false)
+		cx += iconSz + float32(2*scale)
+		rateStr := fmt.Sprintf("%.1f/s", rate)
+		drawSysText(screen, rateStr, cx, rateY, spec.textCol, face)
+		rw, _ := text.Measure(rateStr, face, 0)
+		cx += float32(rw) + float32(4*scale)
+		drewAny = true
+	}
+	if !drewAny {
+		// Newly awakened planet with no measured rate yet — show wood placeholder.
+		drawSysText(screen, "-.--/s", cx, rateY, colWoodLabel, face)
+	}
 
 	// Right side of tray: awaken button for un-awakened echoes, enter button for zoomable planets.
 	g.sysEnterRect = sysRect{}
