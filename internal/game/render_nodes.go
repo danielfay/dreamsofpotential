@@ -15,7 +15,7 @@ import (
 // normal world colours so only muted route lines imply local competition.
 func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
 	inRange := math.Abs(normAngle(n.Angle-pv.Angle)) <= previewArc
-	if inRange && n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
+	if inRange && pv.Kind == KindLoggingCamp && n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
 		return color.RGBA{R: 80, G: 220, B: 100, A: 255} // brighter free
 	}
 	if n.ReservedByWorkerID != -1 && n.OwnerID == -1 {

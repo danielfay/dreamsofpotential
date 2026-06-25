@@ -5,38 +5,42 @@ import (
 	"testing"
 )
 
-func TestIdleHomeSlots(t *testing.T) {
+func TestIdleTowerSlots(t *testing.T) {
 	p := Planet{Center: Vec{X: 160, Y: 120}, Radius: 90}
 	th := &Building{Kind: KindTownHall, Angle: 0, Pos: p.RimPoint(0)}
 
 	// Zero count → nil.
-	if got := idleHomeSlots(p, th, 0); got != nil {
+	if got := idleTowerSlots(p, th, 0); got != nil {
 		t.Error("expected nil for count 0")
 	}
 
-	// Exactly idleMaxSlots slots returned.
-	slots := idleHomeSlots(p, th, idleMaxSlots)
-	if len(slots) != idleMaxSlots {
-		t.Fatalf("expected %d slots, got %d", idleMaxSlots, len(slots))
+	// Exact count returned — no cap.
+	const bigCount = 20
+	slots := idleTowerSlots(p, th, bigCount)
+	if len(slots) != bigCount {
+		t.Fatalf("expected %d slots, got %d", bigCount, len(slots))
 	}
 
-	// Count above idleMaxSlots is capped.
-	capped := idleHomeSlots(p, th, idleMaxSlots+10)
-	if len(capped) != idleMaxSlots {
-		t.Fatalf("expected %d slots (capped), got %d", idleMaxSlots, len(capped))
-	}
-
-	// All slots must be inside the rim (distance to center < radius).
+	// All slots must be outside the rim (distance to center ≥ radius).
 	for i, s := range slots {
 		dist := math.Sqrt((s.X-p.Center.X)*(s.X-p.Center.X) + (s.Y-p.Center.Y)*(s.Y-p.Center.Y))
-		if dist >= p.Radius {
-			t.Errorf("slot[%d] distance %.2f is not inside the rim (radius %.2f)", i, dist, p.Radius)
+		if dist < p.Radius {
+			t.Errorf("slot[%d] distance %.2f is inside the rim (radius %.2f); expected outside", i, dist, p.Radius)
+		}
+	}
+
+	// Slots must be strictly ordered outward (each farther from center than the last).
+	for i := 1; i < len(slots); i++ {
+		d0 := math.Sqrt((slots[i-1].X-p.Center.X)*(slots[i-1].X-p.Center.X) + (slots[i-1].Y-p.Center.Y)*(slots[i-1].Y-p.Center.Y))
+		d1 := math.Sqrt((slots[i].X-p.Center.X)*(slots[i].X-p.Center.X) + (slots[i].Y-p.Center.Y)*(slots[i].Y-p.Center.Y))
+		if d1 <= d0 {
+			t.Errorf("slot[%d] (dist %.2f) is not farther than slot[%d] (dist %.2f)", i, d1, i-1, d0)
 		}
 	}
 
 	// Deterministic: same inputs produce same positions.
-	s1 := idleHomeSlots(p, th, 3)
-	s2 := idleHomeSlots(p, th, 3)
+	s1 := idleTowerSlots(p, th, 3)
+	s2 := idleTowerSlots(p, th, 3)
 	for i := range s1 {
 		if s1[i] != s2[i] {
 			t.Errorf("slot[%d] not deterministic: %v vs %v", i, s1[i], s2[i])
@@ -44,9 +48,9 @@ func TestIdleHomeSlots(t *testing.T) {
 	}
 }
 
-func TestIdleHomeSlotsNilTownHall(t *testing.T) {
+func TestIdleTowerSlotsNilTownHall(t *testing.T) {
 	p := Planet{Center: Vec{X: 160, Y: 120}, Radius: 90}
-	if got := idleHomeSlots(p, nil, 3); got != nil {
+	if got := idleTowerSlots(p, nil, 3); got != nil {
 		t.Error("expected nil slots when Town Hall is nil")
 	}
 }
@@ -74,5 +78,12 @@ func TestInsetPoint(t *testing.T) {
 	distInset := math.Sqrt((ip2.X-p.Center.X)*(ip2.X-p.Center.X) + (ip2.Y-p.Center.Y)*(ip2.Y-p.Center.Y))
 	if distInset >= distRim {
 		t.Errorf("insetPoint(5): inset distance %.4f should be less than rim distance %.4f", distInset, distRim)
+	}
+
+	// Negative offset steps outward beyond the rim.
+	ip3 := insetPoint(p, angle, -5)
+	distOutset := math.Sqrt((ip3.X-p.Center.X)*(ip3.X-p.Center.X) + (ip3.Y-p.Center.Y)*(ip3.Y-p.Center.Y))
+	if distOutset <= distRim {
+		t.Errorf("insetPoint(-5): outset distance %.4f should exceed rim distance %.4f", distOutset, distRim)
 	}
 }

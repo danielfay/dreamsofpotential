@@ -962,7 +962,8 @@ func workerRatioAttentionActive(w *World) bool {
 	return !w.WorkerRatioSeen &&
 		len(w.Workers) > 0 &&
 		w.ResourceDiscovered &&
-		w.Economy.WaterDiscovered
+		w.Economy.WaterDiscovered &&
+		hasAnyLake(w)
 }
 
 // clearTransientUI resets all mid-action player state. Call on any view transition
@@ -985,6 +986,9 @@ func clearTransientUI(g *Game) {
 func (g *Game) openFocusControl() {
 	total := len(g.world.Workers)
 	if total == 0 {
+		return
+	}
+	if !hasAnyLake(g.world) {
 		return
 	}
 	g.world.WorkerRatioSeen = true
@@ -1563,6 +1567,10 @@ func (g *Game) handleFocusControlInput() {
 		nWater := g.focusDraftWater
 		nWood := total - nWater
 		g.world.LaborFocus = map[ResourceKind]int{
+			KindWater: nWater,
+			KindWood:  nWood,
+		}
+		g.world.SavedLaborRatio = map[ResourceKind]int{
 			KindWater: nWater,
 			KindWood:  nWood,
 		}

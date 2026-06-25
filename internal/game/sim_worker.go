@@ -386,6 +386,29 @@ func assignFocusToIdleWorker(w *World, wk *Worker) {
 			bestKind = kind
 		}
 	}
+	// Overflow: all targets are met but there are more workers than the focus total
+	// covers (worker spawned after the ratio was last saved). The UI always sets the
+	// focus sum to the current worker count, so workers > focus_sum is unambiguous
+	// evidence of a post-ratio spawn rather than intentional idle. Spill to the kind
+	// with the largest positive target that has available work.
+	if bestKind == focusKindNone {
+		totalFocused := 0
+		for _, t := range w.LaborFocus {
+			totalFocused += t
+		}
+		if len(w.Workers) > totalFocused {
+			bestTarget := 0
+			for kind, target := range w.LaborFocus {
+				if target <= 0 || !focusKindHasAvailableWork(w, kind) {
+					continue
+				}
+				if target > bestTarget || (target == bestTarget && kind > bestKind) {
+					bestTarget = target
+					bestKind = kind
+				}
+			}
+		}
+	}
 	wk.FocusedKind = bestKind
 }
 
@@ -444,6 +467,34 @@ func activeWorkerHUDCounts(w *World) (wood, water, idle int) {
 	return wood, water, idle
 }
 
+// effectiveFocusTarget returns the worker-count ceiling for kind, accounting
+// for post-ratio-save overflow. When workers were added after the ratio was
+// last set (len(w.Workers) > focusSum), the dominant kind (largest positive
+// target) absorbs the extras so they are not recalled or aborted mid-journey.
+func effectiveFocusTarget(w *World, kind ResourceKind) int {
+	target := w.LaborFocus[kind]
+	focusSum := 0
+	for _, t := range w.LaborFocus {
+		focusSum += t
+	}
+	overflow := len(w.Workers) - focusSum
+	if overflow <= 0 {
+		return target
+	}
+	dominantKind := focusKindNone
+	bestTarget := 0
+	for k, t := range w.LaborFocus {
+		if t > bestTarget || (t == bestTarget && k > dominantKind) {
+			bestTarget = t
+			dominantKind = k
+		}
+	}
+	if kind == dominantKind {
+		return target + overflow
+	}
+	return target
+}
+
 func reconcileLaborFocus(w *World) {
 	if len(w.LaborFocus) == 0 {
 		return
@@ -454,8 +505,7 @@ func reconcileLaborFocus(w *World) {
 		if kind == focusKindNone {
 			continue
 		}
-		target := w.LaborFocus[kind]
-		if counts[kind] <= target {
+		if counts[kind] <= effectiveFocusTarget(w, kind) {
 			continue
 		}
 		startReturnHome(w, wk)
@@ -488,9 +538,52 @@ func assignFocusToNewWorker(w *World, wk *Worker) {
 			bestKind = kind
 		}
 	}
+	// Overflow: all targets met. Pick the kind that best maintains the saved ratio
+	// and extend LaborFocus so the sum stays equal to len(w.Workers).
+	if bestKind == focusKindNone {
+		bestKind = ratioBalancedKind(w)
+		if bestKind != focusKindNone {
+			w.LaborFocus[bestKind]++
+		}
+	}
 	if bestKind != focusKindNone {
 		wk.FocusedKind = bestKind
 	}
+}
+
+// ratioBalancedKind returns the resource kind a new overflow worker should be
+// assigned to in order to best maintain the player's saved ratio. It compares
+// the ideal per-kind count (total workers × saved weight / total weight) against
+// the current LaborFocus values and picks the most underrepresented kind.
+// Ties resolve toward the lower ResourceKind value (KindWood = left side of the
+// slider). Falls back to the dominant-target kind if no saved ratio exists.
+func ratioBalancedKind(w *World) ResourceKind {
+	src := w.SavedLaborRatio
+	if len(src) == 0 {
+		src = w.LaborFocus
+	}
+	ratioSum := 0
+	for _, t := range src {
+		ratioSum += t
+	}
+	if ratioSum == 0 {
+		return focusKindNone
+	}
+	total := len(w.Workers)
+	var bestKind ResourceKind = focusKindNone
+	bestDeficit := -math.MaxFloat64
+	for kind, weight := range src {
+		if weight <= 0 {
+			continue
+		}
+		ideal := float64(total) * float64(weight) / float64(ratioSum)
+		deficit := ideal - float64(w.LaborFocus[kind])
+		if deficit > bestDeficit || (deficit == bestDeficit && (bestKind == focusKindNone || kind < bestKind)) {
+			bestDeficit = deficit
+			bestKind = kind
+		}
+	}
+	return bestKind
 }
 
 func nodeFreeForWorker(w *World, n *ResourceNode, workerID int) bool {
@@ -727,7 +820,7 @@ func workerShouldAbortKind(w *World, wk *Worker, kind ResourceKind) bool {
 	if len(w.LaborFocus) == 0 {
 		return false
 	}
-	target := w.LaborFocus[kind]
+	target := effectiveFocusTarget(w, kind)
 	if target == 0 {
 		return true
 	}
@@ -846,10 +939,12 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	if gross > 0 {
 		w.Economy.WaterDiscovered = true
 	}
-	// Auto proof split: on first water delivery with a dock that has reachable
-	// serviceable sparkles, default to 1 water worker + rest wood.
-	if !wasDiscovered && w.Economy.WaterDiscovered && len(w.LaborFocus) == 0 {
-		if dockHasServiceableSparkles(w) {
+	// On first water delivery: reveal unknown water fields on all planets so
+	// previously-teased lakes become real (enabling nurture and progression).
+	// Also auto-set a labor split if the player hasn't configured one yet.
+	if !wasDiscovered && w.Economy.WaterDiscovered {
+		revealKindFields(w, KindWater)
+		if len(w.LaborFocus) == 0 && dockHasServiceableSparkles(w) {
 			setAutoProofSplit(w)
 		}
 	}

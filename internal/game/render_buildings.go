@@ -5,7 +5,6 @@ import (
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // Building / worker render sizes.
@@ -17,7 +16,6 @@ const (
 	townHallBldInset = float32(5)   // px inward from rim for town hall art center
 	workerBldHalf    = float32(1)   // half of 3×3 worker square
 	workerBldSize    = float32(3)
-	idleMaxSlots     = 5 // max visible idle-worker spots near the town hall
 )
 
 func workerUsesIdleHome(wk *Worker) bool {
@@ -135,56 +133,18 @@ func insetPoint(p Planet, angle, offset float64) Vec {
 	}
 }
 
-// idleHomeSlots returns up to idleMaxSlots distinct world positions for idle
-// workers, arranged in a small 2-column grid inset inside the rim near th.
-// Returns nil if th is nil or count ≤ 0. Count is capped at idleMaxSlots.
-func idleHomeSlots(p Planet, th *Building, count int) []Vec {
+// idleTowerSlots returns world positions for idle workers stacked outward above
+// the Town Hall, extending into space. No cap — one slot per worker.
+func idleTowerSlots(p Planet, th *Building, count int) []Vec {
 	if th == nil || count <= 0 {
 		return nil
 	}
-	if count > idleMaxSlots {
-		count = idleMaxSlots
-	}
-	// Inward and tangent unit vectors at the Town Hall angle.
-	cos := math.Cos(th.Angle)
-	sin := math.Sin(th.Angle)
-	inx, iny := -cos, -sin // inward (toward planet center)
-	tx, ty := -sin, cos    // tangent (counterclockwise along rim)
-	// Anchor: 9 px inside the rim.
-	rim := p.RimPoint(th.Angle)
-	ax := rim.X + inx*9
-	ay := rim.Y + iny*9
-	// Grid: 2 columns × up to 3 rows, with a centred 5th slot.
-	type off struct{ t, i float64 }
-	slotOffsets := [idleMaxSlots]off{
-		{-2.5, 0}, {+2.5, 0}, // row 0
-		{-2.5, 4}, {+2.5, 4}, // row 1
-		{0, 8}, // row 2 (centred)
-	}
 	slots := make([]Vec, count)
-	for i := 0; i < count; i++ {
-		o := slotOffsets[i]
-		slots[i] = Vec{
-			X: ax + tx*o.t + inx*o.i,
-			Y: ay + ty*o.t + iny*o.i,
-		}
+	for i := range slots {
+		outset := float64(i)*float64(workerBldSize) + float64(workerBldSize)*0.5
+		slots[i] = insetPoint(p, th.Angle, -outset)
 	}
 	return slots
-}
-
-// drawIdleOverflow draws a compact dot on/inside the Town Hall for idle workers
-// beyond the idleMaxSlots visible spots. Dot size and brightness scale subtly
-// with overflowCount (bounded).
-func drawIdleOverflow(scene *ebiten.Image, p Planet, th *Building, overflowCount int) {
-	t := float32(overflowCount-1) / 19.0 // 0 at 1, 1 at 20+
-	if t > 1 {
-		t = 1
-	}
-	radius := float32(1.5) + 2.0*t
-	bright := uint8(120 + uint8(100*t))
-	col := color.RGBA{R: bright, G: bright, B: bright + 20, A: 200}
-	ip := insetPoint(p, th.Angle, float64(townHallBldInset))
-	vector.FillCircle(scene, float32(ip.X), float32(ip.Y), radius, col, false)
 }
 
 // drawTownField renders the settlement wedge inside the planet at the Town Hall

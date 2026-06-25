@@ -322,26 +322,19 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 			idleCount++
 		}
 	}
-	slots := idleHomeSlots(w.Planet, th, idleCount)
+	slots := idleTowerSlots(w.Planet, th, idleCount)
 	slotIdx := 0
 	for _, wk := range w.Workers {
-		col := workerColor(w, wk)
 		if workerUsesIdleHome(wk) && th != nil {
-			if slotIdx < len(slots) {
-				sp := slots[slotIdx]
-				slotIdx++
-				vector.FillRect(scene,
-					float32(sp.X)-workerBldHalf, float32(sp.Y)-workerBldHalf,
-					workerBldSize, workerBldSize, col, false)
-			}
-			// overflow workers omitted here; handled by drawIdleOverflow below
+			sp := slots[slotIdx]
+			slotIdx++
+			vector.FillRect(scene,
+				float32(sp.X)-workerBldHalf, float32(sp.Y)-workerBldHalf,
+				workerBldSize, workerBldSize, colWorkerLaden, false)
 		} else {
 			vector.FillRect(scene,
 				float32(wk.Pos.X)-workerBldHalf, float32(wk.Pos.Y)-workerBldHalf,
-				workerBldSize, workerBldSize, col, false)
+				workerBldSize, workerBldSize, workerColor(w, wk), false)
 		}
-	}
-	if th != nil && idleCount > idleMaxSlots {
-		drawIdleOverflow(scene, w.Planet, th, idleCount-idleMaxSlots)
 	}
 }

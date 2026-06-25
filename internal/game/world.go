@@ -188,6 +188,7 @@ type PlanetState struct {
 	LastWorkerSpawnTime float64
 	Founded             bool
 	LaborFocus          map[ResourceKind]int // target worker counts per resource kind; nil = no focus
+	SavedLaborRatio     map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
 }
 
 // System holds all persistent state for the planetary system layer.
@@ -322,6 +323,7 @@ type World struct {
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
 	LaborFocus         map[ResourceKind]int // target worker counts per resource kind; nil = no focus
+	SavedLaborRatio    map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
 	WorkerRatioSeen    bool                 // true once the labor focus HUD button has been opened
 	System             System               // system-view unlock state; persisted
 
@@ -931,6 +933,7 @@ func parkActive(w *World) {
 		LastWorkerSpawnTime: w.Economy.LastWorkerSpawnTime,
 		Founded:             townHall(w) != nil,
 		LaborFocus:          w.LaborFocus,
+		SavedLaborRatio:     w.SavedLaborRatio,
 	}
 }
 
@@ -949,6 +952,7 @@ func loadPlanet(w *World, idx int) {
 	w.ResourceDiscovered = ps.ResourceDiscovered
 	w.SimTime = ps.SimTime
 	w.LaborFocus = ps.LaborFocus
+	w.SavedLaborRatio = ps.SavedLaborRatio
 	w.Economy.WorkerCapacity = ps.WorkerCapacity
 	w.Economy.CapacityBought = ps.CapacityBought
 	w.Economy.CampsBought = ps.CampsBought
