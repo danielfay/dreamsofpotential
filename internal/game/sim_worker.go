@@ -16,6 +16,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 	case StateReactionDelay:
 		wk.Timer -= dt
 		if wk.Timer <= 0 {
+			if workerShouldAbortKind(w, wk, KindWood) {
+				clearTarget(wk)
+				wk.State = StateIdleWaiting
+				return
+			}
 			node := findNode(w, wk.TargetNodeID)
 			if node == nil || !nodeFreeForWorker(w, node, wk.ID) {
 				clearTarget(wk)
@@ -44,6 +49,10 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.State = StateToForest
 		}
 	case StateToForest:
+		if workerShouldAbortKind(w, wk, KindWood) {
+			startReturnHome(w, wk)
+			return
+		}
 		node := findNode(w, wk.NodeID)
 		if node == nil {
 			startReturnHome(w, wk)
@@ -128,6 +137,11 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 			wk.Timer = 0
 		}
 	case StateToDock:
+		if workerShouldAbortKind(w, wk, KindWater) {
+			wk.DockID = -1
+			startReturnHome(w, wk)
+			return
+		}
 		dock := findBuilding(w, wk.DockID)
 		if dock == nil {
 			wk.DockID = -1
@@ -640,6 +654,37 @@ func dockServiceableSparkles(w *World, dock *Building) []*ResourceNode {
 	return result
 }
 
+// workerShouldAbortKind returns true when LaborFocus says the worker has
+// exceeded the quota for kind — enough other workers are already doing that
+// resource's loop. Safe to call mid-trip; relies on sequential stepWorker
+// processing so workers that already aborted this tick aren't counted.
+func workerShouldAbortKind(w *World, wk *Worker, kind ResourceKind) bool {
+	if len(w.LaborFocus) == 0 {
+		return false
+	}
+	target := w.LaborFocus[kind]
+	if target == 0 {
+		return true
+	}
+	count := 0
+	for _, other := range w.Workers {
+		if other.ID == wk.ID {
+			continue
+		}
+		switch kind {
+		case KindWater:
+			if workerInWaterLoop(other) {
+				count++
+			}
+		case KindWood:
+			if workerInLoop(other) {
+				count++
+			}
+		}
+	}
+	return count >= target
+}
+
 // workerInWaterLoop reports whether a worker is in the dock→dive→unload cycle.
 func workerInWaterLoop(wk *Worker) bool {
 	switch wk.State {
@@ -755,7 +800,7 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	wk.Carried = 0
 	releaseInteriorNodes(w, wk.ID)
 
-	if dock != nil {
+	if dock != nil && !workerShouldAbortKind(w, wk, KindWater) {
 		if next := nextDiveSparkle(w, dock, wk); next != nil {
 			wk.NodeID = next.ID
 			wk.Pos = dock.Pos

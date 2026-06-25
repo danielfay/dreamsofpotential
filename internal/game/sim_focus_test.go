@@ -325,3 +325,75 @@ func TestAutoProofSplitNoTriggerIfAlreadySet(t *testing.T) {
 		t.Errorf("LaborFocus changed after completeWaterUnload with existing focus: %v", w.LaborFocus)
 	}
 }
+
+// TestWaterWorkerAbandonsDockOnFocusChange verifies that workers in the water
+// loop stop and return home when the focus is changed to 0 water workers.
+// Uses direct state injection to avoid geometry-dependent sparkle placement.
+func TestWaterWorkerAbandonsDockOnFocusChange(t *testing.T) {
+	w := newFocusWorld(t, 2)
+
+	// Place both workers explicitly into StateToDock so they are mid water-trip.
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("setup: no dock")
+	}
+	for _, wk := range w.Workers {
+		wk.State = StateToDock
+		wk.DockID = dock.ID
+		wk.FocusedKind = KindWater
+		wk.NodeID = -1
+		wk.Carried = 0
+	}
+
+	// Set focus to 0 water — workers should abort immediately on the next tick.
+	w.LaborFocus = map[ResourceKind]int{KindWood: 2, KindWater: 0}
+
+	// Run enough steps for workers to reach home (StateToDock abort → returnHome).
+	for range 600 {
+		Step(w, dt)
+	}
+
+	for _, wk := range w.Workers {
+		if workerInWaterLoop(wk) {
+			t.Errorf("worker %d still in water loop after focus→0 water (state=%v)", wk.ID, wk.State)
+		}
+	}
+}
+
+// TestWaterWorkerAbortsMidUnload verifies that completeWaterUnload does not
+// re-dispatch to StateDiving when the worker is over the water quota.
+func TestWaterWorkerAbortsMidUnload(t *testing.T) {
+	w := newFocusWorld(t, 2)
+
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("setup: no dock")
+	}
+
+	// Fill sparkles so nextDiveSparkle would normally find work.
+	fillWaterFieldSparkles(w)
+	assignServicingDocks(w)
+
+	// Set focus to 0 water BEFORE the unload.
+	w.LaborFocus = map[ResourceKind]int{KindWood: 2, KindWater: 0}
+
+	wk := w.Workers[0]
+	wk.Carried = 1.0
+	completeWaterUnload(w, wk, dock)
+
+	if workerInWaterLoop(wk) {
+		t.Errorf("worker re-entered water loop after completeWaterUnload with 0 water quota (state=%v)", wk.State)
+	}
+}
