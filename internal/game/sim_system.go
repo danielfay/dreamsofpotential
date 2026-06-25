@@ -98,11 +98,12 @@ func updateActiveAbstractRate(w *World, dt float64) {
 
 // abstractIncome returns total abstract wood/sec from all non-active producing
 // planets. The active planet runs live (or is frozen in system view), so it is
-// excluded when in planet view to avoid double-counting. Unknown never produces.
+// excluded when in planet view to avoid double-counting. Unawakened unknowns
+// produce nothing; awakened unknowns (water frontier) can contribute AbstractRate.
 func abstractIncome(w *World) float64 {
 	var total float64
 	for i, p := range w.System.Planets {
-		if p.Kind == PlanetUnknown {
+		if p.Kind == PlanetUnknown && !p.Awakened {
 			continue
 		}
 		if w.System.View == ViewPlanet && i == w.Active {
@@ -118,7 +119,7 @@ func abstractIncome(w *World) float64 {
 func abstractWaterIncome(w *World) float64 {
 	var total float64
 	for i, p := range w.System.Planets {
-		if p.Kind == PlanetUnknown {
+		if p.Kind == PlanetUnknown && !p.Awakened {
 			continue
 		}
 		if w.System.View == ViewPlanet && i == w.Active {
