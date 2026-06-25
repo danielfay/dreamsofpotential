@@ -336,3 +336,41 @@ func TestBuildQAWorld_SystemViewPostreveal(t *testing.T) {
 		t.Errorf("starting planet AbstractRate = %.4f, want > 0", w.System.Planets[0].AbstractRate)
 	}
 }
+
+func TestBuildQAWorld_CompleteFrontier(t *testing.T) {
+	p := QAPreset{
+		Seed:              11,
+		PlaceTownHall:     true,
+		FillTownCapacity:  true,
+		SaturateWoodField: true,
+		Reveal:            true,
+		CompleteEchoes:    []int{1, 2},
+		AwakenFrontier:    true,
+		CompleteFrontier:  true,
+	}
+	w, err := BuildQAWorld(p)
+	if err != nil {
+		t.Fatalf("BuildQAWorld CompleteFrontier: %v", err)
+	}
+	if !w.System.Planets[3].Completed {
+		t.Error("frontier (planet 3) should be Completed")
+	}
+	// AbstractRate/AbstractWaterRate are 0*completionAmplifier = 0 here because no workers
+	// are running live loops in the preset — that's expected and matches the echo pattern.
+	if r := w.System.Planets[3].AbstractRate; r < 0 {
+		t.Errorf("frontier AbstractRate should be >= 0, got %f", r)
+	}
+	if r := w.System.Planets[3].AbstractWaterRate; r < 0 {
+		t.Errorf("frontier AbstractWaterRate should be >= 0, got %f", r)
+	}
+	if w.System.View != ViewSystem {
+		t.Errorf("should be in system view after CompleteFrontier, got %v", w.System.View)
+	}
+	// Both Potential types should have been awarded.
+	if got := w.Economy.Potential[PotentialForest]; got <= 0 {
+		t.Errorf("Forest Potential after CompleteFrontier: got %d, want > 0", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got <= 0 {
+		t.Errorf("Water Potential after CompleteFrontier: got %d, want > 0", got)
+	}
+}

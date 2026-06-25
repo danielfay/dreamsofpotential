@@ -84,8 +84,9 @@ func screenshotScenarios() []screenshotScenario {
 		waterPlanetDockUpgradeSelectedScenario(),
 		waterPlanetNearCompleteNoL2DockScenario(),
 		dockConeVisibilityScenario(),
-		workerRatioUIOpenScenario(), // 38
-		workerRatioHUDScenario(),    // 39
+		workerRatioUIOpenScenario(),              // 38
+		workerRatioHUDScenario(),                 // 39
+		waterPlanetCompletedSystemViewScenario(), // 40
 	}
 }
 
@@ -777,6 +778,32 @@ func workerRatioHUDScenario() screenshotScenario {
 		world:   p,
 		fullHUD: true,
 	}
+}
+
+// waterPlanetCompletedSystemViewScenario shows the system view immediately after
+// the water frontier has completed: dual abstract rates (Wood/sec + Water/sec)
+// visible in the system-view overlay and both Potential tokens banked.
+func waterPlanetCompletedSystemViewScenario() screenshotScenario {
+	w, err := BuildQAWorld(QAPreset{
+		Name:              "water-planet-completed",
+		Seed:              11,
+		PlaceTownHall:     true,
+		FillTownCapacity:  true,
+		SaturateWoodField: true,
+		Reveal:            true,
+		CompleteEchoes:    []int{1, 2},
+		AwakenFrontier:    true,
+		CompleteFrontier:  true,
+	})
+	if err != nil {
+		return screenshotScenario{name: "40-water-planet-completed-system-view", world: NewWorld(), fullHUD: true}
+	}
+	// Stamp illustrative non-zero abstract rates so the system-view rate display
+	// is readable in the screenshot (the preset has no live workers, so rates
+	// snapshot at zero — this is purely visual).
+	w.System.Planets[3].AbstractRate = 1.4
+	w.System.Planets[3].AbstractWaterRate = 0.6
+	return screenshotScenario{name: "40-water-planet-completed-system-view", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }

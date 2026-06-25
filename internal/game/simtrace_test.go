@@ -627,3 +627,172 @@ func (r *waterFrontierRunner) Complete(w *World) bool {
 func (r *waterFrontierRunner) Summary(w *World) string {
 	return fmt.Sprintf("water=%.2f sparkles=%d", w.Economy.Water, waterSparkleCount(w))
 }
+
+// ── Water planet full-completion trace ───────────────────────────────────────
+
+// TestSimTraceWaterPlanetCompletion runs the water frontier from awakening
+// through full completion: place TH → build dock → grow sparkles → upgrade
+// dock to L2 → all fields saturate → completion triggers.
+func TestSimTraceWaterPlanetCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sim trace: skipped in short mode")
+	}
+	runner := &waterPlanetCompletionRunner{}
+	w := runSimTrace(t, "water planet — full completion", 120, runner)
+	if !w.System.Planets[3].Completed {
+		t.Error("frontier (planet 3) should be Completed after sim trace")
+	}
+	if w.System.Planets[3].AbstractWaterRate <= 0 {
+		t.Errorf("AbstractWaterRate should be > 0 after completion, got %f",
+			w.System.Planets[3].AbstractWaterRate)
+	}
+	t.Logf("AbstractRate=%.4f  AbstractWaterRate=%.4f",
+		w.System.Planets[3].AbstractRate, w.System.Planets[3].AbstractWaterRate)
+}
+
+type waterPlanetCompletionRunner struct {
+	prevWorkers     int
+	prevSparkles    int
+	dockPlaced      bool
+	dockUpgraded    bool
+	waterDiscovered bool
+}
+
+func (r *waterPlanetCompletionRunner) Setup(w *World) {
+	// Bootstrap the starting planet so triggerUnlock works.
+	f0 := fieldForKind(w, KindWood)
+	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
+		panic("waterPlanetCompletionRunner: cannot place starting TH")
+	}
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	addWorker(w)
+	fillWoodFieldNodes(w, false)
+	w.ResourceDiscovered = true
+	triggerUnlock(w)
+
+	// Grant + spend Potential to awaken the frontier (index 3).
+	for kind, cost := range planetAwakenCost(w, 3) {
+		w.Economy.Potential[kind] += cost
+	}
+	awakenPlanet(w, 3)
+	switchToPlanet(w, 3)
+	enterPlanetView(w)
+
+	if !placeBuilding(w, waterFrontierShoreAngle) {
+		panic("waterPlanetCompletionRunner: cannot place frontier TH")
+	}
+	w.Economy.WorkerCapacity = maxTownSlots(w)
+	w.ResourceDiscovered = true
+	w.Economy.Wood = 10000
+	// Start water at 0 so the trace shows accumulation and first delivery.
+	w.Economy.Water = 0
+
+	// Place the dock immediately.
+	if !placeBuildingWithFreePlacement(w, waterFrontierLakeAngle, true) {
+		panic("waterPlanetCompletionRunner: cannot place dock")
+	}
+	r.dockPlaced = true
+
+	// Seed sparkles near the rim where L1 docks can reach them.
+	// L1 maxDepth = radius/3; place sparkles at r ≈ 0.75*radius so depth ≈ 0.25*radius < maxDepth.
+	wf := fieldForKind(w, KindWater)
+	if wf != nil {
+		nearRimR := w.Planet.Radius * 0.75
+		for _, delta := range []float64{0.0, -0.08, 0.12, 0.18, -0.15} {
+			ang := normAngle(waterFrontierLakeAngle + delta)
+			pos := Vec{
+				X: w.Planet.Center.X + nearRimR*math.Cos(ang),
+				Y: w.Planet.Center.Y + nearRimR*math.Sin(ang),
+			}
+			if sparkleSpawnPosValid(w, wf, pos) {
+				n := newSparkle(w, pos)
+				w.Nodes = append(w.Nodes, n)
+			}
+		}
+		assignServicingDocks(w)
+	}
+
+	r.prevWorkers = len(w.Workers)
+	r.prevSparkles = waterSparkleCount(w)
+}
+
+func (r *waterPlanetCompletionRunner) ColHeader() string {
+	return fmt.Sprintf("%-8s  %-8s  %-7s  %-8s", "wood", "water", "sparkle", "complete")
+}
+
+func (r *waterPlanetCompletionRunner) ColRow(w *World) string {
+	completed := "no"
+	if w.System.Planets[3].Completed {
+		completed = "YES"
+	}
+	return fmt.Sprintf("%-8.0f  %-8.2f  %-7d  %-8s",
+		w.Economy.Wood, w.Economy.Water, waterSparkleCount(w), completed)
+}
+
+func (r *waterPlanetCompletionRunner) PlayerAI(w *World) []string {
+	var events []string
+	// Fill town capacity.
+	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+		buildTownCapacity(w)
+	}
+	// Saturate fields via Nurture.
+	nurtureField(w)
+	// Upgrade the dock to L2 as soon as we can afford it.
+	if !r.dockUpgraded {
+		for _, b := range w.Buildings {
+			if b.Kind == KindDock && b.Level < 2 {
+				if canUpgradeDock(w, b) {
+					if upgradeDock(w, b) {
+						r.dockUpgraded = true
+						events = append(events, "*** DOCK UPGRADED TO L2 ***")
+						// After upgrade, exhaustively saturate both production
+						// fields to simulate a player pressing Nurture many
+						// times post-upgrade, ensuring the completion gate sees
+						// full saturation on the next checkActivePlanetCompletion.
+						for _, f := range w.Planet.Fields {
+							if f.Kind == KindWood && f.Known {
+								for fieldCanSpawnNode(w, f) {
+									spawnNode(w, f)
+								}
+							}
+						}
+						fillWaterFieldSparkles(w)
+						assignServicingDocks(w) // re-assign sparkles to L2 dock
+					}
+				}
+			}
+		}
+	}
+	return events
+}
+
+func (r *waterPlanetCompletionRunner) Events(w *World) []string {
+	var events []string
+	if cur := len(w.Workers); cur != r.prevWorkers {
+		events = append(events, fmt.Sprintf("+worker → %d", cur))
+		r.prevWorkers = cur
+	}
+	if cur := waterSparkleCount(w); cur != r.prevSparkles {
+		events = append(events, fmt.Sprintf("+sparkle → %d", cur))
+		r.prevSparkles = cur
+	}
+	if !r.waterDiscovered && w.Economy.WaterDiscovered {
+		events = append(events, fmt.Sprintf("*** WATER DISCOVERED (water=%.2f) ***", w.Economy.Water))
+		r.waterDiscovered = true
+	}
+	if w.System.Planets[3].Completed {
+		return events
+	}
+	return events
+}
+
+func (r *waterPlanetCompletionRunner) Complete(w *World) bool {
+	return w.System.Planets[3].Completed
+}
+
+func (r *waterPlanetCompletionRunner) Summary(w *World) string {
+	return fmt.Sprintf("completed=%v abstractRate=%.4f abstractWaterRate=%.4f",
+		w.System.Planets[3].Completed,
+		w.System.Planets[3].AbstractRate,
+		w.System.Planets[3].AbstractWaterRate)
+}

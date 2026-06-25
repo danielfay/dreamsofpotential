@@ -1952,6 +1952,205 @@ func TestLakewood_AwakensWithForestPotential(t *testing.T) {
 	}
 }
 
+// ── Water frontier completion tests ──────────────────────────────────────────
+
+// newWaterFrontierForCompletion returns a frontier world ready for completion:
+// awakened, TH placed, town capacity maxed, wood + water fields saturated,
+// and a dock placed (Level 1). The dock has NOT been upgraded to Level 2 yet.
+func newWaterFrontierForCompletion(t *testing.T) *World {
+	t.Helper()
+	w := newRevealedWorld()
+	// Grant + spend Potential to awaken frontier (index 3).
+	for kind, cost := range planetAwakenCost(w, 3) {
+		w.Economy.Potential[kind] += cost
+	}
+	awakenPlanet(w, 3)
+	switchToPlanet(w, 3)
+	enterPlanetView(w)
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		t.Fatal("setup: cannot place frontier TH")
+	}
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+	fillWoodFieldNodes(w, false)
+	if !placeBuildingWithFreePlacement(w, waterFrontierLakeAngle, true) {
+		t.Fatal("setup: cannot place frontier dock")
+	}
+	fillWaterFieldSparkles(w)
+	return w
+}
+
+func TestWaterPlanetComplete_AllThreeGates(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+
+	// Without L2 dock: should not complete.
+	if waterPlanetComplete(w) {
+		t.Error("waterPlanetComplete should be false with only L1 dock")
+	}
+
+	// Upgrade dock to L2.
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+
+	if !waterPlanetComplete(w) {
+		t.Error("waterPlanetComplete should be true when all three gates are met")
+	}
+}
+
+func TestWaterPlanetComplete_GateTownCapacity(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	// Remove town capacity.
+	w.Economy.WorkerCapacity = 0
+	if waterPlanetComplete(w) {
+		t.Error("waterPlanetComplete should be false when town capacity is not maxed")
+	}
+}
+
+func TestWaterPlanetComplete_GateWoodFieldSaturation(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	// Remove all wood nodes so the wood field can spawn again.
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if n.Kind != KindWood {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
+	if waterPlanetComplete(w) {
+		t.Error("waterPlanetComplete should be false when wood field is not saturated")
+	}
+}
+
+func TestWaterPlanetComplete_GateWaterFieldSaturation(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	// Remove all sparkles so the water field can spawn again.
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if n.Kind != KindWater {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
+	if waterPlanetComplete(w) {
+		t.Error("waterPlanetComplete should be false when water field is not saturated")
+	}
+}
+
+func TestWaterPlanetComplete_GateDockLevel(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	// All fields saturated, but dock is still Level 1 — should not complete.
+	if waterPlanetComplete(w) {
+		t.Error("waterPlanetComplete should be false with no Level-2 dock")
+	}
+}
+
+func TestWaterFrontierCompletion_DualPotential(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	// Start with 0 Potential (frontier awakening spent them).
+	w.Economy.Potential = make(map[PotentialKind]int)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	checkActivePlanetCompletion(w)
+	if !w.System.Planets[3].Completed {
+		t.Fatal("frontier should be marked Completed")
+	}
+	if got := w.Economy.Potential[PotentialForest]; got != 1 {
+		t.Errorf("Forest Potential after frontier completion: got %d, want 1", got)
+	}
+	if got := w.Economy.Potential[PotentialWater]; got != 1 {
+		t.Errorf("Water Potential after frontier completion: got %d, want 1", got)
+	}
+}
+
+func TestWaterFrontierCompletion_DualAbstractRate(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	// Add a worker so EstimateRate / EstimateWaterRate return non-zero.
+	w.Economy.WorkerCapacity++
+	addWorker(w)
+	runSim(w, 5)
+
+	wantWood := EstimateRate(w) * completionAmplifier
+	wantWater := EstimateWaterRate(w) * completionAmplifier
+
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	checkActivePlanetCompletion(w)
+	if !w.System.Planets[3].Completed {
+		t.Fatal("frontier should be Completed")
+	}
+	if math.Abs(w.System.Planets[3].AbstractRate-wantWood) > 1e-9 {
+		t.Errorf("AbstractRate: got %f, want %f", w.System.Planets[3].AbstractRate, wantWood)
+	}
+	if math.Abs(w.System.Planets[3].AbstractWaterRate-wantWater) > 1e-9 {
+		t.Errorf("AbstractWaterRate: got %f, want %f", w.System.Planets[3].AbstractWaterRate, wantWater)
+	}
+}
+
+func TestWaterFrontierCompletion_Idempotent(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	checkActivePlanetCompletion(w)
+	if !w.System.Planets[3].Completed {
+		t.Fatal("frontier should be Completed on first call")
+	}
+	// Stamp a sentinel rate and confirm it's not overwritten.
+	w.System.Planets[3].AbstractRate = 99.0
+	w.System.Planets[3].AbstractWaterRate = 88.0
+	checkActivePlanetCompletion(w)
+	if w.System.Planets[3].AbstractRate != 99.0 || w.System.Planets[3].AbstractWaterRate != 88.0 {
+		t.Error("checkActivePlanetCompletion must not re-fire after Completed=true")
+	}
+}
+
+func TestAbstractWaterIncome_CompletedFrontier(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			b.Level = 2
+		}
+	}
+	checkActivePlanetCompletion(w)
+
+	// Return to system view and verify abstractWaterIncome sums the frontier rate.
+	switchToPlanet(w, 0)
+	enterSystemView(w)
+	wantWater := w.System.Planets[3].AbstractWaterRate
+	got := abstractWaterIncome(w)
+	if math.Abs(got-wantWater) > 1e-9 {
+		t.Errorf("abstractWaterIncome after frontier complete: got %f, want %f", got, wantWater)
+	}
+}
+
 // runTick advances the simulation for the given duration using Tick (view-aware path).
 func runTick(w *World, seconds float64) {
 	ticks := int(math.Round(seconds / dt))
