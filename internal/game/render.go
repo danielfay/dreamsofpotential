@@ -228,6 +228,20 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// Town field: settlement wedge anchored to the Town Hall, drawn over the forest
 	// field but under nodes/buildings/workers so it transforms the planet interior.
 	drawTownField(scene, w, r-rimWidth)
+	// Dock dive-reach cones: drawn under nodes/buildings like the town field.
+	// L1 = annular sector 1/3 from rim; L2+ = full sector to center.
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
+			if b.Level >= 2 {
+				drawFilledSector(scene, cx, cy, r,
+					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc, colDockWedge)
+			} else {
+				drawAnnularSector(scene, cx, cy, r*2/3, r,
+					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc, colDockWedge)
+			}
+		}
+	}
 
 	// resource nodes — interior sparkles as blue + shapes; rim nodes as pine trees
 	for _, n := range w.Nodes {

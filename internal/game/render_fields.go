@@ -203,6 +203,32 @@ func drawForestCanopyFlecks(scene *ebiten.Image, cx, cy, radius float32, startAn
 	}
 }
 
+// drawAnnularSector draws a filled ring-slice from innerR to outerR spanning startAngle..endAngle.
+func drawAnnularSector(scene *ebiten.Image, cx, cy, innerR, outerR float32, startAngle, endAngle float64, col color.RGBA) {
+	if outerR <= 0 || innerR >= outerR {
+		return
+	}
+	const steps = 32
+	var path vector.Path
+	path.MoveTo(cx+innerR*float32(math.Cos(startAngle)), cy+innerR*float32(math.Sin(startAngle)))
+	path.LineTo(cx+outerR*float32(math.Cos(startAngle)), cy+outerR*float32(math.Sin(startAngle)))
+	for i := 1; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		angle := startAngle + (endAngle-startAngle)*t
+		path.LineTo(cx+outerR*float32(math.Cos(angle)), cy+outerR*float32(math.Sin(angle)))
+	}
+	path.LineTo(cx+innerR*float32(math.Cos(endAngle)), cy+innerR*float32(math.Sin(endAngle)))
+	for i := steps - 1; i >= 0; i-- {
+		t := float64(i) / float64(steps)
+		angle := startAngle + (endAngle-startAngle)*t
+		path.LineTo(cx+innerR*float32(math.Cos(angle)), cy+innerR*float32(math.Sin(angle)))
+	}
+	path.Close()
+	drawOp := &vector.DrawPathOptions{}
+	drawOp.ColorScale.ScaleWithColor(col)
+	vector.FillPath(scene, &path, nil, drawOp)
+}
+
 // drawFilledSector draws a filled wedge from (cx,cy) spanning startAngle..endAngle
 // out to radius fillR, in the given colour.
 func drawFilledSector(scene *ebiten.Image, cx, cy, fillR float32, startAngle, endAngle float64, col color.RGBA) {

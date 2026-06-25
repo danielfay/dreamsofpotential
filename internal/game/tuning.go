@@ -119,15 +119,8 @@ const (
 	dockPostHalfW   = float32(0.8) // half-width of each end post (tangential)
 	dockPostHalfH   = float32(2.2) // half-height of each end post (outward)
 
-	// dockConnectionPx is the rim-arc pixel reach used by nearDock to decide whether
-	// a candidate angle is "connected" to an existing dock. It is larger than the hard
-	// footprint exclusion radius (6 px) so an extension can be placed just outside the
-	// physical footprint of a shore dock while still being considered connected.
-	dockConnectionPx = 14.0
-
-	// Dive-reach wedge shown in dock placement preview.
-	dockWedgeHalfArc = 0.22        // angular half-width of the wedge (radians)
-	dockWedgeDepth   = float32(16) // inward extent of the wedge from the rim (px)
+	// Dive-reach wedge shown in dock placement preview and on placed docks.
+	dockWedgeHalfArc = 0.22 // angular half-width of the wedge (radians)
 
 	// ── system view / abstract production
 	echoRateFracA       = 0.55 // echo A rate as fraction of starting planet's snapshotted rate
