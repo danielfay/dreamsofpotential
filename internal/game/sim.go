@@ -28,12 +28,28 @@ func assignNodes(w *World) {
 		if wk.State != StateIdleWaiting {
 			continue
 		}
-		if node := bestFreeNode(w); node != nil {
-			startReaction(wk, node)
-			assignedIdle = true
-		} else if dock := bestFreeDock(w); dock != nil {
-			startWaterDeparture(w, wk, dock)
-			assignedIdle = true
+		assignFocusToIdleWorker(w, wk)
+		switch wk.FocusedKind {
+		case KindWood:
+			if node := bestFreeNodeForKind(w, KindWood); node != nil {
+				startReaction(wk, node)
+				assignedIdle = true
+			}
+			// else: stay idle at Town Hall (focus-gated)
+		case KindWater:
+			if dock := bestFreeDock(w); dock != nil {
+				startWaterDeparture(w, wk, dock)
+				assignedIdle = true
+			}
+			// else: stay idle at Town Hall (focus-gated)
+		default:
+			if node := bestFreeNode(w); node != nil {
+				startReaction(wk, node)
+				assignedIdle = true
+			} else if dock := bestFreeDock(w); dock != nil {
+				startWaterDeparture(w, wk, dock)
+				assignedIdle = true
+			}
 		}
 	}
 	if assignedIdle || hasEligibleIdleWorker(w) {

@@ -39,7 +39,9 @@ type screenshotScenario struct {
 	placing       bool
 	revealActive  bool
 	revealElapsed float64
-	selectBuilding *int // non-nil: select this building index (for tray screenshots)
+	selectBuilding  *int // non-nil: select this building index (for tray screenshots)
+	showFocusControl bool
+	focusDraftWater  int
 }
 
 func screenshotScenarios() []screenshotScenario {
@@ -82,6 +84,7 @@ func screenshotScenarios() []screenshotScenario {
 		waterPlanetDockUpgradeSelectedScenario(),
 		waterPlanetNearCompleteNoL2DockScenario(),
 		dockConeVisibilityScenario(),
+		workerRatioUIOpenScenario(), // 38
 	}
 }
 
@@ -703,6 +706,44 @@ func dockConeVisibilityScenario() screenshotScenario {
 	return screenshotScenario{name: "37-dock-cone-visibility", world: w, fullHUD: false}
 }
 
+// workerRatioUIOpenScenario shows the two-resource labor focus control overlaid
+// on the water planet with a 1:3 draft split.
+// workerRatioUIOpenScenario shows the two-resource labor focus control overlaid
+// on the water planet with a 1:3 draft split.
+func workerRatioUIOpenScenario() screenshotScenario {
+	frontierIdx := 3
+	p, err := BuildQAWorld(QAPreset{
+		Name:                 "water-planet-worker-ratio",
+		AwakenFrontier:       true,
+		EnterPlanet:          &frontierIdx,
+		EchoPlaceTownHall:    true,
+		EchoFillTownCapacity: true,
+		SaturateWaterField:   true,
+	})
+	if err != nil {
+		// Return a fallback world so the screenshot harness doesn't crash.
+		return screenshotScenario{name: "38-worker-ratio-ui-open", world: NewWorld(), fullHUD: true}
+	}
+	// Ensure water is discovered and workers are present.
+	p.Economy.WaterDiscovered = true
+	p.ResourceDiscovered = true
+	p.Economy.WorkerCapacity = 10
+	for len(p.Workers) < 4 {
+		spawnWorkerAtTownHall(p)
+	}
+	// Settle workers briefly.
+	for range 60 {
+		Step(p, dt)
+	}
+	return screenshotScenario{
+		name:             "38-worker-ratio-ui-open",
+		world:            p,
+		fullHUD:          true,
+		showFocusControl: true,
+		focusDraftWater:  1,
+	}
+}
+
 func intPtr(v int) *int { return &v }
 
 func screenshotWorld(seed int64) *World {
@@ -788,8 +829,10 @@ func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 		debug:              shot.debug,
 		debugSection:       shot.debugSection,
 		selectedBuildingID: selectedBldID,
-		revealActive:  shot.revealActive,
-		revealElapsed: shot.revealElapsed,
+		revealActive:       shot.revealActive,
+		revealElapsed:      shot.revealElapsed,
+		showFocusControl:   shot.showFocusControl,
+		focusDraftWater:    shot.focusDraftWater,
 	}
 	hud, ui, err := buildHUD(game, scale)
 	if err != nil {

@@ -329,6 +329,88 @@ func bestFreeNode(w *World) *ResourceNode {
 	return best
 }
 
+func bestFreeNodeForKind(w *World, kind ResourceKind) *ResourceNode {
+	var best *ResourceNode
+	bestRoute := math.MaxFloat64
+	for _, n := range w.Nodes {
+		if n.Kind != kind {
+			continue
+		}
+		if !nodeFreeForWorker(w, n, -1) {
+			continue
+		}
+		if r := routeLen(w, n); r < bestRoute {
+			bestRoute = r
+			best = n
+		}
+	}
+	return best
+}
+
+// assignFocusToIdleWorker updates wk.FocusedKind to match LaborFocus before
+// assigning the worker a job. If LaborFocus is empty, the worker is unfocused.
+// The worker assigned to the most under-represented kind.
+func assignFocusToIdleWorker(w *World, wk *Worker) {
+	if len(w.LaborFocus) == 0 {
+		wk.FocusedKind = focusKindNone
+		return
+	}
+	counts := map[ResourceKind]int{}
+	for _, other := range w.Workers {
+		if other.ID == wk.ID || other.FocusedKind == focusKindNone {
+			continue
+		}
+		counts[other.FocusedKind]++
+	}
+	var bestKind ResourceKind = focusKindNone
+	bestDeficit := 0
+	for kind, target := range w.LaborFocus {
+		deficit := target - counts[kind]
+		if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
+			bestDeficit = deficit
+			bestKind = kind
+		}
+	}
+	if bestKind == focusKindNone {
+		// All targets met; prefer the kind with the highest ResourceKind value.
+		for kind := range w.LaborFocus {
+			if kind > bestKind {
+				bestKind = kind
+			}
+		}
+	}
+	wk.FocusedKind = bestKind
+}
+
+// assignFocusToNewWorker assigns a FocusedKind to a freshly spawned worker
+// based on the current LaborFocus targets and existing worker counts.
+func assignFocusToNewWorker(w *World, wk *Worker) {
+	if len(w.LaborFocus) == 0 {
+		return
+	}
+	counts := map[ResourceKind]int{}
+	for _, other := range w.Workers {
+		if other.ID == wk.ID || other.FocusedKind == focusKindNone {
+			continue
+		}
+		counts[other.FocusedKind]++
+	}
+	var bestKind ResourceKind = focusKindNone
+	bestDeficit := 0
+	for kind, target := range w.LaborFocus {
+		deficit := target - counts[kind]
+		// Use > for strict improvement; tiebreak by preferring higher ResourceKind
+		// value (KindWater > KindWood) so water workers are filled first on ties.
+		if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
+			bestDeficit = deficit
+			bestKind = kind
+		}
+	}
+	if bestKind != focusKindNone {
+		wk.FocusedKind = bestKind
+	}
+}
+
 func nodeFreeForWorker(w *World, n *ResourceNode, workerID int) bool {
 	if n.Interior {
 		return false
@@ -369,6 +451,10 @@ func reserveDelayedRebalance(w *World) {
 	worstRoute := -1.0
 	for _, wk := range w.Workers {
 		if wk.PendingNodeID != -1 || !workerInLoop(wk) {
+			continue
+		}
+		// Don't redirect a worker whose focus is incompatible with this node's kind.
+		if wk.FocusedKind != focusKindNone && wk.FocusedKind != free.Kind {
 			continue
 		}
 		node := findNode(w, wk.NodeID)
@@ -643,8 +729,16 @@ func returnToDockFromDive(w *World, wk *Worker, dock *Building) {
 // releases owned sparkles, then either starts another dive or returns home.
 func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	gross := wk.Carried
+	wasDiscovered := w.Economy.WaterDiscovered
 	if gross > 0 {
 		w.Economy.WaterDiscovered = true
+	}
+	// Auto proof split: on first water delivery with a dock that has reachable
+	// serviceable sparkles, default to 1 water worker + rest wood.
+	if !wasDiscovered && w.Economy.WaterDiscovered && len(w.LaborFocus) == 0 {
+		if dockHasServiceableSparkles(w) {
+			setAutoProofSplit(w)
+		}
 	}
 	banked := gross * (1 - woodFieldReturnRatio)
 	returned := gross * woodFieldReturnRatio
@@ -668,4 +762,35 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	}
 	wk.DockID = -1
 	startReturnHome(w, wk)
+}
+
+// dockHasServiceableSparkles reports whether any dock has at least one
+// sparkle that can be assigned to it (reachable dock work exists).
+func dockHasServiceableSparkles(w *World) bool {
+	for _, b := range w.Buildings {
+		if b.Kind != KindDock {
+			continue
+		}
+		if len(dockServiceableSparkles(w, b)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// setAutoProofSplit initialises LaborFocus to 1 water + rest wood worker,
+// preserving any subsequent manual overrides (only called when LaborFocus is nil).
+func setAutoProofSplit(w *World) {
+	total := len(w.Workers)
+	if total == 0 {
+		return
+	}
+	wood := total - 1
+	if wood < 0 {
+		wood = 0
+	}
+	w.LaborFocus = map[ResourceKind]int{
+		KindWater: 1,
+		KindWood:  wood,
+	}
 }

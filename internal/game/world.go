@@ -21,6 +21,8 @@ const (
 	KindWood           ResourceKind = iota
 	KindWater                       // lake terrain; unknown fields carry this kind
 	KindWaterInfluence              // invisible, overlap-allowed; widens a lake's reach into adjacent forest
+
+	focusKindNone ResourceKind = -1 // worker has no focus assignment
 )
 
 func kindName(k ResourceKind) string {
@@ -108,7 +110,8 @@ type Worker struct {
 	NodeID        int
 	TargetNodeID  int
 	PendingNodeID int
-	DockID        int  // building ID of the claimed dock; -1 if not a water worker
+	DockID        int          // building ID of the claimed dock; -1 if not a water worker
+	FocusedKind   ResourceKind // resource this worker is assigned to harvest; focusKindNone (-1) = unfocused
 	DeliveryKind  BuildingKind
 	Carried       float64
 	Timer         float64
@@ -184,6 +187,7 @@ type PlanetState struct {
 	TownGrowthOverflow  float64
 	LastWorkerSpawnTime float64
 	Founded             bool
+	LaborFocus          map[ResourceKind]int // target worker counts per resource kind; nil = no focus
 }
 
 // System holds all persistent state for the planetary system layer.
@@ -302,7 +306,7 @@ type Economy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 18
+const SaveVersion = 19
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -317,6 +321,7 @@ type World struct {
 	NextBuildingID     int
 	ResourceDiscovered bool // true after the first wood delivery
 	SimTime            float64
+	LaborFocus         map[ResourceKind]int // target worker counts per resource kind; nil = no focus
 	System             System // system-view unlock state; persisted
 
 	// Multi-planet support: PlanetStates holds parked live state for non-active
@@ -361,9 +366,11 @@ func spawnWorkerAtTownHall(w *World) *Worker {
 		TargetNodeID:  -1,
 		PendingNodeID: -1,
 		DockID:        -1,
+		FocusedKind:   focusKindNone,
 		Timer:         settleDelay,
 	}
 	w.Workers = append(w.Workers, wk)
+	assignFocusToNewWorker(w, wk)
 	return wk
 }
 
@@ -899,6 +906,7 @@ func parkActive(w *World) {
 		TownGrowthOverflow:  w.Economy.TownGrowthOverflow,
 		LastWorkerSpawnTime: w.Economy.LastWorkerSpawnTime,
 		Founded:             townHall(w) != nil,
+		LaborFocus:          w.LaborFocus,
 	}
 }
 
@@ -916,6 +924,7 @@ func loadPlanet(w *World, idx int) {
 	w.NextBuildingID     = ps.NextBuildingID
 	w.ResourceDiscovered = ps.ResourceDiscovered
 	w.SimTime            = ps.SimTime
+	w.LaborFocus         = ps.LaborFocus
 	w.Economy.WorkerCapacity = ps.WorkerCapacity
 	w.Economy.CapacityBought = ps.CapacityBought
 	w.Economy.CampsBought    = ps.CampsBought

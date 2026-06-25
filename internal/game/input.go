@@ -138,6 +138,12 @@ func (g *Game) handleInput() {
 		return
 	}
 
+	// Focus control is open: route all input to it.
+	if g.showFocusControl {
+		g.handleFocusControlInput()
+		return
+	}
+
 	// Post-unlock: wheel-down and return button navigate to system view.
 	g.handlePlanetViewSystemReturn()
 

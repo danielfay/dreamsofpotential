@@ -60,6 +60,7 @@ type HUD struct {
 	waterText    *widget.Text
 	workerHUD    *widget.Container // yellow icon + ratio; hidden until first worker
 	workerRatio  *widget.Text
+	workerSquare *widget.Button // interactive swatch: opens focus control when 2 resources active
 
 	// normal mode — left sidebar (action buttons, vertical)
 	normalSidebar        *widget.Container
@@ -331,7 +332,14 @@ func (h *HUD) refreshNormal(w *World) {
 	// Worker HUD: hidden until first worker exists.
 	if len(w.Workers) > 0 {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Show)
-		h.workerRatio.Label = fmt.Sprintf("%d", len(w.Workers))
+		if len(w.LaborFocus) > 0 {
+			h.workerRatio.Label = fmt.Sprintf("%d/%d", w.LaborFocus[KindWater], len(w.Workers))
+		} else {
+			h.workerRatio.Label = fmt.Sprintf("%d", len(w.Workers))
+		}
+		// Disable swatch when focus control is not applicable (only 1 resource type).
+		twoResources := w.ResourceDiscovered && w.Economy.WaterDiscovered
+		h.workerSquare.GetWidget().Disabled = !twoResources
 	} else {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
@@ -647,13 +655,33 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		widget.TextOpts.Text("0/0", face, color.NRGBA{R: 255, G: 240, B: 180, A: 255}),
 		widget.TextOpts.WidgetOpts(widget.WidgetOpts.MinSize(digitWidth*5, 0)),
 	)
+	hud.workerSquare = widget.NewButton(
+		widget.ButtonOpts.Image(&widget.ButtonImage{
+			Idle:     eimage.NewNineSliceColor(colWorkerLaden),
+			Hover:    eimage.NewNineSliceColor(color.NRGBA{R: 255, G: 255, B: 120, A: 255}),
+			Pressed:  eimage.NewNineSliceColor(color.NRGBA{R: 200, G: 185, B: 60, A: 255}),
+			Disabled: eimage.NewNineSliceColor(colWorkerLaden),
+		}),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.MinSize(iconSz, iconSz),
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				MaxWidth:  iconSz,
+				MaxHeight: iconSz,
+			}),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			if g.world.ResourceDiscovered && g.world.Economy.WaterDiscovered {
+				g.openFocusControl()
+			}
+		}),
+	)
 	hud.workerHUD = widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
 			widget.RowLayoutOpts.Spacing(sz(4)),
 		)),
 	)
-	hud.workerHUD.AddChild(smallSquare(colWorkerLaden, iconSz))
+	hud.workerHUD.AddChild(hud.workerSquare)
 	hud.workerHUD.AddChild(hud.workerRatio)
 	hud.workerHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 

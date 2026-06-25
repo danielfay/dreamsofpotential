@@ -11,6 +11,7 @@ import (
 	"github.com/ebitenui/ebitenui"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -70,6 +71,15 @@ type Game struct {
 	selectedBuildingID int     // index into w.Buildings; -1 = none
 	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
 	dockTrayRect       sysRect // entire tray background rect (clicking anywhere dismisses)
+
+	// labor focus control overlay
+	showFocusControl bool
+	focusDraftWater  int     // candidate water-worker count while control is open
+	focusCtrlRect    sysRect // entire control background rect
+	focusSlotsRect   sysRect // the clickable/draggable worker-slot bar
+	focusConfirmRect sysRect
+	focusCancelRect  sysRect
+	focusDragging    bool
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -436,6 +446,9 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 	// Selected-building dock tray.
 	g.drawDockTray(screen)
 
+	// Labor focus control overlay.
+	g.drawFocusControl(screen)
+
 	// Unaffordable-cost pulse flash: fades out over pulseDuration seconds.
 	if g.pulseTime > 0 {
 		colPulse := colCostPulse
@@ -734,8 +747,25 @@ func clearTransientUI(g *Game) {
 	g.holdAction = holdNone
 	g.holdDuration = 0
 	g.showMenu = false
+	g.showFocusControl = false
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
+}
+
+// openFocusControl opens the labor focus control, initialising the draft split
+// from the current LaborFocus (or a 1:rest default if none has been set).
+func (g *Game) openFocusControl() {
+	total := len(g.world.Workers)
+	if total == 0 {
+		return
+	}
+	if w := g.world.LaborFocus[KindWater]; w > 0 {
+		g.focusDraftWater = w
+	} else {
+		g.focusDraftWater = 1
+	}
+	g.showFocusControl = true
+	g.focusDragging = false
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
@@ -906,5 +936,167 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		cx += iconSize + 2*sp
 		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
 		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
+	}
+}
+
+// drawFocusControl renders the two-resource labor focus overlay and records
+// hit-test rects for input handling.
+func (g *Game) drawFocusControl(screen *ebiten.Image) {
+	if !g.showFocusControl {
+		g.focusCtrlRect = sysRect{}
+		g.focusSlotsRect = sysRect{}
+		g.focusConfirmRect = sysRect{}
+		g.focusCancelRect = sysRect{}
+		return
+	}
+
+	total := len(g.world.Workers)
+	if total == 0 {
+		g.showFocusControl = false
+		return
+	}
+
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	sp := float32(scale)
+	face := g.hud.sysface
+	if face == nil {
+		return
+	}
+
+	const slotSize = float64(14)
+	const slotGap = float64(2)
+	const padding = float64(8)
+	const btnH = float64(16)
+
+	slotRowW := float64(total)*slotSize + float64(total-1)*slotGap
+	panelW := slotRowW + 2*padding
+	if panelW < 80 {
+		panelW = 80
+	}
+	panelH := padding + slotSize + padding*0.75 + btnH + padding
+
+	pw := float32(panelW * float64(scale))
+	ph := float32(panelH * float64(scale))
+	px := float32(g.screenW)/2 - pw/2
+	py := float32(g.screenH)/2 - ph/2
+
+	vector.FillRect(screen, px, py, pw, ph, colSysTrayFill, false)
+	vector.StrokeRect(screen, px, py, pw, ph, 1, colSysTrayBorder, false)
+	g.focusCtrlRect = sysRect{x: px, y: py, w: pw, h: ph}
+
+	// Slot row: colored blocks, green=wood, blue=water
+	slotW := float32(slotSize * float64(scale))
+	slotH := slotW
+	slotY := py + float32(padding*float64(scale))
+	slotStartX := px + float32(padding*float64(scale))
+	nWater := g.focusDraftWater
+	if nWater < 0 {
+		nWater = 0
+	}
+	if nWater > total {
+		nWater = total
+	}
+	nWood := total - nWater
+
+	for i := 0; i < total; i++ {
+		sx := slotStartX + float32(i)*(slotW+float32(slotGap*float64(scale)))
+		var col color.RGBA
+		if i < nWood {
+			col = colWoodResource
+		} else {
+			col = colSparkle
+		}
+		vector.FillRect(screen, sx, slotY, slotW, slotH, col, false)
+	}
+
+	// Divider line between wood and water sections
+	if nWood > 0 && nWater > 0 {
+		divX := slotStartX + float32(nWood)*(slotW+float32(slotGap*float64(scale))) - float32(slotGap*float64(scale))/2
+		vector.StrokeLine(screen, divX, slotY-2*sp, divX, slotY+slotH+2*sp, 2, color.RGBA{R: 220, G: 220, B: 220, A: 200}, false)
+	}
+
+	slotsW := float32(slotRowW * float64(scale))
+	g.focusSlotsRect = sysRect{x: slotStartX, y: slotY, w: slotsW, h: slotH}
+
+	// Count labels
+	woodCountStr := fmt.Sprintf("%d", nWood)
+	waterCountStr := fmt.Sprintf("%d", nWater)
+	woodLabelX := slotStartX
+	waterLabelX := slotStartX + slotsW - 6*sp
+	labelY := slotY + slotH + 2*sp
+	drawSysText(screen, woodCountStr, woodLabelX, labelY, color.RGBA{R: 160, G: 220, B: 160, A: 220}, face)
+	drawSysText(screen, waterCountStr, waterLabelX, labelY, color.RGBA{R: 100, G: 190, B: 255, A: 220}, face)
+
+	// Confirm and cancel buttons
+	btnY := py + ph - float32((padding+btnH)*float64(scale))
+	halfW := (pw - 3*sp) / 2
+	g.focusConfirmRect = sysRect{x: px + sp, y: btnY, w: halfW, h: float32(btnH * float64(scale))}
+	g.focusCancelRect = sysRect{x: px + halfW + 2*sp, y: btnY, w: halfW, h: float32(btnH * float64(scale))}
+
+	confirmCol := color.RGBA{R: 30, G: 80, B: 30, A: 200}
+	cancelCol := color.RGBA{R: 80, G: 25, B: 25, A: 200}
+	vector.FillRect(screen, g.focusConfirmRect.x, g.focusConfirmRect.y, g.focusConfirmRect.w, g.focusConfirmRect.h, confirmCol, false)
+	vector.StrokeRect(screen, g.focusConfirmRect.x, g.focusConfirmRect.y, g.focusConfirmRect.w, g.focusConfirmRect.h, 1, colSysTrayBorder, false)
+	vector.FillRect(screen, g.focusCancelRect.x, g.focusCancelRect.y, g.focusCancelRect.w, g.focusCancelRect.h, cancelCol, false)
+	vector.StrokeRect(screen, g.focusCancelRect.x, g.focusCancelRect.y, g.focusCancelRect.w, g.focusCancelRect.h, 1, colSysTrayBorder, false)
+
+	confirmLabelX := g.focusConfirmRect.x + g.focusConfirmRect.w/2 - 4*sp
+	cancelLabelX := g.focusCancelRect.x + g.focusCancelRect.w/2 - 4*sp
+	drawSysText(screen, "Apply", confirmLabelX, g.focusConfirmRect.y+sp, color.RGBA{R: 180, G: 240, B: 180, A: 230}, face)
+	drawSysText(screen, "Cancel", cancelLabelX, g.focusCancelRect.y+sp, color.RGBA{R: 240, G: 160, B: 160, A: 230}, face)
+}
+
+// handleFocusControlInput processes mouse events while the focus control is open.
+func (g *Game) handleFocusControlInput() {
+	total := len(g.world.Workers)
+	mx, my := ebiten.CursorPosition()
+	fmx, fmy := float32(mx), float32(my)
+
+	inRect := func(r sysRect) bool {
+		return r.w > 0 && fmx >= r.x && fmx < r.x+r.w && fmy >= r.y && fmy < r.y+r.h
+	}
+
+	// Update draft split when mouse is pressed/dragged in the slot bar.
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+		if inRect(g.focusSlotsRect) || g.focusDragging {
+			if inRect(g.focusSlotsRect) {
+				g.focusDragging = true
+			}
+			if g.focusDragging && g.focusSlotsRect.w > 0 {
+				scale, _, _ := viewGeom(g.screenW, g.screenH)
+				const slotGap = float64(2)
+				slotW := g.focusSlotsRect.w / float32(total)
+				rawWood := int((fmx - g.focusSlotsRect.x + float32(slotGap*scale)/2) / slotW)
+				nWater := total - rawWood
+				if nWater < 0 {
+					nWater = 0
+				}
+				if nWater > total {
+					nWater = total
+				}
+				g.focusDraftWater = nWater
+			}
+		}
+	} else {
+		g.focusDragging = false
+	}
+
+	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		return
+	}
+
+	if inRect(g.focusConfirmRect) {
+		nWater := g.focusDraftWater
+		nWood := total - nWater
+		g.world.LaborFocus = map[ResourceKind]int{
+			KindWater: nWater,
+			KindWood:  nWood,
+		}
+		g.showFocusControl = false
+		return
+	}
+	if inRect(g.focusCancelRect) || !inRect(g.focusCtrlRect) {
+		g.showFocusControl = false
+		return
 	}
 }
