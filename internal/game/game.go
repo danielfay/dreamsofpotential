@@ -1001,17 +1001,7 @@ func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 		return
 	}
 
-	// Count workers by focus kind.
-	var nWood, nWater int
-	for _, wk := range w.Workers {
-		switch wk.FocusedKind {
-		case KindWood:
-			nWood++
-		case KindWater:
-			nWater++
-		}
-	}
-	nIdle := len(w.Workers) - nWood - nWater
+	nWood, nWater, nIdle := activeWorkerHUDCounts(w)
 
 	// ── Slider icon (drawn over workerSquare button) ──────────────────────
 	sqR := g.hud.workerSquare.GetWidget().Rect

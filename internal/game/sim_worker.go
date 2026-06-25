@@ -373,39 +373,95 @@ func assignFocusToIdleWorker(w *World, wk *Worker) {
 		wk.FocusedKind = focusKindNone
 		return
 	}
-	counts := map[ResourceKind]int{}
-	for _, other := range w.Workers {
-		if other.ID == wk.ID {
-			continue
-		}
-		switch {
-		case workerInWaterLoop(other):
-			counts[KindWater]++
-		case workerInLoop(other), other.State == StateDeparturePulse, other.State == StateToRim:
-			counts[KindWood]++
-		}
-	}
+	counts := activeWorkerCountsByKind(w)
 	var bestKind ResourceKind = focusKindNone
 	bestDeficit := 0
 	for kind, target := range w.LaborFocus {
+		if !focusKindHasAvailableWork(w, kind) {
+			continue
+		}
 		deficit := target - counts[kind]
 		if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
 			bestDeficit = deficit
 			bestKind = kind
 		}
 	}
-	if bestKind == focusKindNone {
-		// All targets met; prefer the highest positive-target kind.
-		for kind, target := range w.LaborFocus {
-			if target <= 0 {
-				continue
-			}
-			if kind > bestKind {
-				bestKind = kind
-			}
+	wk.FocusedKind = bestKind
+}
+
+func focusKindHasAvailableWork(w *World, kind ResourceKind) bool {
+	switch kind {
+	case KindWood:
+		return bestFreeNodeForKind(w, KindWood) != nil
+	case KindWater:
+		return bestFreeDock(w) != nil
+	default:
+		return false
+	}
+}
+
+func activeWorkerCountsByKind(w *World) map[ResourceKind]int {
+	counts := map[ResourceKind]int{}
+	for _, wk := range w.Workers {
+		if kind := activeWorkerKind(wk); kind != focusKindNone {
+			counts[kind]++
 		}
 	}
-	wk.FocusedKind = bestKind
+	return counts
+}
+
+func activeWorkerKind(wk *Worker) ResourceKind {
+	switch {
+	case workerInWaterLoop(wk):
+		return KindWater
+	case workerInWoodAssignment(wk):
+		return KindWood
+	default:
+		return focusKindNone
+	}
+}
+
+func workerInWoodAssignment(wk *Worker) bool {
+	switch wk.State {
+	case StateReactionDelay, StateDeparturePulse, StateToRim:
+		return wk.TargetNodeID != -1 || wk.NodeID != -1
+	default:
+		return workerInLoop(wk)
+	}
+}
+
+func activeWorkerHUDCounts(w *World) (wood, water, idle int) {
+	for _, wk := range w.Workers {
+		switch activeWorkerKind(wk) {
+		case KindWood:
+			wood++
+		case KindWater:
+			water++
+		default:
+			idle++
+		}
+	}
+	return wood, water, idle
+}
+
+func reconcileLaborFocus(w *World) {
+	if len(w.LaborFocus) == 0 {
+		return
+	}
+	counts := activeWorkerCountsByKind(w)
+	for _, wk := range w.Workers {
+		kind := activeWorkerKind(wk)
+		if kind == focusKindNone {
+			continue
+		}
+		target := w.LaborFocus[kind]
+		if counts[kind] <= target {
+			continue
+		}
+		startReturnHome(w, wk)
+		wk.FocusedKind = focusKindNone
+		counts[kind]--
+	}
 }
 
 // assignFocusToNewWorker assigns a FocusedKind to a freshly spawned worker

@@ -105,6 +105,71 @@ func TestFocusZeroWaterTargetAssignsAllWood(t *testing.T) {
 	}
 }
 
+func TestFocusRatioCapsActiveWorkersByAvailableWork(t *testing.T) {
+	w := newFocusWorld(t, 10)
+
+	// Add a second dock, then occupy both docks with active water workers.
+	dockA := firstDock(t, w)
+	dockB := &Building{
+		ID:        w.NextBuildingID,
+		Kind:      KindDock,
+		Angle:     waterFrontierLakeAngle + 0.08,
+		Pos:       w.Planet.RimPoint(waterFrontierLakeAngle + 0.08),
+		Extension: true,
+	}
+	w.NextBuildingID++
+	w.Buildings = append(w.Buildings, dockB)
+	w.Workers[0].State = StateToDock
+	w.Workers[0].DockID = dockA.ID
+	w.Workers[0].FocusedKind = KindWater
+	w.Workers[1].State = StateToDock
+	w.Workers[1].DockID = dockB.ID
+	w.Workers[1].FocusedKind = KindWater
+	for _, wk := range w.Workers[2:] {
+		wk.State = StateIdleWaiting
+		wk.FocusedKind = focusKindNone
+		wk.NodeID = -1
+		wk.TargetNodeID = -1
+		wk.DockID = -1
+	}
+
+	woodField := fieldForKind(w, KindWood)
+	if woodField == nil {
+		t.Fatal("setup: no wood field")
+	}
+	for i := 0; i < 10; i++ {
+		n := newNode(w, KindWood, normAngle(woodField.CenterAngle+float64(i)*0.01))
+		w.Nodes = append(w.Nodes, n)
+	}
+
+	w.LaborFocus = map[ResourceKind]int{KindWood: 0, KindWater: 10}
+	assignNodes(w)
+	assertHUDCounts(t, w, 0, 2, 8)
+
+	w.LaborFocus = map[ResourceKind]int{KindWood: 4, KindWater: 6}
+	assignNodes(w)
+	assertHUDCounts(t, w, 4, 2, 4)
+}
+
+func firstDock(t *testing.T, w *World) *Building {
+	t.Helper()
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			return b
+		}
+	}
+	t.Fatal("setup: no dock")
+	return nil
+}
+
+func assertHUDCounts(t *testing.T, w *World, wantWood, wantWater, wantIdle int) {
+	t.Helper()
+	wood, water, idle := activeWorkerHUDCounts(w)
+	if wood != wantWood || water != wantWater || idle != wantIdle {
+		t.Fatalf("HUD counts = %d/%d/%d, want %d/%d/%d", wood, water, idle, wantWood, wantWater, wantIdle)
+	}
+}
+
 // TestFocusGatedJobSeeking verifies that wood-focused workers never take water
 // jobs and water-focused workers never take wood jobs.
 func TestFocusGatedJobSeeking(t *testing.T) {

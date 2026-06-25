@@ -22,6 +22,7 @@ func assignNodes(w *World) {
 		return
 	}
 	releaseInvalidReservations(w)
+	reconcileLaborFocus(w)
 
 	assignedIdle := false
 	for _, wk := range w.Workers {
@@ -43,6 +44,10 @@ func assignNodes(w *World) {
 			}
 			// else: stay idle at Town Hall (focus-gated)
 		default:
+			if len(w.LaborFocus) > 0 {
+				// Ratio is active but every eligible target is full or unavailable.
+				continue
+			}
 			if node := bestFreeNode(w); node != nil {
 				startReaction(wk, node)
 				assignedIdle = true
