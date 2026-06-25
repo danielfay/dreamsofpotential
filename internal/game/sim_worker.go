@@ -846,10 +846,12 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	if gross > 0 {
 		w.Economy.WaterDiscovered = true
 	}
-	// Auto proof split: on first water delivery with a dock that has reachable
-	// serviceable sparkles, default to 1 water worker + rest wood.
-	if !wasDiscovered && w.Economy.WaterDiscovered && len(w.LaborFocus) == 0 {
-		if dockHasServiceableSparkles(w) {
+	// On first water delivery: reveal unknown water fields on all planets so
+	// previously-teased lakes become real (enabling nurture and progression).
+	// Also auto-set a labor split if the player hasn't configured one yet.
+	if !wasDiscovered && w.Economy.WaterDiscovered {
+		revealKindFields(w, KindWater)
+		if len(w.LaborFocus) == 0 && dockHasServiceableSparkles(w) {
 			setAutoProofSplit(w)
 		}
 	}

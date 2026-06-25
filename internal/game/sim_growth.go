@@ -597,3 +597,27 @@ func tickOverflowGrowth(w *World) {
 func addFreeWorkerAtTownHall(w *World) bool {
 	return spawnWorkerAtTownHall(w) != nil
 }
+
+// revealKindFields promotes every unknown field of the given kind to known on
+// all planets in the system (active and parked). It also initialises
+// FieldProgress for the kind so EXP can start accumulating immediately.
+// Nurture re-arms itself automatically on the next frame because anyFieldCanSpawn
+// and nurtureAttentionActive re-evaluate from field state.
+func revealKindFields(w *World, kind ResourceKind) {
+	reveal := func(p *Planet) {
+		for _, f := range p.Fields {
+			if f.Kind == kind && !f.Known {
+				f.Known = true
+			}
+		}
+		if p.FieldProgress[kind] == nil {
+			p.FieldProgress[kind] = &KindProgress{Cap: woodFieldBaseEXP}
+		}
+	}
+	reveal(&w.Planet)
+	for _, ps := range w.PlanetStates {
+		if ps != nil {
+			reveal(&ps.Planet)
+		}
+	}
+}

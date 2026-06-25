@@ -3294,3 +3294,132 @@ func TestNurtureAttentionDockZeroWater(t *testing.T) {
 		t.Error("nurtureAttentionActive should be true when dock exists but water rate is 0")
 	}
 }
+
+func TestRevealKindFields_ActivePlanet(t *testing.T) {
+	// Build a world whose active planet has one known wood field and two
+	// unknown water fields (mirroring the Lakewood tease layout).
+	p := Planet{
+		Center: Vec{X: 160, Y: 120},
+		Radius: 80,
+		Fields: []*ResourceField{
+			{Kind: KindWood, Known: true, CenterAngle: 0, HalfArc: 1.0},
+			{Kind: KindWater, Known: false, CenterAngle: 1.5, HalfArc: 0.5},
+			{Kind: KindWater, Known: false, CenterAngle: 3.0, HalfArc: 0.4},
+		},
+		FieldProgress: map[ResourceKind]*KindProgress{
+			KindWood: {Cap: woodFieldBaseEXP},
+		},
+	}
+	w := &World{
+		Planet:       p,
+		PlanetStates: make([]*PlanetState, 2),
+		rng:          rand.New(rand.NewSource(1)),
+	}
+
+	revealKindFields(w, KindWater)
+
+	for i, f := range w.Planet.Fields {
+		if f.Kind == KindWater && !f.Known {
+			t.Errorf("field[%d]: KindWater should be Known after reveal", i)
+		}
+	}
+	if w.Planet.Fields[0].Known != true {
+		t.Error("wood field should remain known")
+	}
+	if w.Planet.FieldProgress[KindWater] == nil {
+		t.Error("FieldProgress[KindWater] should be initialised after reveal")
+	}
+}
+
+func TestRevealKindFields_ParkedPlanet(t *testing.T) {
+	// Active planet: water frontier (no unknown fields).
+	active := newWaterFrontierState()
+	// Parked planet: Lakewood-style with unknown water fields.
+	parked := &PlanetState{
+		Planet: Planet{
+			Center: Vec{X: 160, Y: 120},
+			Radius: 80,
+			Fields: []*ResourceField{
+				{Kind: KindWood, Known: true, CenterAngle: 0, HalfArc: 1.0},
+				{Kind: KindWater, Known: false, CenterAngle: 1.5, HalfArc: 0.5},
+			},
+			FieldProgress: map[ResourceKind]*KindProgress{
+				KindWood: {Cap: woodFieldBaseEXP},
+			},
+		},
+	}
+	w := &World{
+		Planet:       active.Planet,
+		PlanetStates: []*PlanetState{nil, parked},
+		Active:       0,
+		rng:          rand.New(rand.NewSource(1)),
+	}
+
+	revealKindFields(w, KindWater)
+
+	// Active planet water field (already known on frontier) untouched.
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWater && !f.Known {
+			t.Error("active planet: unknown water field not revealed")
+		}
+	}
+	// Parked planet water field revealed.
+	for i, f := range parked.Planet.Fields {
+		if f.Kind == KindWater && !f.Known {
+			t.Errorf("parked planet field[%d]: KindWater should be Known after reveal", i)
+		}
+	}
+	if parked.Planet.FieldProgress[KindWater] == nil {
+		t.Error("parked planet: FieldProgress[KindWater] should be initialised after reveal")
+	}
+}
+
+func TestRevealKindFields_WaterDeliveryTrigger(t *testing.T) {
+	// Verify that completing a water unload reveals unknown water fields.
+	w := newWaterHarvestFixture(t)
+	// Park a Lakewood-style planet at slot 1.
+	parked := &PlanetState{
+		Planet: Planet{
+			Center: Vec{X: 160, Y: 120},
+			Radius: 80,
+			Fields: []*ResourceField{
+				{Kind: KindWood, Known: true, CenterAngle: 0, HalfArc: 1.0},
+				{Kind: KindWater, Known: false, CenterAngle: 1.5, HalfArc: 0.5},
+			},
+			FieldProgress: map[ResourceKind]*KindProgress{
+				KindWood: {Cap: woodFieldBaseEXP},
+			},
+		},
+	}
+	if len(w.PlanetStates) < 2 {
+		w.PlanetStates = append(w.PlanetStates, nil)
+	}
+	w.PlanetStates[1] = parked
+
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("no dock")
+	}
+	wk := &Worker{ID: 99, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1, DockID: dock.ID}
+	w.Workers = append(w.Workers, wk)
+	wk.Carried = 5.0
+	completeWaterUnload(w, wk, dock)
+
+	if !w.Economy.WaterDiscovered {
+		t.Fatal("WaterDiscovered should be true after delivery")
+	}
+	for i, f := range parked.Planet.Fields {
+		if f.Kind == KindWater && !f.Known {
+			t.Errorf("parked planet field[%d]: should be revealed after first water delivery", i)
+		}
+	}
+	if parked.Planet.FieldProgress[KindWater] == nil {
+		t.Error("parked planet: FieldProgress[KindWater] should exist after first water delivery")
+	}
+}
