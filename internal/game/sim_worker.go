@@ -386,6 +386,29 @@ func assignFocusToIdleWorker(w *World, wk *Worker) {
 			bestKind = kind
 		}
 	}
+	// Overflow: all targets are met but there are more workers than the focus total
+	// covers (worker spawned after the ratio was last saved). The UI always sets the
+	// focus sum to the current worker count, so workers > focus_sum is unambiguous
+	// evidence of a post-ratio spawn rather than intentional idle. Spill to the kind
+	// with the largest positive target that has available work.
+	if bestKind == focusKindNone {
+		totalFocused := 0
+		for _, t := range w.LaborFocus {
+			totalFocused += t
+		}
+		if len(w.Workers) > totalFocused {
+			bestTarget := 0
+			for kind, target := range w.LaborFocus {
+				if target <= 0 || !focusKindHasAvailableWork(w, kind) {
+					continue
+				}
+				if target > bestTarget || (target == bestTarget && kind > bestKind) {
+					bestTarget = target
+					bestKind = kind
+				}
+			}
+		}
+	}
 	wk.FocusedKind = bestKind
 }
 

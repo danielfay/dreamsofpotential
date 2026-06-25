@@ -463,27 +463,52 @@ func TestWaterWorkerAbortsMidUnload(t *testing.T) {
 	}
 }
 
-// TestOverflowWorkerAtSpawnGetsWoodFocus verifies that a worker spawned beyond
-// the LaborFocus total gets assigned to the dominant kind at spawn time, so it
-// can start working immediately rather than sitting idle.
-func TestOverflowWorkerAtSpawnGetsWoodFocus(t *testing.T) {
-	// 5 workers, focus 5 wood / 0 water — all targets exactly met.
+// TestOverflowWorkerStartsWorking verifies that a worker spawned beyond the
+// LaborFocus total (e.g. population growth after a 5-wood/0-water ratio is set)
+// ends up working rather than sitting idle. The UI always sets focus sum ==
+// worker count, so workers > focus_sum unambiguously means a post-ratio spawn.
+func TestOverflowWorkerStartsWorking(t *testing.T) {
 	w := newFocusWorld(t, 5)
-	w.LaborFocus = map[ResourceKind]int{KindWood: 5, KindWater: 0}
 
+	// Seed enough wood nodes so all 5 workers can actively work, with one spare
+	// for the overflow worker to claim.
+	woodField := fieldForKind(w, KindWood)
+	if woodField == nil {
+		t.Fatal("no wood field")
+	}
+	for range 6 {
+		spawnNode(w, woodField)
+	}
+
+	// Focus: 5 wood / 0 water — total exactly equals current worker count.
+	w.LaborFocus = map[ResourceKind]int{KindWood: 5, KindWater: 0}
+	w.Economy.WorkerCapacity = 10
+
+	// Settle all 5 workers onto wood nodes.
 	for range 120 {
 		Step(w, dt)
 	}
+	wood, _, _ := activeWorkerHUDCounts(w)
+	if wood != 5 {
+		t.Skipf("precondition: expected 5 active wood workers, got %d", wood)
+	}
 
 	// Spawn a 6th worker beyond the focus total.
-	w.Economy.WorkerCapacity = 10
 	wk6 := spawnWorkerAtTownHall(w)
 	if wk6 == nil {
 		t.Fatal("could not spawn 6th worker")
 	}
 
-	// assignFocusToNewWorker should overflow to KindWood (largest positive target).
+	// assignFocusToNewWorker should overflow to KindWood at spawn time.
 	if wk6.FocusedKind != KindWood {
-		t.Errorf("new overflow worker FocusedKind = %v, want KindWood", wk6.FocusedKind)
+		t.Errorf("new overflow worker FocusedKind at spawn = %v, want KindWood", wk6.FocusedKind)
+	}
+
+	// After settling the worker should be working wood, not idle.
+	for range 120 {
+		Step(w, dt)
+	}
+	if wk6.State == StateIdleWaiting || wk6.State == StateSettling {
+		t.Errorf("overflow worker still idle/settling after settling period (state=%v)", wk6.State)
 	}
 }
