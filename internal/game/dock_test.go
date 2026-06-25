@@ -77,21 +77,13 @@ func TestDockPlacementShore(t *testing.T) {
 	}
 }
 
-// TestDockPlacementExtension verifies that a dock placed over water adjacent to
-// an existing dock is classified as an extension.
+// TestDockPlacementExtension verifies that any dock placed in open water
+// (fully within the water field, not straddling the shore) is classified as an extension.
 func TestDockPlacementExtension(t *testing.T) {
 	w := newWaterFrontierFixture()
-	shoreAngle := shoreEdgeAngle()
 
-	// Place a shore dock first.
-	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
-		t.Fatal("could not place shore dock for extension test")
-	}
-
-	// Place an extension dock just outside the shore dock's physical footprint
-	// but within the connection reach (dockConnectionPx).
-	half := buildingHardHalfArc(KindDock, w.Planet.Radius)
-	extAngle := normAngle(shoreAngle + half*2.2) // outside exclusion zone (>2*half), within connection reach
+	// Deep water: center of the lake arc, far from the shore boundary.
+	extAngle := normAngle(waterFrontierLakeAngle)
 
 	if !inLake(w, extAngle) {
 		t.Skipf("extAngle %.4f is not in water — geometry changed", extAngle)
@@ -102,14 +94,14 @@ func TestDockPlacementExtension(t *testing.T) {
 		t.Fatalf("extension preview should be KindDock, got %v", pv.Kind)
 	}
 	if !pv.Extension {
-		t.Error("preview adjacent to existing dock should be Extension")
+		t.Error("open-water dock preview should be Extension")
 	}
 	if !pv.Valid {
-		t.Error("extension dock preview should be Valid")
+		t.Error("open-water dock preview should be Valid")
 	}
 
 	if !placeBuildingWithFreePlacement(w, extAngle, true) {
-		t.Fatal("extension dock placement should succeed")
+		t.Fatal("open-water dock placement should succeed")
 	}
 	var ext *Building
 	for _, b := range w.Buildings {
@@ -121,13 +113,13 @@ func TestDockPlacementExtension(t *testing.T) {
 		t.Fatal("no extension dock building found after placement")
 	}
 	if !ext.Extension {
-		t.Error("placed extension dock should have Extension=true")
+		t.Error("placed open-water dock should have Extension=true")
 	}
 }
 
-// TestDockPlacementOpenWaterInvalid verifies that open-water angles with no
-// shore or dock connection are rejected.
-func TestDockPlacementOpenWaterInvalid(t *testing.T) {
+// TestDockPlacementOpenWaterValid verifies that open-water angles are now valid
+// dock placements without requiring shore or dock adjacency.
+func TestDockPlacementOpenWaterValid(t *testing.T) {
 	w := newWaterFrontierFixture()
 	// Well inside the water field, far from the shore boundary.
 	deepWater := normAngle(waterFrontierLakeAngle) // center of the lake arc
@@ -138,13 +130,13 @@ func TestDockPlacementOpenWaterInvalid(t *testing.T) {
 
 	pv := buildPreviewWithFreePlacement(w, deepWater, true)
 	if pv.Kind != KindDock {
-		t.Fatalf("deep-water preview should still be KindDock, got %v", pv.Kind)
+		t.Fatalf("deep-water preview should be KindDock, got %v", pv.Kind)
 	}
-	if pv.Valid {
-		t.Error("deep-water placement with no shore or dock connection should be invalid")
+	if !pv.Valid {
+		t.Error("deep-water placement should be valid")
 	}
-	if placeBuildingWithFreePlacement(w, deepWater, true) {
-		t.Error("deep-water placement should be rejected by placeBuildingWithFreePlacement")
+	if !placeBuildingWithFreePlacement(w, deepWater, true) {
+		t.Error("deep-water placement should succeed")
 	}
 }
 
@@ -179,33 +171,27 @@ func TestDockShoreCost(t *testing.T) {
 	}
 }
 
-// TestDockExtensionCost verifies extension dock deducts both wood and water costs.
+// TestDockExtensionCost verifies that open-water dock placement deducts both wood and water.
 func TestDockExtensionCost(t *testing.T) {
 	w := newWaterFrontierFixture()
 	w.Economy.Wood = 10000
 	w.Economy.Water = 10000
 
-	shoreAngle := shoreEdgeAngle()
-	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
-		t.Fatal("shore dock for extension cost test failed")
-	}
-
-	half := buildingHardHalfArc(KindDock, w.Planet.Radius)
-	extAngle := normAngle(shoreAngle + half*2.2)
-	if !inLake(w, extAngle) {
-		t.Skipf("extAngle %.4f not in water", extAngle)
+	deepWater := normAngle(waterFrontierLakeAngle)
+	if !inLake(w, deepWater) {
+		t.Skipf("deepWater %.4f not in water", deepWater)
 	}
 
 	woodBefore := w.Economy.Wood
 	waterBefore := w.Economy.Water
-	if !placeBuildingWithFreePlacement(w, extAngle, false) {
-		t.Fatal("paid extension dock placement failed")
+	if !placeBuildingWithFreePlacement(w, deepWater, false) {
+		t.Fatal("paid open-water dock placement failed")
 	}
 	if got, want := woodBefore-w.Economy.Wood, dockExtWoodCost; math.Abs(got-want) > 1e-9 {
-		t.Errorf("extension dock wood cost: deducted %.1f, want %.1f", got, want)
+		t.Errorf("open-water dock wood cost: deducted %.1f, want %.1f", got, want)
 	}
 	if got, want := waterBefore-w.Economy.Water, dockExtWaterCost; math.Abs(got-want) > 1e-9 {
-		t.Errorf("extension dock water cost: deducted %.1f, want %.1f", got, want)
+		t.Errorf("open-water dock water cost: deducted %.1f, want %.1f", got, want)
 	}
 }
 
@@ -227,6 +213,145 @@ func TestDockTraversalReducesLakePenalty(t *testing.T) {
 		t.Errorf("dock should reduce arcCost: before=%.3f after=%.3f", costBefore, costAfter)
 	}
 	_ = dest
+}
+
+// TestDockUpgrade_CostAndLevel verifies that upgradeDock deducts the correct
+// resources and increments the dock's Level from 1 to 2.
+func TestDockUpgrade_CostAndLevel(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+		}
+	}
+	if dock == nil {
+		t.Fatal("no dock after placement")
+	}
+	if dock.Level != 1 {
+		t.Fatalf("new dock should start at Level 1, got %d", dock.Level)
+	}
+
+	woodBefore := w.Economy.Wood
+	waterBefore := w.Economy.Water
+	if !upgradeDock(w, dock) {
+		t.Fatal("upgradeDock returned false (expected success)")
+	}
+	if dock.Level != 2 {
+		t.Errorf("after upgrade: Level = %d, want 2", dock.Level)
+	}
+	if got, want := woodBefore-w.Economy.Wood, dockL2WoodCost; math.Abs(got-want) > 1e-9 {
+		t.Errorf("wood deducted %.1f, want %.1f", got, want)
+	}
+	if got, want := waterBefore-w.Economy.Water, dockL2WaterCost; math.Abs(got-want) > 1e-9 {
+		t.Errorf("water deducted %.1f, want %.1f", got, want)
+	}
+}
+
+// TestDockUpgrade_Level2Blocked verifies that a Level-2 dock cannot be upgraded further.
+func TestDockUpgrade_Level2Blocked(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+		}
+	}
+	dock.Level = 2
+	if upgradeDock(w, dock) {
+		t.Error("upgradeDock should return false for a Level-2 dock")
+	}
+	if dock.Level != 2 {
+		t.Errorf("Level should remain 2, got %d", dock.Level)
+	}
+}
+
+// TestDockUpgrade_InsufficientResources verifies that upgradeDock fails when
+// wood or water is below the upgrade cost.
+func TestDockUpgrade_InsufficientResources(t *testing.T) {
+	w := newWaterFrontierFixture()
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+		}
+	}
+
+	w.Economy.Wood = dockL2WoodCost - 1
+	w.Economy.Water = dockL2WaterCost
+	if upgradeDock(w, dock) {
+		t.Error("upgradeDock should fail when wood insufficient")
+	}
+	w.Economy.Wood = dockL2WoodCost
+	w.Economy.Water = dockL2WaterCost - 1
+	if upgradeDock(w, dock) {
+		t.Error("upgradeDock should fail when water insufficient")
+	}
+	if dock.Level != 1 {
+		t.Errorf("Level should remain 1 after failed upgrades, got %d", dock.Level)
+	}
+}
+
+// TestDockUpgradeAttention verifies dockUpgradeAttentionDock returns nil when
+// fields can still spawn, and a dock when all fields are saturated but no L2 dock.
+func TestDockUpgradeAttention(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+	shoreAngle := shoreEdgeAngle()
+	if !placeBuildingWithFreePlacement(w, shoreAngle, true) {
+		t.Fatal("could not place shore dock")
+	}
+
+	// Town not full: attention should be nil.
+	if dock := dockUpgradeAttentionDock(w); dock != nil {
+		t.Error("dockUpgradeAttentionDock should return nil when town not full")
+	}
+
+	// Fill town capacity.
+	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
+		w.Economy.WorkerCapacity = max
+	}
+
+	// Fields not saturated yet: still nil.
+	if dock := dockUpgradeAttentionDock(w); dock != nil {
+		t.Error("dockUpgradeAttentionDock should return nil when fields not saturated")
+	}
+
+	// Saturate all fields.
+	fillWoodFieldNodes(w, false)
+	fillWaterFieldSparkles(w)
+
+	// Now should return the upgradeable dock.
+	dock := dockUpgradeAttentionDock(w)
+	if dock == nil {
+		t.Fatal("dockUpgradeAttentionDock should return a dock when all conditions met")
+	}
+	if dock.Level >= 2 {
+		t.Errorf("returned dock has Level %d (should be < 2)", dock.Level)
+	}
+
+	// Upgrade the dock: attention should return nil (no L1 dock remains).
+	upgradeDock(w, dock)
+	if dock := dockUpgradeAttentionDock(w); dock != nil {
+		t.Errorf("dockUpgradeAttentionDock should return nil after all docks reach L2, got dock Level=%d", dock.Level)
+	}
 }
 
 // TestDockSaveRoundTrip verifies that dock Kind, Extension, and Level fields

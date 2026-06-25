@@ -66,9 +66,9 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 		townHallBldHalfW, townHallBldHalfH, col)
 }
 
-// drawDockArt draws a |_| dock on the rim: a flat deck along the tangent with a
-// short post at each end extending outward.
-func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA) {
+// drawDockArt draws a dock on the rim. Level 1 (or 0): a flat deck with end
+// posts (|_| shape). Level 2: adds a railing bar connecting the post tops (|=| shape).
+func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA, level int) {
 	pos := p.RimPoint(angle)
 	ox := float32(math.Cos(angle))
 	oy := float32(math.Sin(angle))
@@ -84,6 +84,14 @@ func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA) {
 		px := cx + tx*(s*dockDeckHalfLen) + ox*dockPostHalfH
 		py := cy + ty*(s*dockDeckHalfLen) + oy*dockPostHalfH
 		drawOrientedRect(scene, px, py, tx, ty, ox, oy, dockPostHalfW, dockPostHalfH, col)
+	}
+	// Level 2: top railing connecting post tops.
+	if level >= 2 {
+		const dockRailHalfH = float32(0.7)
+		railOffset := dockPostHalfH*2 + dockRailHalfH
+		railCx := cx + ox*railOffset
+		railCy := cy + oy*railOffset
+		drawOrientedRect(scene, railCx, railCy, tx, ty, ox, oy, dockDeckHalfLen, dockRailHalfH, col)
 	}
 }
 

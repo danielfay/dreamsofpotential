@@ -173,9 +173,8 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 }
 
 // dockPreview builds a placement preview for an angle that is in a water field.
-// Shore docks (footprint touches non-water) cost Wood only; extension docks
-// (connected to an existing dock over water) cost Wood + Water.
-// Placement in open water with no shore or dock connection is invalid.
+// Shore docks (footprint touches non-water) cost Wood only; open-water docks
+// cost Wood + Water. Any position in a water field is valid.
 func dockPreview(w *World, angle float64, freePlacement bool,
 	free []previewRoute, freeTotal int,
 	claimed []*ResourceNode, claimedTotal int,
@@ -188,30 +187,13 @@ func dockPreview(w *World, angle float64, freePlacement bool,
 	extension := false
 	var affordable bool
 
-	switch {
-	case isShore(w, angle, half):
+	if isShore(w, angle, half) {
 		// Shore dock: footprint straddles water/land boundary.
 		affordable = freePlacement || w.Economy.Wood >= dockShoreCost
-	case nearDock(w, angle, half):
-		// Extension dock: water-only, connected to an existing dock.
+	} else {
+		// Open-water dock: anywhere in a water field; costs Wood + Water.
 		extension = true
 		affordable = freePlacement || (w.Economy.Wood >= dockExtWoodCost && w.Economy.Water >= dockExtWaterCost)
-	default:
-		// Open water with no shore or dock connection: always invalid.
-		return placementPreview{
-			Kind:             KindDock,
-			Angle:            angle,
-			Pos:              w.Planet.RimPoint(angle),
-			Valid:            false,
-			Affordable:       false,
-			Free:             free,
-			FreeTotal:        freeTotal,
-			Claimed:          claimed,
-			ClaimedTotal:     claimedTotal,
-			Reserved:         reserved,
-			ReservedTotal:    reservedTotal,
-			BlockedBuildings: blockedBuildings,
-		}
 	}
 
 	valid := affordable && len(blockedBuildings) == 0
@@ -246,20 +228,6 @@ func isShore(w *World, angle, halfArc float64) bool {
 	return false
 }
 
-// nearDock reports whether any existing KindDock building is within the
-// dockConnectionPx reach of angle, allowing extension docks to chain off
-// an existing dock without requiring footprint overlap. The connection radius
-// is intentionally larger than the hard-footprint exclusion radius so an
-// extension can sit just outside the shore dock's physical footprint.
-func nearDock(w *World, angle, _ float64) bool {
-	connHalf := dockConnectionPx / w.Planet.Radius
-	for _, b := range w.Buildings {
-		if b.Kind == KindDock && math.Abs(normAngle(angle-b.Angle)) <= connHalf {
-			return true
-		}
-	}
-	return false
-}
 
 func placementBlockedNodes(w *World, kind BuildingKind, angle float64) []*ResourceNode {
 	var blocked []*ResourceNode

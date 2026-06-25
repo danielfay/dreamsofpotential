@@ -502,13 +502,16 @@ func updateWorkerPos(w *World, wk *Worker) {
 // ── Water harvesting helpers ──────────────────────────────────────────────────
 
 // assignServicingDocks assigns each interior water sparkle to the nearest dock
-// whose reach wedge (dockWedgeHalfArc) contains it. Sparkles outside all wedges
-// get ServicingDockID = -1. Called every Step tick.
+// whose reach wedge contains it. Wedge membership requires both angular proximity
+// (dockWedgeHalfArc) and radial depth: L1 docks reach 1/3 of the planet radius
+// from the rim; L2 docks reach all the way to the center. Sparkles outside all
+// wedges get ServicingDockID = -1. Called every Step tick.
 func assignServicingDocks(w *World) {
 	for _, n := range w.Nodes {
 		if !n.Interior || n.Kind != KindWater {
 			continue
 		}
+		depthFromRim := w.Planet.Radius - w.Planet.Center.Dist(n.Pos)
 		var best *Building
 		bestDist := math.MaxFloat64
 		for _, b := range w.Buildings {
@@ -516,10 +519,18 @@ func assignServicingDocks(w *World) {
 				continue
 			}
 			dist := angularDistance(n.Angle, b.Angle)
-			if dist <= dockWedgeHalfArc && dist < bestDist {
-				bestDist = dist
-				best = b
+			if dist > dockWedgeHalfArc || dist >= bestDist {
+				continue
 			}
+			maxDepth := w.Planet.Radius / 3
+			if b.Level >= 2 {
+				maxDepth = w.Planet.Radius
+			}
+			if depthFromRim > maxDepth {
+				continue
+			}
+			bestDist = dist
+			best = b
 		}
 		if best != nil {
 			n.ServicingDockID = best.ID

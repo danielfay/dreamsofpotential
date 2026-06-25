@@ -18,71 +18,92 @@ func forestPlanetComplete(w *World) bool {
 	return hasKnownForest
 }
 
-// updateActiveAbstractRate samples EstimateRate into a rolling bucket-min window and
-// ratchets AbstractRate upward (raise-only) when the sustained floor exceeds the stored
-// value. The window resets on planet change so pre-filled samples can't carry across
-// enter/exit cycles (anti-fishing). Call only from the post-unlock planet-view branch of Tick.
+// abstractRateSpec pairs a live rate estimator with the PlanetState field it updates.
+// Add an entry here to track any new resource — the rolling-window update handles the rest.
+type abstractRateSpec struct {
+	estimate func(*World) float64
+	getField func(*SystemPlanet) *float64
+}
+
+var activeAbstractRateSpecs = []abstractRateSpec{
+	{EstimateRate, func(p *SystemPlanet) *float64 { return &p.AbstractRate }},
+	{EstimateWaterRate, func(p *SystemPlanet) *float64 { return &p.AbstractWaterRate }},
+}
+
+// updateActiveAbstractRate samples each resource estimator into its own rolling
+// bucket-min window and ratchets the planet's abstract rate upward (raise-only)
+// when the sustained floor exceeds the stored value. Windows reset on planet
+// change so pre-filled samples can't carry across enter/exit cycles (anti-fishing).
+// Call only from the post-unlock planet-view branch of Tick.
 func updateActiveAbstractRate(w *World, dt float64) {
-	win := &w.abstractRateWin
+	if len(w.abstractRateWins) != len(activeAbstractRateSpecs) {
+		w.abstractRateWins = make([]abstractRateWindow, len(activeAbstractRateSpecs))
+	}
+
 	bucketSpan := abstractRateWindowSec / abstractRateBuckets
-
-	// Reset when the active planet has changed (or on first call).
-	if win.planet != w.Active || len(win.buckets) == 0 {
-		win.buckets = make([]float64, abstractRateBuckets)
-		for i := range win.buckets {
-			win.buckets[i] = 1e18 // sentinel: unwritten bucket never constrains min
-		}
-		win.idx = 0
-		win.filled = 0
-		win.elapsed = 0
-		win.planet = w.Active
-	}
-
-	rate := EstimateRate(w)
-
-	// Advance the bucket pointer when the current bucket's span has elapsed.
-	win.elapsed += dt
-	for win.elapsed >= bucketSpan {
-		win.elapsed -= bucketSpan
-		win.idx = (win.idx + 1) % abstractRateBuckets
-		// Overwrite the oldest bucket with a fresh sentinel before accumulating.
-		win.buckets[win.idx] = 1e18
-		if win.filled < abstractRateBuckets {
-			win.filled++
-		}
-	}
-
-	// Fold the current rate into the active bucket's running minimum.
-	if rate < win.buckets[win.idx] {
-		win.buckets[win.idx] = rate
-	}
-
-	// Only update AbstractRate once every bucket has been written at least once.
-	if win.filled < abstractRateBuckets {
-		return
-	}
-
-	// Window minimum = sustained floor over the full window.
-	windowMin := win.buckets[0]
-	for _, b := range win.buckets[1:] {
-		if b < windowMin {
-			windowMin = b
-		}
-	}
-
 	p := &w.System.Planets[w.Active]
-	if windowMin > p.AbstractRate {
-		p.AbstractRate = windowMin
+
+	for i, spec := range activeAbstractRateSpecs {
+		win := &w.abstractRateWins[i]
+
+		// Reset when the active planet has changed (or on first call).
+		if win.planet != w.Active || len(win.buckets) == 0 {
+			win.buckets = make([]float64, abstractRateBuckets)
+			for j := range win.buckets {
+				win.buckets[j] = 1e18 // sentinel: unwritten bucket never constrains min
+			}
+			win.idx = 0
+			win.filled = 0
+			win.elapsed = 0
+			win.planet = w.Active
+		}
+
+		rate := spec.estimate(w)
+
+		// Advance the bucket pointer when the current bucket's span has elapsed.
+		win.elapsed += dt
+		for win.elapsed >= bucketSpan {
+			win.elapsed -= bucketSpan
+			win.idx = (win.idx + 1) % abstractRateBuckets
+			win.buckets[win.idx] = 1e18
+			if win.filled < abstractRateBuckets {
+				win.filled++
+			}
+		}
+
+		// Fold the current rate into the active bucket's running minimum.
+		if rate < win.buckets[win.idx] {
+			win.buckets[win.idx] = rate
+		}
+
+		// Only update once every bucket has been written at least once.
+		if win.filled < abstractRateBuckets {
+			continue
+		}
+
+		// Window minimum = sustained floor over the full window.
+		windowMin := win.buckets[0]
+		for _, b := range win.buckets[1:] {
+			if b < windowMin {
+				windowMin = b
+			}
+		}
+
+		field := spec.getField(p)
+		if windowMin > *field {
+			*field = windowMin
+		}
 	}
 }
 
 // abstractIncome returns total abstract wood/sec from all non-active producing
 // planets. The active planet runs live (or is frozen in system view), so it is
-// excluded when in planet view to avoid double-counting. Unknown never produces.
+// excluded when in planet view to avoid double-counting. Unawakened unknowns
+// produce nothing; awakened unknowns (water frontier) can contribute AbstractRate.
 func abstractIncome(w *World) float64 {
 	var total float64
 	for i, p := range w.System.Planets {
-		if p.Kind == PlanetUnknown {
+		if p.Kind == PlanetUnknown && !p.Awakened {
 			continue
 		}
 		if w.System.View == ViewPlanet && i == w.Active {
@@ -98,7 +119,7 @@ func abstractIncome(w *World) float64 {
 func abstractWaterIncome(w *World) float64 {
 	var total float64
 	for i, p := range w.System.Planets {
-		if p.Kind == PlanetUnknown {
+		if p.Kind == PlanetUnknown && !p.Awakened {
 			continue
 		}
 		if w.System.View == ViewPlanet && i == w.Active {

@@ -167,55 +167,177 @@ func nurtureGrowthCuePending(w *World) bool {
 	return growthCueActive(w.growthCue) || len(w.pendingGrowthCues) > 0
 }
 
-// nurtureField directly spawns up to nurtureTreesPerPress new nodes across all
-// known regions of the given kind. Returns false if the resource is not yet
-// discovered, no known region exists, or a growth cue is already playing.
-// For KindWater, spawnSparkle handles interior placement; saturation upgrades.
-func nurtureField(w *World, kind ResourceKind) bool {
+// pickPlanetNurtureField selects a known, non-influence field across all kinds
+// for a Nurture press. Fields that can still accept a node/sparkle are eligible
+// (selected uniformly); if all are saturated, any known non-influence field is
+// returned so spawnNode/spawnSparkle can apply the upgrade path.
+func pickPlanetNurtureField(w *World) *ResourceField {
+	var eligible []*ResourceField
+	var fallback *ResourceField
+	for _, f := range w.Planet.Fields {
+		if !f.Known || f.Kind == KindWaterInfluence {
+			continue
+		}
+		if fallback == nil {
+			fallback = f
+		}
+		var canSpawn bool
+		if f.Kind == KindWater {
+			canSpawn = waterFieldCanSpawnSparkle(w, f)
+		} else {
+			canSpawn = fieldCanSpawnNode(w, f)
+		}
+		if canSpawn {
+			eligible = append(eligible, f)
+		}
+	}
+	if len(eligible) > 0 {
+		return eligible[w.rng.Intn(len(eligible))]
+	}
+	return fallback
+}
+
+// nurtureField directly spawns up to nurtureTreesPerPress new nodes/sparkles
+// across all known eligible fields on the active planet. Returns false if
+// resources are not yet discovered, no known field exists, or a growth cue is
+// already playing.
+func nurtureField(w *World) bool {
 	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
 		return false
 	}
-	f := pickGrowthRegion(w, kind)
-	if f == nil {
-		return false
-	}
-	if kind == KindWater {
-		for range nurtureTreesPerPress {
-			f = pickGrowthRegion(w, kind)
-			if f == nil {
-				break
-			}
-			activateGrowthCue(w, spawnSparkle(w, f))
-		}
-		return true
-	}
-	if !fieldCanSpawnNode(w, f) {
+	if pickPlanetNurtureField(w) == nil {
 		return false
 	}
 	for range nurtureTreesPerPress {
-		f = pickGrowthRegion(w, kind)
-		if f == nil || !fieldCanSpawnNode(w, f) {
+		f := pickPlanetNurtureField(w)
+		if f == nil {
 			break
 		}
-		activateGrowthCue(w, spawnNode(w, f))
+		if f.Kind == KindWater {
+			activateGrowthCue(w, spawnSparkle(w, f))
+		} else {
+			activateGrowthCue(w, spawnNode(w, f))
+		}
 	}
 	return true
 }
 
 // nurtureAttentionActive reports whether the Nurture button should show its
-// attention pulse. Fires once all worker slots are both purchased AND filled
-// with physical workers, any known region of that kind can still accept a tree,
-// and no growth cue is pending.
-func nurtureAttentionActive(w *World, kind ResourceKind) bool {
+// attention pulse. Fires when:
+//   - town is full + all worker slots filled + any known field can still spawn, or
+//   - at least one dock exists but EstimateWaterRate is zero (sparkles needed).
+func nurtureAttentionActive(w *World) bool {
 	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
 		return false
 	}
-	f := pickGrowthRegion(w, kind)
-	if f == nil || !fieldCanSpawnNode(w, f) {
+	// Dock-zero-water rule: nudge player to grow sparkles for idle docks.
+	if dockExists(w) && EstimateWaterRate(w) == 0 {
+		return true
+	}
+	// Standard rule: town is full + any field can still spawn.
+	slots := maxTownSlots(w)
+	if slots <= 0 || !townFieldFull(w) || len(w.Workers) < slots {
 		return false
 	}
-	slots := maxTownSlots(w)
-	return slots > 0 && townFieldFull(w) && len(w.Workers) >= slots
+	for _, f := range w.Planet.Fields {
+		if !f.Known || f.Kind == KindWaterInfluence {
+			continue
+		}
+		if f.Kind == KindWater {
+			if waterFieldCanSpawnSparkle(w, f) {
+				return true
+			}
+		} else {
+			if fieldCanSpawnNode(w, f) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// anyFieldCanSpawn reports whether any known non-influence field on the active
+// planet can still accept a new node or sparkle.
+func anyFieldCanSpawn(w *World) bool {
+	for _, f := range w.Planet.Fields {
+		if !f.Known || f.Kind == KindWaterInfluence {
+			continue
+		}
+		if f.Kind == KindWater {
+			if waterFieldCanSpawnSparkle(w, f) {
+				return true
+			}
+		} else {
+			if fieldCanSpawnNode(w, f) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dockExists reports whether the world has at least one dock building.
+func dockExists(w *World) bool {
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			return true
+		}
+	}
+	return false
+}
+
+// upgradeDock spends dockL2WoodCost wood and dockL2WaterCost water to upgrade
+// a dock from Level 1 to Level 2. Returns false if the dock is nil, not a dock,
+// already at Level ≥ 2, or resources are insufficient.
+func upgradeDock(w *World, dock *Building) bool {
+	if dock == nil || dock.Kind != KindDock || dock.Level >= 2 {
+		return false
+	}
+	if w.Economy.Wood < dockL2WoodCost || w.Economy.Water < dockL2WaterCost {
+		return false
+	}
+	w.Economy.Wood -= dockL2WoodCost
+	w.Economy.Water -= dockL2WaterCost
+	dock.Level = 2
+	activatePulse(w, &dock.Pulse)
+	return true
+}
+
+// canUpgradeDock reports whether dock can be upgraded to Level 2 right now.
+func canUpgradeDock(w *World, dock *Building) bool {
+	if dock == nil || dock.Kind != KindDock || dock.Level >= 2 {
+		return false
+	}
+	return w.Economy.Wood >= dockL2WoodCost && w.Economy.Water >= dockL2WaterCost
+}
+
+// dockUpgradeAttentionDock returns the first Level-1 dock to pulse when the
+// upgrade attention cue should fire: town is capacity-full, all known fields are
+// saturated, and no dock has reached Level 2 yet.
+func dockUpgradeAttentionDock(w *World) *Building {
+	if !townFieldFull(w) {
+		return nil
+	}
+	for _, f := range w.Planet.Fields {
+		if !f.Known || f.Kind == KindWaterInfluence {
+			continue
+		}
+		if f.Kind == KindWater {
+			if waterFieldCanSpawnSparkle(w, f) {
+				return nil
+			}
+		} else {
+			if fieldCanSpawnNode(w, f) {
+				return nil
+			}
+		}
+	}
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock && b.Level < 2 {
+			return b
+		}
+	}
+	return nil
 }
 
 // EstimateRate returns the analytic resource/sec for all active workers.

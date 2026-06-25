@@ -30,15 +30,16 @@ func WriteScreenshotSet(dir string) error {
 }
 
 type screenshotScenario struct {
-	name         string
-	world        *World
-	preview      *placementPreview
-	fullHUD      bool
-	debug        bool
-	debugSection int
-	placing      bool
+	name          string
+	world         *World
+	preview       *placementPreview
+	fullHUD       bool
+	debug         bool
+	debugSection  int
+	placing       bool
 	revealActive  bool
 	revealElapsed float64
+	selectBuilding *int // non-nil: select this building index (for tray screenshots)
 }
 
 func screenshotScenarios() []screenshotScenario {
@@ -78,6 +79,9 @@ func screenshotScenarios() []screenshotScenario {
 		systemViewFrontierAwakenedScenario(),
 		waterPlanetFirstDockScenario(),
 		waterPlanetSparklesScenario(),
+		waterPlanetDockUpgradeSelectedScenario(),
+		waterPlanetNearCompleteNoL2DockScenario(),
+		dockConeVisibilityScenario(),
 	}
 }
 
@@ -595,9 +599,98 @@ func systemViewFrontierAwakenedScenario() screenshotScenario {
 func waterPlanetFirstDockScenario() screenshotScenario {
 	wood := 500.0
 	enter := 3
-	// Shore boundary on water frontier is at ±waterFrontierShoreArc from waterFrontierShoreAngle.
-	// The shore/water edge is at waterFrontierShoreAngle + waterFrontierShoreArc ≈ -π/2 + π/4 = -π/4.
-	dockAngle := waterFrontierShoreAngle + waterFrontierShoreArc - 0.05 // just inside water at the shore edge
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:    []int{1},
+		AwakenFrontier:    true,
+		EnterPlanet:       &enter,
+		EchoPlaceTownHall: true,
+		EchoDocks:         []float64{waterFrontierLakeAngle},
+		Wood:              &wood,
+	})
+	dockIdx := -1
+	for i, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dockIdx = i
+			break
+		}
+	}
+	return screenshotScenario{name: "33-water-planet-first-dock", world: w, fullHUD: true, selectBuilding: &dockIdx}
+}
+
+func waterPlanetSparklesScenario() screenshotScenario {
+	wood := 50.0
+	enter := 3
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:     []int{1},
+		AwakenFrontier:     true,
+		EnterPlanet:        &enter,
+		EchoPlaceTownHall:  true,
+		EchoDocks:          []float64{waterFrontierLakeAngle},
+		SaturateWaterField: true,
+		Wood:               &wood,
+	})
+	return screenshotScenario{name: "34-water-planet-sparkles", world: w, fullHUD: true}
+}
+
+// waterPlanetDockUpgradeSelectedScenario shows the water frontier with a dock
+// selected and the upgrade tray visible. The dock is at Level 1 and the player
+// has enough resources to upgrade.
+func waterPlanetDockUpgradeSelectedScenario() screenshotScenario {
+	wood := dockL2WoodCost * 2
+	water := dockL2WaterCost * 2
+	enter := 3
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:    []int{1},
+		AwakenFrontier:    true,
+		EnterPlanet:       &enter,
+		EchoPlaceTownHall: true,
+		EchoDocks:         []float64{waterFrontierLakeAngle},
+		Wood:              &wood,
+	})
+	w.Economy.Water = water
+	dockIdx := -1
+	for i, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dockIdx = i
+			break
+		}
+	}
+	return screenshotScenario{name: "35-water-planet-dock-upgrade-selected", world: w, fullHUD: true, selectBuilding: &dockIdx}
+}
+
+// waterPlanetNearCompleteNoL2DockScenario shows the water frontier near
+// completion: town capacity full, both fields saturated, dock exists but is
+// still Level 1.
+func waterPlanetNearCompleteNoL2DockScenario() screenshotScenario {
+	wood := 50.0
+	enter := 3
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes:     []int{1},
+		AwakenFrontier:     true,
+		EnterPlanet:        &enter,
+		EchoPlaceTownHall:  true,
+		EchoDocks:          []float64{waterFrontierLakeAngle},
+		SaturateWaterField: true,
+		Wood:               &wood,
+	})
+	return screenshotScenario{name: "36-water-planet-near-complete-no-l2-dock", world: w, fullHUD: true}
+}
+
+// dockConeVisibilityScenario places a single L1 dock at the bottom-center of the
+// water field (most visible position) with no other clutter, specifically to
+// verify the cone color and transparency.
+func dockConeVisibilityScenario() screenshotScenario {
+	enter := 3
+	// waterFrontierLakeAngle = Pi/2, the bottom-center of the water arc.
+	dockAngle := waterFrontierLakeAngle
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
 		SaturateWoodField: true, Reveal: true,
@@ -606,34 +699,8 @@ func waterPlanetFirstDockScenario() screenshotScenario {
 		EnterPlanet:    &enter,
 		EchoPlaceTownHall: true,
 		EchoDocks:      []float64{dockAngle},
-		Wood:           &wood,
 	})
-	// Select the dock so the tray is visible.
-	for i, b := range w.Buildings {
-		if b.Kind == KindDock {
-			_ = i // selectedBuildingID lives in Game, not World — tray not shown in screenshot
-			break
-		}
-	}
-	return screenshotScenario{name: "33-water-planet-first-dock", world: w, fullHUD: true}
-}
-
-func waterPlanetSparklesScenario() screenshotScenario {
-	wood := 50.0
-	enter := 3
-	dockAngle := waterFrontierShoreAngle + waterFrontierShoreArc - 0.05
-	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
-		CompleteEchoes:    []int{1},
-		AwakenFrontier:    true,
-		EnterPlanet:       &enter,
-		EchoPlaceTownHall: true,
-		EchoDocks:         []float64{dockAngle},
-		SaturateWaterField: true,
-		Wood:              &wood,
-	})
-	return screenshotScenario{name: "34-water-planet-sparkles", world: w, fullHUD: true}
+	return screenshotScenario{name: "37-dock-cone-visibility", world: w, fullHUD: false}
 }
 
 func intPtr(v int) *int { return &v }
@@ -707,15 +774,20 @@ func (g *screenshotGame) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 	const scale = 2
+	selectedBldID := -1
+	if shot.selectBuilding != nil {
+		selectedBldID = *shot.selectBuilding
+	}
 	game := &Game{
-		world:         shot.world,
-		scene:         ebiten.NewImage(virtW, virtH),
-		hudScale:      scale,
-		hudDigits:     woodDigits(shot.world.Economy.Wood),
-		preview:       shot.preview,
-		placing:       shot.placing,
-		debug:         shot.debug,
-		debugSection:  shot.debugSection,
+		world:              shot.world,
+		scene:              ebiten.NewImage(virtW, virtH),
+		hudScale:           scale,
+		hudDigits:          woodDigits(shot.world.Economy.Wood),
+		preview:            shot.preview,
+		placing:            shot.placing,
+		debug:              shot.debug,
+		debugSection:       shot.debugSection,
+		selectedBuildingID: selectedBldID,
 		revealActive:  shot.revealActive,
 		revealElapsed: shot.revealElapsed,
 	}

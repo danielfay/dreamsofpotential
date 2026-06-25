@@ -44,8 +44,9 @@ type Game struct {
 	hudDigits                 int         // digit count of wood at last HUD build; triggers rebuild on grow
 	saveTimer                 float64     // counts down to next autosave
 	nurtureConfirmLeft        float64     // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown  float64     // counts down to next attention pulse fire
-	nurtureAttentionPulseLeft float64     // seconds remaining on the current attention flash
+	nurtureAttentionCooldown       float64 // counts down to next Nurture attention pulse
+	nurtureAttentionPulseLeft      float64 // seconds remaining on the Nurture attention flash
+	dockUpgradeAttentionCooldown   float64 // counts down to next dock-upgrade attention pulse
 	holdAction                int         // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                 float64     // counts down to next repeat fire
 	holdDuration              float64     // total seconds the current hold has been active
@@ -65,8 +66,10 @@ type Game struct {
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
 
-	// planet-view selected building (dock-only scaffold for Phase 6 upgrade slot)
-	selectedBuildingID int // index into w.Buildings; -1 = none
+	// planet-view selected building (dock tray with upgrade action)
+	selectedBuildingID int     // index into w.Buildings; -1 = none
+	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
+	dockTrayRect       sysRect // entire tray background rect (clicking anywhere dismisses)
 }
 
 // sysRect is a simple native-space hit-test rectangle.
@@ -86,7 +89,8 @@ func New() (*Game, error) {
 		hudScale:                 initialScale,
 		hudDigits:                woodDigits(w.Economy.Wood),
 		saveTimer:                autoSavePeriod,
-		nurtureAttentionCooldown: nurtureAttentionInterval,
+		nurtureAttentionCooldown:     nurtureAttentionInterval,
+		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
 		importCh:                 make(chan *World, 1),
 		sysDoubleClickPlanet:     -1,
 		selectedBuildingID:       -1,
@@ -133,7 +137,7 @@ func (g *Game) activateHold(action int) {
 func (g *Game) tryHoldAction(action int) bool {
 	switch action {
 	case holdNurture:
-		if nurtureField(g.world, KindWood) {
+		if nurtureField(g.world) {
 			g.nurtureConfirmLeft = nurtureConfirmDuration
 			return true
 		}
@@ -234,8 +238,15 @@ func (g *Game) Update() error {
 		g.nurtureAttentionCooldown -= dt
 		if g.nurtureAttentionCooldown <= 0 {
 			g.nurtureAttentionCooldown = nurtureAttentionInterval
-			if nurtureAttentionActive(g.world, KindWood) {
+			if nurtureAttentionActive(g.world) {
 				g.nurtureAttentionPulseLeft = nurtureAttentionPulseDur
+			}
+		}
+		g.dockUpgradeAttentionCooldown -= dt
+		if g.dockUpgradeAttentionCooldown <= 0 {
+			g.dockUpgradeAttentionCooldown = nurtureAttentionInterval
+			if dock := dockUpgradeAttentionDock(g.world); dock != nil {
+				activatePulse(g.world, &dock.Pulse)
 			}
 		}
 		if g.rejectTime > 0 {
@@ -499,26 +510,51 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 // ── System-view overlay (native screen space) ─────────────────────────────────
 
+// sysTrayRateSpec describes one resource row in the system planet tray.
+// Add an entry here to display any new resource — the tray loop handles the rest.
+type sysTrayRateSpec struct {
+	getRate func(SystemPlanet) float64
+	iconCol color.RGBA
+	textCol color.RGBA
+}
+
+var sysTrayRateSpecs = []sysTrayRateSpec{
+	{func(p SystemPlanet) float64 { return p.AbstractRate }, colWoodResource, colWoodLabel},
+	{func(p SystemPlanet) float64 { return p.AbstractWaterRate }, colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220}},
+}
+
 // drawSystemOverlay draws the system HUD and selected-planet tray.
 func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
 
-	// Global wood amount and rate — top-left, drawn on screen at native resolution.
+	// Global resources — top-left, drawn on screen at native resolution.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
-		hudStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world)))
 		swSize := float32(8 * scale)
 		swX := float32(4 * scale)
 		swY := float32(4 * scale)
+		rowGap := swSize + float32(3*scale)
+
+		// Wood row.
+		woodStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world)))
 		vector.FillRect(screen, swX, swY, swSize, swSize, colWoodResource, false)
 		textX := swX + swSize + float32(3*scale)
-		_, textH := text.Measure(hudStr, face, 0)
-		textY := swY + swSize - float32(textH)
-		drawSysText(screen, hudStr, textX, textY, colWoodLabel, face)
+		_, textH := text.Measure(woodStr, face, 0)
+		drawSysText(screen, woodStr, textX, swY+swSize-float32(textH), colWoodLabel, face)
+
+		// Water row: shown after first water delivery.
+		nextRowY := swY + rowGap
+		if g.world.Economy.WaterDiscovered {
+			waterStr := fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(abstractWaterIncome(g.world)))
+			vector.FillRect(screen, swX, nextRowY, swSize, swSize, colSparkle, false)
+			_, wTextH := text.Measure(waterStr, face, 0)
+			drawSysText(screen, waterStr, textX, nextRowY+swSize-float32(wTextH),
+				color.RGBA{R: 100, G: 200, B: 255, A: 220}, face)
+			nextRowY += rowGap
+		}
 
 		// Earned Potential circles — one per kind, shown only after first award.
-		// Rendered in enum order so layout is deterministic.
-		potRow := swY + swSize + float32(3*scale)
+		potRow := nextRowY
 		potR := float32(4 * scale)
 		potCols := []struct {
 			kind PotentialKind
@@ -564,12 +600,31 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	swY := ty + (th-swSize)/2
 	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
 
-	// Rate text — align the measured text box bottom with the swatch bottom so
-	// both elements have the same bottom margin inside the tray.
-	rateStr := fmt.Sprintf("%.1f/s", p.AbstractRate)
-	_, rateH := text.Measure(rateStr, face, 0)
+	// Resource rates — draw each non-zero rate as [icon] [N.N/s], left-to-right.
+	// Text bottom is aligned with the swatch bottom for a consistent baseline.
+	iconSz := float32(6 * scale)
+	iconY := swY + (swSize-iconSz)/2
+	_, rateH := text.Measure("0", face, 0)
 	rateY := swY + swSize - float32(rateH)
-	drawSysText(screen, rateStr, swX+swSize+float32(4*scale), rateY, colWoodLabel, face)
+	cx := swX + swSize + float32(4*scale)
+	drewAny := false
+	for _, spec := range sysTrayRateSpecs {
+		rate := spec.getRate(p)
+		if rate <= 0 {
+			continue
+		}
+		vector.FillRect(screen, cx, iconY, iconSz, iconSz, spec.iconCol, false)
+		cx += iconSz + float32(2*scale)
+		rateStr := fmt.Sprintf("%.1f/s", rate)
+		drawSysText(screen, rateStr, cx, rateY, spec.textCol, face)
+		rw, _ := text.Measure(rateStr, face, 0)
+		cx += float32(rw) + float32(4*scale)
+		drewAny = true
+	}
+	if !drewAny {
+		// Newly awakened planet with no measured rate yet — show wood placeholder.
+		drawSysText(screen, "-.--/s", cx, rateY, colWoodLabel, face)
+	}
 
 	// Right side of tray: awaken button for un-awakened echoes, enter button for zoomable planets.
 	g.sysEnterRect = sysRect{}
@@ -680,6 +735,7 @@ func clearTransientUI(g *Game) {
 	g.holdDuration = 0
 	g.showMenu = false
 	g.selectedBuildingID = -1
+	g.dockUpgradeRect = sysRect{}
 }
 
 // drawReturnToSystemButton draws and records the top-right return-to-system button.
@@ -709,44 +765,146 @@ func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
 }
 
 // drawDockTray draws a bottom tray when a dock building is selected.
-// The upgrade action slot is empty in Phase 3 — wired in Phase 6.
+// Shows dock identity on the left and an upgrade action on the right.
+// Level 1 docks show the L1→L2 upgrade cost (Wood + Water). Level 2 docks
+// show a quiet Level-3 tease (unnamed future resource, not purchasable).
 func (g *Game) drawDockTray(screen *ebiten.Image) {
 	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
+		g.dockUpgradeRect = sysRect{}
+		g.dockTrayRect = sysRect{}
 		return
 	}
 	b := g.world.Buildings[g.selectedBuildingID]
 	if b.Kind != KindDock {
+		g.dockUpgradeRect = sysRect{}
+		g.dockTrayRect = sysRect{}
 		return
 	}
 
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
 	face := g.hud.sysface
 	if face == nil {
+		g.dockUpgradeRect = sysRect{}
+		g.dockTrayRect = sysRect{}
 		return
 	}
 
 	const trayVH = float64(20)
-	const trayVW = float64(90)
-	tw, th := float32(trayVH*scale), float32(trayVH*scale)
-	tw = float32(trayVW * scale)
+	const trayVW = float64(108)
+	tw := float32(trayVW * scale)
+	th := float32(trayVH * scale)
 	tx := float32(g.screenW)/2 - tw/2
 	ty := float32(g.screenH) - th - float32(4*scale)
 
 	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
 	vector.StrokeRect(screen, tx, ty, tw, th, 1, colSysTrayBorder, false)
+	g.dockTrayRect = sysRect{x: tx, y: ty, w: tw, h: th}
 
-	// Dock color swatch.
+	sp := float32(scale)
+
+	// ── Left section: dock identity ───────────────────────────────────────────
 	swSize := float32(10 * scale)
-	swX := tx + float32(5*scale)
+	swX := tx + 5*sp
 	swY := ty + (th-swSize)/2
 	vector.FillRect(screen, swX, swY, swSize, swSize, colDock, false)
 
-	// Building name label.
-	label := "Dock"
-	if b.Extension {
-		label = "Dock (ext)"
+	// Level pips: N upward triangles (1 = L1, 2 = L2).
+	level := b.Level
+	if level == 0 {
+		level = 1
 	}
-	_, lH := text.Measure(label, face, 0)
-	lY := swY + swSize - float32(lH)
-	drawSysText(screen, label, swX+swSize+float32(4*scale), lY, colWoodLabel, face)
+	pipHalfW := float32(3 * scale)
+	pipGap := float32(2 * scale)
+	pipCY := ty + th/2
+	pipX := swX + swSize + 5*sp + pipHalfW
+	for i := 0; i < level; i++ {
+		drawUpTriangle(screen, pipX+float32(i)*(pipHalfW*2+pipGap), pipCY, pipHalfW, colSysTrayBorder)
+	}
+
+	// ── Right section: upgrade action ─────────────────────────────────────────
+	const actionW = float64(52)
+	axLeft := tx + tw - float32(actionW*scale)
+	actionH := th - 4*sp
+	ayTop := ty + 2*sp
+
+	// Separator line.
+	vector.StrokeLine(screen, axLeft-1, ty+2*sp, axLeft-1, ty+th-2*sp, 1, colSysTrayBorder, false)
+
+	if b.Level >= 2 {
+		// Level-3 tease: grey square + label, non-interactive.
+		g.dockUpgradeRect = sysRect{}
+		greyCol := color.RGBA{R: 60, G: 60, B: 80, A: 200}
+		qSize := float32(8 * scale)
+		qX := axLeft + 4*sp
+		qY := ayTop + (actionH-qSize)/2
+		vector.FillRect(screen, qX, qY, qSize, qSize, greyCol, false)
+		// 3 dim triangles hint at a future third level.
+		pipHalfW := float32(3 * scale)
+		pipGap := float32(2 * scale)
+		pipCY := qY + qSize/2
+		pipX := qX + qSize + 3*sp + pipHalfW
+		for i := 0; i < 3; i++ {
+			drawUpTriangle(screen, pipX+float32(i)*(pipHalfW*2+pipGap), pipCY, pipHalfW, greyCol)
+		}
+	} else {
+		// Level-1 upgrade button: fills from bottom as resources accumulate.
+		btnX := axLeft + 2*sp
+		btnW := tw - float32(actionW*scale) - 4*sp
+		btnH := actionH
+
+		affordable := canUpgradeDock(g.world, b)
+
+		// Dark base.
+		vector.FillRect(screen, btnX, ayTop, btnW, btnH, colSysTrayFill, false)
+
+		// Fill from bottom to top based on the scarcer of the two resources.
+		woodFrac := affordabilityFrac(g.world.Economy.Wood, dockL2WoodCost)
+		waterFrac := affordabilityFrac(g.world.Economy.Water, dockL2WaterCost)
+		frac := woodFrac
+		if waterFrac < frac {
+			frac = waterFrac
+		}
+		if frac > 0 && frac < 1 {
+			fillH := btnH * frac
+			vector.FillRect(screen, btnX, ayTop+btnH-fillH, btnW, fillH,
+				color.RGBA{R: 30, G: 55, B: 100, A: 200}, false)
+		} else if affordable {
+			vector.FillRect(screen, btnX, ayTop, btnW, btnH,
+				color.RGBA{R: 30, G: 55, B: 100, A: 200}, false)
+		}
+
+		borderCol := colSysTrayBorder
+		if affordable {
+			borderCol = color.RGBA{R: 80, G: 120, B: 200, A: 220}
+		}
+		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
+
+		// Attention pulse: glow when dock's pulse is active.
+		if pulseActive(g.world, b.Pulse) {
+			atCol := colNurtureAttention
+			atCol.A = 180
+			vector.StrokeRect(screen, btnX-1, ayTop-1, btnW+2, btnH+2, 1.5, atCol, false)
+		}
+
+		g.dockUpgradeRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
+
+		// Cost icons: always use full color so they're visible against the dark/fill background.
+		iconSize := float32(6 * scale)
+		iconY := ayTop + (btnH-iconSize)/2
+		cx := btnX + 4*sp
+
+		// Wood cost icon + amount.
+		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colWoodResource, false)
+		cx += iconSize + 2*sp
+		woodStr := fmt.Sprintf("%.0f", dockL2WoodCost)
+		drawSysText(screen, woodStr, cx, iconY, colWoodLabel, face)
+		ww, _ := text.Measure(woodStr, face, 0)
+		cx += float32(ww) + 3*sp
+
+		// Water cost icon + amount.
+		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colSparkle, false)
+		cx += iconSize + 2*sp
+		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
+		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
+	}
 }

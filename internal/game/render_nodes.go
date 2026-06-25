@@ -75,14 +75,11 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	case KindTownHall:
 		drawTownHallArt(scene, planet, pv.Angle, col)
 	case KindDock:
-		// Dive-reach wedge: narrow inward sector showing worker reach from this dock.
+		// Dive-reach wedge: L1 annular sector anchored at the rim, reaching 1/3 inward.
 		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)
-		wedgeR := radius - dockWedgeDepth
-		if wedgeR > 0 {
-			drawFilledSector(scene, cx, cy, wedgeR,
-				pv.Angle-dockWedgeHalfArc, pv.Angle+dockWedgeHalfArc, colDockWedge)
-		}
-		drawDockArt(scene, planet, pv.Angle, col)
+		drawDockReachSector(scene, cx, cy, radius*2/3, radius,
+			pv.Angle-dockWedgeHalfArc, pv.Angle+dockWedgeHalfArc)
+		drawDockArt(scene, planet, pv.Angle, col, 1) // preview always shows L1 visual
 	default: // KindLoggingCamp
 		vector.FillRect(scene,
 			float32(pv.Pos.X)-campBldHalf, float32(pv.Pos.Y)-campBldHalf,

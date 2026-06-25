@@ -43,6 +43,16 @@ func blendColor(col color.RGBA, target color.RGBA, amount uint8) color.RGBA {
 	return color.RGBA{R: r8, G: g8, B: b8, A: col.A}
 }
 
+func premultiplyRGBA(col color.RGBA) color.RGBA {
+	a := uint16(col.A)
+	return color.RGBA{
+		R: uint8(uint16(col.R) * a / 255),
+		G: uint8(uint16(col.G) * a / 255),
+		B: uint8(uint16(col.B) * a / 255),
+		A: col.A,
+	}
+}
+
 // drawRimArc strokes an arc from angle a to b along planet's rim with the
 // given line width and colour, following the short way round.
 func drawRimArc(scene *ebiten.Image, planet Planet, a, b, width float32, col color.RGBA) {
@@ -70,6 +80,20 @@ func drawArcAtRadius(scene *ebiten.Image, planet Planet, radius, a, b, width flo
 	drawOp := &vector.DrawPathOptions{}
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.StrokePath(scene, &path, sop, drawOp)
+}
+
+// drawUpTriangle draws a small filled upward-pointing triangle.
+// (cx, cy) is the centroid; halfW is the half-base width.
+func drawUpTriangle(scene *ebiten.Image, cx, cy, halfW float32, col color.RGBA) {
+	h := halfW * 1.5
+	var path vector.Path
+	path.MoveTo(cx, cy-h*2/3)
+	path.LineTo(cx+halfW, cy+h/3)
+	path.LineTo(cx-halfW, cy+h/3)
+	path.Close()
+	op := &vector.DrawPathOptions{}
+	op.ColorScale.ScaleWithColor(col)
+	vector.FillPath(scene, &path, nil, op)
 }
 
 // drawOrientedRect fills an axis-oriented-in-world-space rectangle defined by

@@ -203,8 +203,8 @@ func (r *startingPlanetRunner) PlayerAI(w *World) []string {
 	}
 
 	// Press Nurture as soon as the attention condition lights up.
-	if nurtureAttentionActive(w, KindWood) {
-		if nurtureField(w, KindWood) {
+	if nurtureAttentionActive(w) {
+		if nurtureField(w) {
 			r.nurturePressed++
 		}
 	}
@@ -366,8 +366,8 @@ func (r *echoCompletionRunner) PlayerAI(w *World) []string {
 			}
 		}
 	}
-	if nurtureAttentionActive(w, KindWood) {
-		if nurtureField(w, KindWood) {
+	if nurtureAttentionActive(w) {
+		if nurtureField(w) {
 			r.nurturePressed++
 		}
 	}
@@ -596,9 +596,9 @@ func (r *waterFrontierRunner) PlayerAI(w *World) []string {
 	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
 		buildTownCapacity(w)
 	}
-	// Nurture the water field whenever possible so sparkles keep growing.
+	// Nurture whenever possible so nodes/sparkles keep growing.
 	if r.dockPlaced {
-		nurtureField(w, KindWater)
+		nurtureField(w)
 	}
 	return events
 }
