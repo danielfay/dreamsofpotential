@@ -2151,6 +2151,100 @@ func TestAbstractWaterIncome_CompletedFrontier(t *testing.T) {
 	}
 }
 
+// TestSpawnSparkle_GridFallback verifies that spawnSparkle can still place a
+// sparkle when golden-angle jitter is exhausted but a valid grid position exists.
+// This covers the Nurture-button regression where clicking it only fired the
+// upgrade animation rather than adding a new sparkle.
+func TestSpawnSparkle_GridFallback(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	wf := fieldForKind(w, KindWater)
+	if wf == nil {
+		t.Fatal("no water field")
+	}
+	// Remove all sparkles so we have a fully empty water field.
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if n.Kind != KindWater {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
+
+	// Fill via the same grid strategy spawnSparkle now uses; this is equivalent
+	// to exhausting golden-angle until the jitter can no longer find valid positions.
+	// We pack the field using fillWaterFieldSparkles (grid-based) then verify that
+	// further spawnSparkle calls fall back to upgrade rather than infinite-looping.
+	fillWaterFieldSparkles(w)
+	countAfterFill := 0
+	for _, n := range w.Nodes {
+		if n.Kind == KindWater {
+			countAfterFill++
+		}
+	}
+	if countAfterFill == 0 {
+		t.Fatal("fillWaterFieldSparkles placed no sparkles")
+	}
+
+	// After fill, waterFieldCanSpawnSparkle must return false.
+	if waterFieldCanSpawnSparkle(w, wf) {
+		t.Error("waterFieldCanSpawnSparkle should be false after grid fill")
+	}
+
+	// spawnSparkle should now upgrade (not hang or panic).
+	before := len(w.Nodes)
+	result := spawnSparkle(w, wf)
+	if result.Outcome != growthOutcomeUpgradedNode {
+		t.Errorf("spawnSparkle on saturated field: outcome = %v, want growthOutcomeUpgradedNode", result.Outcome)
+	}
+	if len(w.Nodes) != before {
+		t.Errorf("spawnSparkle on saturated field added a node (before=%d after=%d)", before, len(w.Nodes))
+	}
+}
+
+// TestSpawnSparkle_GridFallbackReachesGap verifies that spawnSparkle's grid
+// fallback can place a sparkle when golden-angle jitter is blocked but a valid
+// grid position exists (the practical Nurture regression scenario).
+func TestSpawnSparkle_GridFallbackReachesGap(t *testing.T) {
+	w := newWaterFrontierForCompletion(t)
+	wf := fieldForKind(w, KindWater)
+	if wf == nil {
+		t.Fatal("no water field")
+	}
+	// Remove all sparkles.
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if n.Kind != KindWater {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
+
+	// Use fillWaterFieldSparkles to fill all but one grid position.
+	// Remove one sparkle after filling to leave a single valid gap.
+	fillWaterFieldSparkles(w)
+	// Remove the last water sparkle added.
+	for i := len(w.Nodes) - 1; i >= 0; i-- {
+		if w.Nodes[i].Kind == KindWater {
+			w.Nodes = append(w.Nodes[:i], w.Nodes[i+1:]...)
+			break
+		}
+	}
+
+	// The field should now have a valid position.
+	if !waterFieldCanSpawnSparkle(w, wf) {
+		t.Skip("gap creation didn't leave a valid grid position; skipping")
+	}
+
+	before := len(w.Nodes)
+	result := spawnSparkle(w, wf)
+	if result.Outcome != growthOutcomeSpawnedNode {
+		t.Errorf("spawnSparkle with gap available: outcome = %v, want growthOutcomeSpawnedNode", result.Outcome)
+	}
+	if len(w.Nodes) != before+1 {
+		t.Errorf("spawnSparkle should have added one node (before=%d after=%d)", before, len(w.Nodes))
+	}
+}
+
 // runTick advances the simulation for the given duration using Tick (view-aware path).
 func runTick(w *World, seconds float64) {
 	ticks := int(math.Round(seconds / dt))

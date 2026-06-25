@@ -804,9 +804,11 @@ func waterFieldCanSpawnSparkle(w *World, f *ResourceField) bool {
 	return false
 }
 
-// spawnSparkle places a new interior water sparkle in f using golden-angle-
-// jittered polar placement. Falls back to upgradeNearestSparkle when the
-// field interior is saturated.
+// spawnSparkle places a new interior water sparkle in f. Tries golden-angle-
+// jittered positions first; if those are all blocked, scans the same 16×4 grid
+// that waterFieldCanSpawnSparkle uses so organic placement can always reach any
+// slot the gate considers available. Falls back to upgradeNearestSparkle only
+// when the field is truly saturated.
 func spawnSparkle(w *World, f *ResourceField) growthResult {
 	result := growthResult{
 		Outcome:     growthOutcomeNone,
@@ -844,7 +846,28 @@ func spawnSparkle(w *World, f *ResourceField) growthResult {
 			return result
 		}
 	}
-	// All attempts failed — field is saturated; upgrade nearest sparkle instead.
+	// Golden-angle attempts all blocked — try the same 16×4 grid positions that
+	// waterFieldCanSpawnSparkle uses, so organic placement can always reach any
+	// valid slot that the gate check considers available.
+	for ai := range 16 {
+		angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*float64(ai)/15.0)
+		for ri := range 4 {
+			r := innerR + (outerR-innerR)*float64(ri)/3.0
+			pos := Vec{
+				X: w.Planet.Center.X + r*math.Cos(angle),
+				Y: w.Planet.Center.Y + r*math.Sin(angle),
+			}
+			if sparkleSpawnPosValid(w, f, pos) {
+				n := newSparkle(w, pos)
+				w.Nodes = append(w.Nodes, n)
+				activatePulse(w, &n.Pulse)
+				result.Outcome = growthOutcomeSpawnedNode
+				result.NodeID = n.ID
+				return result
+			}
+		}
+	}
+	// Field truly saturated; upgrade nearest sparkle instead.
 	if upgraded := upgradeNearestSparkle(w, f); upgraded != nil {
 		result.Outcome = growthOutcomeUpgradedNode
 		result.NodeID = upgraded.ID
