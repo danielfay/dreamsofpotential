@@ -28,6 +28,8 @@ const (
 	costPulseWood = 1 << iota
 	costPulseWater
 	costPulseNurture
+	costPulseForestCircle
+	costPulseWaterCircle
 )
 
 // Game is the root ebiten game object.
@@ -68,9 +70,11 @@ type Game struct {
 	revealElapsed float64
 
 	// system-view button rects in native screen space (set during drawOverlay; read by handleInput)
-	sysEnterRect  sysRect // enter-planet tray button
-	sysAwakenRect sysRect // awaken-echo tray button
-	sysReturnRect sysRect // return-to-system button in planet view
+	sysEnterRect       sysRect // enter-planet tray button
+	sysAwakenRect      sysRect // awaken-echo tray button
+	sysReturnRect      sysRect // return-to-system button in planet view
+	sysInjectWoodRect  sysRect // forest-circle inject button (planet view only)
+	sysInjectWaterRect sysRect // water-circle inject button (planet view only)
 
 	// double-click tracking for system-view planet zoom
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
@@ -589,6 +593,14 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
 				2, colPulse, false)
 		}
+		if g.pulseTarget&costPulseForestCircle != 0 && g.sysInjectWoodRect.w > 0 {
+			r := g.sysInjectWoodRect
+			vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+		}
+		if g.pulseTarget&costPulseWaterCircle != 0 && g.sysInjectWaterRect.w > 0 {
+			r := g.sysInjectWaterRect
+			vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+		}
 	}
 }
 
@@ -689,6 +701,10 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		return scaledHUDFloat(scale, systemTopHUDScale, base)
 	}
 
+	// Reset inject rects; set below when circles are visible in planet view.
+	g.sysInjectWoodRect = sysRect{}
+	g.sysInjectWaterRect = sysRect{}
+
 	// Global resources — full-width top band. Square resources occupy the top
 	// row; matching Potential circles sit beneath them by resource colour/type.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
@@ -701,6 +717,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			circleText    string
 			circleCol     color.RGBA
 			circleTextCol color.RGBA
+			potKind       PotentialKind
 			width         float32
 		}
 
@@ -720,6 +737,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				circleText:    fmt.Sprintf("%d", int(math.Floor(count))),
 				circleCol:     circleCol,
 				circleTextCol: circleTextCol,
+				potKind:       potKind,
 			}
 			if showSquare {
 				tw, _ := text.Measure(squareText, face, 0)
@@ -815,6 +833,16 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 					if col.circleText != "" {
 						_, th := text.Measure(col.circleText, face, 0)
 						drawSysText(screen, col.circleText, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
+					}
+					// Store inject hit-test rect for planet view clicks.
+					if g.world.System.View != ViewSystem && g.world.System.Unlocked {
+						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
+						switch col.potKind {
+						case PotentialForest:
+							g.sysInjectWoodRect = r
+						case PotentialWater:
+							g.sysInjectWaterRect = r
+						}
 					}
 				}
 				cx += col.width

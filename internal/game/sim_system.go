@@ -207,6 +207,37 @@ func checkActivePlanetCompletion(w *World) {
 	}
 }
 
+// injectCirclePacket spends 1 whole Potential circle of kind on the active planet:
+// deducts 1.0 from the fractional pool, activates the matching field family if
+// not yet active, and grants a flat local resource packet. Returns false if the
+// player cannot afford the circle.
+func injectCirclePacket(w *World, kind PotentialKind) bool {
+	if math.Floor(w.Economy.Potential[kind]) < 1 {
+		return false
+	}
+	w.Economy.Potential[kind] -= 1.0
+	switch kind {
+	case PotentialForest:
+		activateFieldFamily(w, KindWood)
+		w.Economy.Wood += circlePacketWood
+	case PotentialWater:
+		activateFieldFamily(w, KindWater)
+		w.Economy.Water += circlePacketWater
+	}
+	return true
+}
+
+// activateFieldFamily marks the first field of kind as Known on the active planet
+// if none is already known. No-op if the family is already active.
+func activateFieldFamily(w *World, kind ResourceKind) {
+	for _, f := range w.Planet.Fields {
+		if f.Kind == kind && !f.Known {
+			f.Known = true
+			return
+		}
+	}
+}
+
 // planetAwakenCost returns the Potential cost to awaken the planet at idx.
 // Echo planets cost 1 Forest Potential; the unknown frontier costs 1 Forest + 1 Water Potential.
 func planetAwakenCost(w *World, idx int) map[PotentialKind]int {
@@ -256,6 +287,19 @@ func awakenPlanet(w *World, idx int) {
 	} else {
 		p.LayoutID = p.RingColorIdx
 		w.PlanetStates[idx] = newEchoPlanetState(p.LayoutID)
+	}
+	// Bootstrap: seed baseline wood plus a packet for each circle spent on awakening.
+	// Lives in parked state; materialises into Economy.Wood/Water when player enters.
+	w.PlanetStates[idx].LocalWood += awakenBaselineWood
+	for kind, cost := range planetAwakenCost(w, idx) {
+		for range cost {
+			switch kind {
+			case PotentialForest:
+				w.PlanetStates[idx].LocalWood += circlePacketWood
+			case PotentialWater:
+				w.PlanetStates[idx].LocalWater += circlePacketWater
+			}
+		}
 	}
 }
 
