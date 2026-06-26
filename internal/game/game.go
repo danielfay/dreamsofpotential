@@ -738,8 +738,8 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		var woodText, waterText string
 		if g.world.System.View == ViewSystem {
 			// System view: no stockpile; show total rate from all planets.
-			woodText = systemRateText(abstractIncome(g.world))
-			waterText = systemRateText(abstractWaterIncome(g.world))
+			woodText = systemRateText(g.world.SystemEconomy.WoodRate)
+			waterText = systemRateText(g.world.SystemEconomy.WaterRate)
 		} else {
 			// Planet view: local stockpile + live production rate.
 			woodText = fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(EstimateRate(g.world)))

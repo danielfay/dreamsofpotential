@@ -124,10 +124,14 @@ const (
 	dockWedgeHalfArc = 0.22 // angular half-width of the wedge (radians)
 
 	// ── system view / abstract production
-	echoRateFracA       = 0.55 // echo A rate as fraction of starting planet's snapshotted rate
-	echoRateFracB       = 0.45 // echo B rate — slightly lower for variance
+	echoRateFracA       = 0.55 // echo A projected rate as fraction of starting planet's snapshotted rate
+	echoRateFracB       = 0.45 // echo B projected rate — slightly lower for variance
 	revealDuration      = 3.5  // seconds for the one-time unlock reveal animation
 	completionAmplifier = 1.25 // echo AbstractRate multiplier on completion
+
+	// Water frontier projected rates shown before the planet is played.
+	waterFrontierProjectedWoodFrac  = 0.30 // small shore → lower wood projection
+	waterFrontierProjectedWaterFrac = 0.70 // dominant lake → meaningful water projection
 
 	// Rolling window that ratchets AbstractRate upward at runtime (monotonic, raise-only).
 	// The window prevents enter/exit fishing: the sustained floor must exceed the stored rate

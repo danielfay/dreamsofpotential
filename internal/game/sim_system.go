@@ -130,38 +130,41 @@ func updateActiveAbstractRate(w *World, dt float64) {
 	}
 }
 
-// abstractIncome returns total abstract wood/sec from all non-active producing
-// planets. The active planet runs live (or is frozen in system view), so it is
-// excluded when in planet view to avoid double-counting. Unawakened unknowns
-// produce nothing; awakened unknowns (water frontier) can contribute AbstractRate.
-func abstractIncome(w *World) float64 {
+// systemWoodRate returns total wood/sec from all completed planets.
+func systemWoodRate(w *World) float64 {
 	var total float64
-	for i, p := range w.System.Planets {
-		if p.Kind == PlanetUnknown && !p.Awakened {
+	for _, p := range w.System.Planets {
+		if !p.Completed {
 			continue
-		}
-		if w.System.View == ViewPlanet && i == w.Active {
-			continue // active planet runs its live sim; skip abstract contribution
 		}
 		total += p.AbstractRate
 	}
 	return total
 }
 
-// abstractWaterIncome returns total abstract water/sec from all non-active producing planets.
-// Mirrors abstractIncome but sums AbstractWaterRate instead of AbstractRate.
-func abstractWaterIncome(w *World) float64 {
+// systemWaterRate returns total water/sec from all completed planets.
+func systemWaterRate(w *World) float64 {
 	var total float64
-	for i, p := range w.System.Planets {
-		if p.Kind == PlanetUnknown && !p.Awakened {
-			continue
-		}
-		if w.System.View == ViewPlanet && i == w.Active {
+	for _, p := range w.System.Planets {
+		if !p.Completed {
 			continue
 		}
 		total += p.AbstractWaterRate
 	}
 	return total
+}
+
+// tickSystemEconomy computes system-wide rates from completed planets and
+// allocates them to Potential and Research accumulators.
+func tickSystemEconomy(w *World, dt float64) {
+	woodRate := systemWoodRate(w)
+	waterRate := systemWaterRate(w)
+	w.SystemEconomy.WoodRate = woodRate
+	w.SystemEconomy.WaterRate = waterRate
+	w.Economy.Potential[PotentialForest] += woodRate * w.SystemEconomy.WoodAllocPotential * dt
+	w.Economy.Potential[PotentialWater] += waterRate * w.SystemEconomy.WaterAllocPotential * dt
+	w.SystemEconomy.WoodResearch += woodRate * (1 - w.SystemEconomy.WoodAllocPotential) * dt
+	w.SystemEconomy.WaterResearch += waterRate * (1 - w.SystemEconomy.WaterAllocPotential) * dt
 }
 
 // allEchoesComplete reports whether every echo planet in the system is completed.
@@ -247,6 +250,9 @@ func awakenPlanet(w *World, idx int) {
 	p.Awakened = true
 	if p.Kind == PlanetUnknown {
 		w.PlanetStates[idx] = newWaterFrontierState()
+		base := w.System.Planets[0].AbstractRate
+		p.ProjectedRate = base * waterFrontierProjectedWoodFrac
+		p.ProjectedWaterRate = base * waterFrontierProjectedWaterFrac
 	} else {
 		p.LayoutID = p.RingColorIdx
 		w.PlanetStates[idx] = newEchoPlanetState(p.LayoutID)
@@ -277,20 +283,20 @@ func awardCompletionPotential(w *World) {
 
 // triggerUnlock snapshots the starting planet's analytic rate once, marks the
 // system as unlocked, switches to system view, and selects the starting planet.
-// Echo planet rates are also snapshotted as fractions of the starting rate with
-// slight per-planet variance so they feel related but distinct.
+// Echo planets get a ProjectedRate (not AbstractRate) as fraction of the starting
+// rate; they only gain real AbstractRate after checkActivePlanetCompletion fires.
 // Must only be called when startingPlanetComplete is true.
 func triggerUnlock(w *World) {
 	awardCompletionPotential(w)
 	base := EstimateRate(w)
 	w.System.Planets[0].AbstractRate = base
-	// Echoes are dormant — produce at a fraction of the completed planet's rate.
-	// The two seeds give stable but different offsets: +5% and -5%.
+	w.System.Planets[0].Completed = true
+	// Echoes are dormant — show a projected rate; AbstractRate stays 0 until completion.
 	if len(w.System.Planets) > 1 {
-		w.System.Planets[1].AbstractRate = base * echoRateFracA
+		w.System.Planets[1].ProjectedRate = base * echoRateFracA
 	}
 	if len(w.System.Planets) > 2 {
-		w.System.Planets[2].AbstractRate = base * echoRateFracB
+		w.System.Planets[2].ProjectedRate = base * echoRateFracB
 	}
 	w.System.Planets[0].CompletedAt = w.SimTime
 	w.System.Unlocked = true

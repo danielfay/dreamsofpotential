@@ -432,11 +432,11 @@ func TestSimTraceTightGroveCompletion(t *testing.T) {
 	if !w.System.Planets[echoIdx].Completed {
 		t.Errorf("Tight Grove: expected Completed=true after trace")
 	}
-	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after Tight Grove: got %.0f, want 1", got)
+	if got := w.Economy.Potential[PotentialForest]; math.Floor(got) != 1 {
+		t.Errorf("Forest Potential after Tight Grove: got %.4f (floor=%.0f), want 1 spendable token", got, math.Floor(got))
 	}
-	if got := w.Economy.Potential[PotentialWater]; got != 0 {
-		t.Errorf("Water Potential after Tight Grove: got %.0f, want 0 (no water field)", got)
+	if got := w.Economy.Potential[PotentialWater]; math.Floor(got) != 0 {
+		t.Errorf("Water Potential after Tight Grove: got %.4f, want 0 (no water field)", got)
 	}
 	t.Logf("Tight Grove completed — AbstractRate: %.4f wood/sec", w.System.Planets[echoIdx].AbstractRate)
 }
@@ -456,8 +456,8 @@ func TestSimTraceLakewoodCompletion(t *testing.T) {
 	if !w.System.Planets[echoIdx].Completed {
 		t.Errorf("Lakewood: expected Completed=true after trace")
 	}
-	if got := w.Economy.Potential[PotentialWater]; got != 1 {
-		t.Errorf("Water Potential after Lakewood: got %.0f, want 1", got)
+	if got := w.Economy.Potential[PotentialWater]; math.Floor(got) != 1 {
+		t.Errorf("Water Potential after Lakewood: got %.4f (floor=%.0f), want 1 spendable token", got, math.Floor(got))
 	}
 	// Verify lake-aware routing enabled workers to reach the island forest.
 	var islandField *ResourceField

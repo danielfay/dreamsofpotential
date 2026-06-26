@@ -68,15 +68,17 @@ func assignNodes(w *World) {
 // Returns true exactly once: on the tick that triggers the unlock reveal.
 func Tick(w *World, dt float64) (justUnlocked bool) {
 	if w.System.Unlocked && w.System.View == ViewSystem {
-		// System view: live sim is frozen; no stockpile accumulation.
+		// System view: live sim is frozen; allocate system economy.
+		tickSystemEconomy(w, dt)
 		return false
 	}
 	// Planet view (or pre-unlock): run the live sim.
 	Step(w, dt)
 	if w.System.Unlocked {
-		// Post-unlock planet view: check for echo completion + rate ratchet.
+		// Post-unlock planet view: check for echo completion + rate ratchet + system economy.
 		checkActivePlanetCompletion(w)
 		updateActiveAbstractRate(w, dt)
+		tickSystemEconomy(w, dt)
 		return false
 	}
 	// Pre-unlock: check mastery gate exactly once.
