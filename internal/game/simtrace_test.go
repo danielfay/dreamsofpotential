@@ -433,10 +433,10 @@ func TestSimTraceTightGroveCompletion(t *testing.T) {
 		t.Errorf("Tight Grove: expected Completed=true after trace")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
+		t.Errorf("Forest Potential after Tight Grove: got %.0f, want 1", got)
 	}
 	if got := w.Economy.Potential[PotentialWater]; got != 0 {
-		t.Errorf("Water Potential after Tight Grove: got %d, want 0 (no water field)", got)
+		t.Errorf("Water Potential after Tight Grove: got %.0f, want 0 (no water field)", got)
 	}
 	t.Logf("Tight Grove completed — AbstractRate: %.4f wood/sec", w.System.Planets[echoIdx].AbstractRate)
 }
@@ -457,7 +457,7 @@ func TestSimTraceLakewoodCompletion(t *testing.T) {
 		t.Errorf("Lakewood: expected Completed=true after trace")
 	}
 	if got := w.Economy.Potential[PotentialWater]; got != 1 {
-		t.Errorf("Water Potential after Lakewood: got %d, want 1", got)
+		t.Errorf("Water Potential after Lakewood: got %.0f, want 1", got)
 	}
 	// Verify lake-aware routing enabled workers to reach the island forest.
 	var islandField *ResourceField
@@ -672,7 +672,7 @@ func (r *waterPlanetCompletionRunner) Setup(w *World) {
 
 	// Grant + spend Potential to awaken the frontier (index 3).
 	for kind, cost := range planetAwakenCost(w, 3) {
-		w.Economy.Potential[kind] += cost
+		w.Economy.Potential[kind] += float64(cost)
 	}
 	awakenPlanet(w, 3)
 	switchToPlanet(w, 3)

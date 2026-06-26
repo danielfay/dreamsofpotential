@@ -149,17 +149,19 @@ const (
 // set at first completion for the starting planet, fixed at boot for echoes.
 // Seed is reserved for future world generation. Pos/Radius are in 320×240 virtual space.
 type SystemPlanet struct {
-	Kind              PlanetKind
-	Pos               Vec
-	Radius            float64
-	AbstractRate      float64
-	AbstractWaterRate float64 // water/sec contributed to the global bank; set on completion
-	RingColorIdx      int     // 0 or 1 — slight visual variation between the two echoes
-	Seed              int64   // future world-generation hook
-	Awakened          bool    // echo or frontier has been awoken (has a durable live PlanetState)
-	Completed         bool    // reached its completion gate
-	CompletedAt       float64 // planet SimTime when completion triggered; drives atmosphere intro
-	LayoutID          int     // which authored layout (0 or 1)
+	Kind               PlanetKind
+	Pos                Vec
+	Radius             float64
+	AbstractRate       float64
+	AbstractWaterRate  float64 // water/sec contributed to the global bank; set on completion
+	ProjectedRate      float64 // authored future rate shown for dormant/incomplete planets
+	ProjectedWaterRate float64
+	RingColorIdx       int     // 0 or 1 — slight visual variation between the two echoes
+	Seed               int64   // future world-generation hook
+	Awakened           bool    // echo or frontier has been awoken (has a durable live PlanetState)
+	Completed          bool    // reached its completion gate
+	CompletedAt        float64 // planet SimTime when completion triggered; drives atmosphere intro
+	LayoutID           int     // which authored layout (0 or 1)
 }
 
 // zoomable reports whether this planet has a live sim the player can zoom into.
@@ -189,6 +191,8 @@ type PlanetState struct {
 	Founded             bool
 	LaborFocus          map[ResourceKind]int // target worker counts per resource kind; nil = no focus
 	SavedLaborRatio     map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
+	LocalWood           float64              // per-planet wood stockpile saved on park, restored on load
+	LocalWater          float64              // per-planet water stockpile saved on park, restored on load
 }
 
 // System holds all persistent state for the planetary system layer.
@@ -298,16 +302,30 @@ type Economy struct {
 	WorkerCapacity      int     // total worker slots unlocked (founding slot + paid capacity)
 	CapacityBought      int     // paid capacity purchases; drives the cost curve
 	CampsBought         int
-	TownGrowth          float64               // accumulates gross delivery amount; clamped at TownGrowthCap
-	TownGrowthCap       float64               // spawns a worker when TownGrowth reaches this; grows each arrival
-	TownGrowthOverflow  float64               // excess growth banked while capacity-blocked; drains on next open slot
-	LastWorkerSpawnTime float64               // SimTime of most recent spawn; used to enforce workerSpawnCooldown
-	Potential           map[PotentialKind]int // banked system-tier Potential tokens, indexed by kind
+	TownGrowth          float64                   // accumulates gross delivery amount; clamped at TownGrowthCap
+	TownGrowthCap       float64                   // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowthOverflow  float64                   // excess growth banked while capacity-blocked; drains on next open slot
+	LastWorkerSpawnTime float64                   // SimTime of most recent spawn; used to enforce workerSpawnCooldown
+	Potential           map[PotentialKind]float64 // banked system-tier Potential tokens (fractional); spendable count is math.Floor(value)
+}
+
+// SystemEconomy tracks system-wide resource rates and allocation.
+type SystemEconomy struct {
+	WoodRate  float64 // wood/sec from all completed planets
+	WaterRate float64 // water/sec from all completed planets
+
+	// Allocation: fraction [0,1] directed to Potential; remainder goes to Research
+	WoodAllocPotential  float64
+	WaterAllocPotential float64
+
+	// Fractional research progress per family (accumulated until a threshold unlocks a benefit)
+	WoodResearch  float64
+	WaterResearch float64
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 19
+const SaveVersion = 20
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -326,6 +344,8 @@ type World struct {
 	SavedLaborRatio    map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
 	WorkerRatioSeen    bool                 // true once the labor focus HUD button has been opened
 	System             System               // system-view unlock state; persisted
+
+	SystemEconomy SystemEconomy // system-wide rates and allocation; see SystemEconomy struct
 
 	// Multi-planet support: PlanetStates holds parked live state for non-active
 	// planets, index-aligned to System.Planets. The entry for Active is always nil
@@ -740,9 +760,10 @@ func newWorldWithSeed(seed int64) *World {
 				KindWood: {Cap: woodFieldBaseEXP},
 			},
 		},
-		Economy:      Economy{TownGrowthCap: townGrowthBaseCap, Potential: make(map[PotentialKind]int)},
-		Active:       0,
-		PlanetStates: make([]*PlanetState, len(planets)),
+		Economy:       Economy{TownGrowthCap: townGrowthBaseCap, Potential: make(map[PotentialKind]float64)},
+		SystemEconomy: SystemEconomy{WoodAllocPotential: 1.0, WaterAllocPotential: 1.0},
+		Active:        0,
+		PlanetStates:  make([]*PlanetState, len(planets)),
 		System: System{
 			Unlocked: false,
 			View:     ViewPlanet,
@@ -1037,12 +1058,14 @@ func parkActive(w *World) {
 		Founded:             townHall(w) != nil,
 		LaborFocus:          w.LaborFocus,
 		SavedLaborRatio:     w.SavedLaborRatio,
+		LocalWood:           w.Economy.Wood,
+		LocalWater:          w.Economy.Water,
 	}
 }
 
 // loadPlanet replaces the top-level live fields with PlanetStates[idx] and
-// clears the parked slot (active slot is always nil). Economy.Wood is global
-// and is never touched. Transient cue state is cleared; it rebuilds at runtime.
+// clears the parked slot (active slot is always nil). Transient cue state is
+// cleared; it rebuilds at runtime.
 func loadPlanet(w *World, idx int) {
 	ps := w.PlanetStates[idx]
 	w.Planet = ps.Planet
@@ -1056,6 +1079,8 @@ func loadPlanet(w *World, idx int) {
 	w.SimTime = ps.SimTime
 	w.LaborFocus = ps.LaborFocus
 	w.SavedLaborRatio = ps.SavedLaborRatio
+	w.Economy.Wood = ps.LocalWood
+	w.Economy.Water = ps.LocalWater
 	w.Economy.WorkerCapacity = ps.WorkerCapacity
 	w.Economy.CapacityBought = ps.CapacityBought
 	w.Economy.CampsBought = ps.CampsBought

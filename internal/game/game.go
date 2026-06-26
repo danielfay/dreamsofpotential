@@ -718,7 +718,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				squareCol:     squareCol,
 				squareTextCol: squareTextCol,
 				showCircle:    earned,
-				circleText:    fmt.Sprintf("%d", count),
+				circleText:    fmt.Sprintf("%d", int(math.Floor(count))),
 				circleCol:     circleCol,
 				circleTextCol: circleTextCol,
 			}

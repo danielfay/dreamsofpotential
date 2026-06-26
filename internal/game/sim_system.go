@@ -1,5 +1,7 @@
 package game
 
+import "math"
+
 // forestPlanetComplete reports the mastery gate for forest-kind planets:
 // town capacity is maxed AND every known KindWood region is saturated.
 func forestPlanetComplete(w *World) bool {
@@ -225,7 +227,7 @@ func canAwaken(w *World, idx int) bool {
 		return false
 	}
 	for kind, cost := range planetAwakenCost(w, idx) {
-		if w.Economy.Potential[kind] < cost {
+		if math.Floor(w.Economy.Potential[kind]) < float64(cost) {
 			return false
 		}
 	}
@@ -239,7 +241,7 @@ func awakenPlanet(w *World, idx int) {
 		return
 	}
 	for kind, cost := range planetAwakenCost(w, idx) {
-		w.Economy.Potential[kind] -= cost
+		w.Economy.Potential[kind] -= float64(cost)
 	}
 	p := &w.System.Planets[idx]
 	p.Awakened = true
@@ -256,7 +258,7 @@ func awakenPlanet(w *World, idx int) {
 // and once on each echo completion; the caller's one-shot flags prevent re-fire.
 func awardCompletionPotential(w *World) {
 	if w.Economy.Potential == nil {
-		w.Economy.Potential = make(map[PotentialKind]int)
+		w.Economy.Potential = make(map[PotentialKind]float64)
 	}
 	seen := make(map[ResourceKind]bool)
 	for _, f := range w.Planet.Fields {
@@ -266,9 +268,9 @@ func awardCompletionPotential(w *World) {
 		seen[f.Kind] = true
 		switch f.Kind {
 		case KindWood:
-			w.Economy.Potential[PotentialForest]++
+			w.Economy.Potential[PotentialForest] += 1.0
 		case KindWater:
-			w.Economy.Potential[PotentialWater]++
+			w.Economy.Potential[PotentialWater] += 1.0
 		}
 	}
 }
