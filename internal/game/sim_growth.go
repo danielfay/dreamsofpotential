@@ -487,6 +487,13 @@ func townCapacityCost(w *World) float64 {
 	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
 }
 
+func firstTownCapacityBuildable(w *World) bool {
+	return townHall(w) != nil &&
+		w.Economy.WorkerCapacity == 1 &&
+		!townFieldFull(w) &&
+		w.Economy.Wood >= townCapacityCost(w)
+}
+
 // addFreeCapacity unlocks one worker slot without spending wood. Debug-only.
 func addFreeCapacity(w *World) bool {
 	if townHall(w) == nil {

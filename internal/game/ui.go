@@ -313,9 +313,7 @@ func (h *HUD) refreshNormal(w *World) {
 		} else {
 			h.workerRatio.Label = fmt.Sprintf("%d", len(w.Workers))
 		}
-		// Disable swatch when focus control is not applicable (only 1 resource type).
-		twoResources := w.ResourceDiscovered && w.Economy.WaterDiscovered
-		h.workerSquare.GetWidget().Disabled = !twoResources
+		h.workerSquare.GetWidget().Disabled = !laborFocusControlAvailable(w)
 	} else {
 		h.workerHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
@@ -654,7 +652,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			}),
 		),
 		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			if g.world.ResourceDiscovered && g.world.Economy.WaterDiscovered {
+			if laborFocusControlAvailable(g.world) {
 				g.openFocusControl()
 			}
 		}),

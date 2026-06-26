@@ -90,6 +90,24 @@ func TestOpenFocusControlPreservesZeroWaterTarget(t *testing.T) {
 	}
 }
 
+func TestLaborFocusAvailableAfterFirstDockBeforeWaterDelivery(t *testing.T) {
+	w := newWaterFrontierFixture()
+	w.Economy.WaterDiscovered = false
+	if laborFocusControlAvailable(w) {
+		t.Fatal("focus control should not be available before dock placement")
+	}
+
+	if !placeBuildingWithFreePlacement(w, shoreEdgeAngle(), true) {
+		t.Fatal("could not place first dock")
+	}
+	if !dockHasServiceableSparkles(w) {
+		t.Fatal("first dock should seed serviceable sparkles")
+	}
+	if !laborFocusControlAvailable(w) {
+		t.Fatal("focus control should be available after first dock even before water delivery")
+	}
+}
+
 func TestFocusZeroWaterTargetAssignsAllWood(t *testing.T) {
 	w := newFocusWorld(t, 3)
 	w.LaborFocus = map[ResourceKind]int{KindWood: 3, KindWater: 0}

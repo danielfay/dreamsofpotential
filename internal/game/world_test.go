@@ -23,6 +23,32 @@ func TestTownCapacityCostProgression(t *testing.T) {
 	}
 }
 
+func TestFirstTownCapacityBuildable(t *testing.T) {
+	w := NewWorld()
+	if firstTownCapacityBuildable(w) {
+		t.Fatal("first capacity should not be buildable without a Town Hall")
+	}
+
+	w.Buildings = append(w.Buildings, &Building{
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
+	})
+	w.Economy.WorkerCapacity = 1
+	w.Economy.Wood = townCapacityCost(w) - 1
+	if firstTownCapacityBuildable(w) {
+		t.Fatal("first capacity should not be buildable before it is affordable")
+	}
+
+	w.Economy.Wood = townCapacityCost(w)
+	if !firstTownCapacityBuildable(w) {
+		t.Fatal("first capacity should be buildable once the first house is affordable")
+	}
+
+	w.Economy.WorkerCapacity = 2
+	if firstTownCapacityBuildable(w) {
+		t.Fatal("first capacity attention should stop after the first paid house")
+	}
+}
+
 func TestCampCostProgression(t *testing.T) {
 	w := NewWorld()
 	// First logging camp (CampsBought==0) costs campBaseCost.
@@ -34,6 +60,25 @@ func TestCampCostProgression(t *testing.T) {
 	want1 := campBaseCost * math.Pow(campCostGrowth, 1)
 	if got := CampCost(w); math.Abs(got-want1) > 1e-9 {
 		t.Errorf("CampCost with CampsBought=1: got %.4f, want %.4f", got, want1)
+	}
+}
+
+func TestMissingCostTargetsOnlyShortResources(t *testing.T) {
+	w := NewWorld()
+	w.Economy.Wood = 100
+	w.Economy.Water = 5
+
+	if got := missingCostTargets(w, 80, 5); got != 0 {
+		t.Fatalf("affordable costs should not pulse; got mask %d", got)
+	}
+	if got := missingCostTargets(w, 120, 5); got != costPulseWood {
+		t.Fatalf("wood-only shortage mask = %d, want %d", got, costPulseWood)
+	}
+	if got := missingCostTargets(w, 80, 10); got != costPulseWater {
+		t.Fatalf("water-only shortage mask = %d, want %d", got, costPulseWater)
+	}
+	if got := missingCostTargets(w, 120, 10); got != costPulseWood|costPulseWater {
+		t.Fatalf("wood+water shortage mask = %d, want %d", got, costPulseWood|costPulseWater)
 	}
 }
 

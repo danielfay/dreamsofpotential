@@ -147,7 +147,7 @@ func (g *Game) handleInput() {
 			g.placing = false
 			g.freePlacing = false
 		} else {
-			g.selectedBuildingID = -1
+			g.closeBuildingTray()
 		}
 		return
 	}
@@ -157,7 +157,8 @@ func (g *Game) handleInput() {
 	}
 	mx, my := ebiten.CursorPosition()
 
-	// TH tray: any click inside is consumed (buy capacity if on button; dismiss otherwise).
+	// TH tray: any click inside is consumed. The tray stays open so capacity can
+	// be bought repeatedly while resources allow.
 	if g.thTrayRect.w > 0 {
 		tr := g.thTrayRect
 		if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
@@ -166,16 +167,15 @@ func (g *Game) handleInput() {
 			if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
 				float32(my) >= rx.y && float32(my) < rx.y+rx.h {
 				if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
-					g.pulseTime = pulseDuration
-					g.pulseTarget = 2
+					g.flashCostTargets(missingCostTargets(g.world, townCapacityCost(g.world), 0))
 				}
 			}
-			g.selectedBuildingID = -1
 			return
 		}
 	}
 
-	// Dock tray: any click inside is consumed (upgrade if on button; dismiss otherwise).
+	// Dock tray: any click inside is consumed. The tray stays open so future
+	// multi-level upgrades can be bought repeatedly while resources allow.
 	if g.dockTrayRect.w > 0 {
 		tr := g.dockTrayRect
 		if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
@@ -184,10 +184,11 @@ func (g *Game) handleInput() {
 			if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
 				float32(my) >= rx.y && float32(my) < rx.y+rx.h {
 				if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
-					upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID])
+					if !upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID]) {
+						g.flashCostTargets(missingCostTargets(g.world, dockL2WoodCost, dockL2WaterCost))
+					}
 				}
 			}
-			g.selectedBuildingID = -1
 			return
 		}
 	}
@@ -202,6 +203,9 @@ func (g *Game) handleInput() {
 	wp := g.screenToWorld(mx, my)
 	for i, b := range g.world.Buildings {
 		if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+			if g.selectedBuildingID != i {
+				g.closeBuildingTray()
+			}
 			g.selectedBuildingID = i
 			return
 		}
@@ -209,32 +213,31 @@ func (g *Game) handleInput() {
 
 	// In debug mode, placement requires g.placing to be explicitly enabled.
 	if g.debug && !g.placing {
-		g.selectedBuildingID = -1
+		g.closeBuildingTray()
 		return
 	}
 	// Suppress placement during the locked pre-discovery camp period (non-debug only).
 	if !g.debug && len(g.world.Buildings) > 0 && !g.world.ResourceDiscovered {
-		g.selectedBuildingID = -1
+		g.closeBuildingTray()
 		return
 	}
 
 	// Placement: try to place at cursor position near the rim.
 	pv := g.placementPreviewAtCursor()
 	if pv == nil {
-		g.selectedBuildingID = -1
+		g.closeBuildingTray()
 		return
 	}
 	isTownHall := len(g.world.Buildings) == 0
 	if !pv.Affordable && g.world.ResourceDiscovered {
-		g.pulseTime = pulseDuration
-		g.pulseTarget = 1
+		g.flashCostTargets(missingPlacementCostTargets(g.world, pv))
 	}
 	if !pv.Valid {
 		g.rejectTime = microPulseTime
 		return
 	}
 	if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
-		g.selectedBuildingID = -1
+		g.closeBuildingTray()
 		if isTownHall || !g.debug {
 			g.freePlacing = false
 		}
@@ -251,7 +254,7 @@ func placeBuilding(w *World, angle float64) bool {
 
 func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool) bool {
 	pv := buildPreviewWithFreePlacement(w, angle, freePlacement)
-	if !pv.Valid {
+	if pv.Hidden || !pv.Valid {
 		return false
 	}
 
@@ -359,5 +362,8 @@ func (g *Game) placementPreviewAtCursor() *placementPreview {
 	}
 	angle := g.world.Planet.AngleOf(wp)
 	pv := buildPreviewWithFreePlacement(g.world, angle, g.freePlacing)
+	if pv.Hidden {
+		return nil
+	}
 	return &pv
 }

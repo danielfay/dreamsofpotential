@@ -32,6 +32,7 @@ type previewRoute struct {
 // Extension is true when the dock variant is a water-extension (not a shore dock).
 type placementPreview struct {
 	Kind             BuildingKind
+	Hidden           bool
 	Extension        bool // dock only: extension dock connected to an existing dock
 	Angle            float64
 	Pos              Vec
@@ -123,6 +124,13 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 	reservedTotal := len(reserved)
 	free, claimed, reserved = capPreviewRoutes(angle, free, claimed, reserved)
 	hasTownHall := len(w.Buildings) > 0
+	if placementSuppressedByUnknownField(w, angle) {
+		return placementPreview{
+			Hidden: true,
+			Angle:  angle,
+			Pos:    w.Planet.RimPoint(angle),
+		}
+	}
 
 	// Town Hall placement.
 	if !hasTownHall {
@@ -146,7 +154,7 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 	}
 
 	// After Town Hall: contextual placement — dock on water edge, camp on land.
-	if inLake(w, angle) {
+	if knownLakeAtAngle(w, angle) {
 		return dockPreview(w, angle, freePlacement, free, freeTotal, claimed, claimedTotal, reserved, reservedTotal)
 	}
 
@@ -170,6 +178,27 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 		Blocked:          blocked,
 		BlockedBuildings: blockedBuildings,
 	}
+}
+
+func placementSuppressedByUnknownField(w *World, angle float64) bool {
+	for _, f := range w.Planet.Fields {
+		if f.Known || f.Kind == KindWaterInfluence {
+			continue
+		}
+		if angleWithinField(f, angle) {
+			return true
+		}
+	}
+	return false
+}
+
+func knownLakeAtAngle(w *World, angle float64) bool {
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWater && f.Known && angleWithinField(f, angle) {
+			return true
+		}
+	}
+	return false
 }
 
 // dockPreview builds a placement preview for an angle that is in a water field.

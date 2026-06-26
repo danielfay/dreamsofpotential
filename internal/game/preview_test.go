@@ -139,6 +139,61 @@ func TestBuildPreviewLaterCampRequiresAffordability(t *testing.T) {
 	}
 }
 
+func TestBuildPreviewHiddenOnUnknownWaterField(t *testing.T) {
+	w := NewWorld()
+	w.Planet.Fields = []*ResourceField{
+		{Kind: KindWood, CenterAngle: -math.Pi / 2, HalfArc: math.Pi / 4, Known: true},
+		{Kind: KindWater, CenterAngle: math.Pi / 2, HalfArc: math.Pi / 4, Known: false},
+	}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: -math.Pi / 2, Pos: w.Planet.RimPoint(-math.Pi / 2)}}
+	w.Economy.Wood = 10000
+	w.Economy.Water = 10000
+
+	pv := buildPreviewWithFreePlacement(w, math.Pi/2, true)
+	if !pv.Hidden {
+		t.Fatal("unknown water field should hide placement preview")
+	}
+	if pv.Valid {
+		t.Fatal("hidden unknown-water preview should not be valid")
+	}
+	if placeBuildingWithFreePlacement(w, math.Pi/2, true) {
+		t.Fatal("unknown water field should not allow dock placement")
+	}
+
+	w.Planet.Fields[1].Known = true
+	pv = buildPreviewWithFreePlacement(w, math.Pi/2, true)
+	if pv.Hidden {
+		t.Fatal("known water field should show placement preview")
+	}
+	if pv.Kind != KindDock {
+		t.Fatalf("known water field should preview dock, got %v", pv.Kind)
+	}
+	if !pv.Valid {
+		t.Fatal("known water field should allow dock placement")
+	}
+}
+
+func TestBuildPreviewUnknownWaterInfluenceDoesNotHideForest(t *testing.T) {
+	w := NewWorld()
+	w.Planet.Fields = []*ResourceField{
+		{Kind: KindWood, CenterAngle: 0, HalfArc: math.Pi / 3, Known: true},
+		{Kind: KindWaterInfluence, CenterAngle: 0, HalfArc: math.Pi / 3, Known: false},
+	}
+	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
+	w.Economy.Wood = CampCost(w)
+
+	pv := buildPreview(w, 0)
+	if pv.Hidden {
+		t.Fatal("unknown water influence should not hide forest placement preview")
+	}
+	if pv.Kind != KindLoggingCamp {
+		t.Fatalf("forest placement should preview logging camp, got %v", pv.Kind)
+	}
+	if !pv.Valid {
+		t.Fatal("known forest with only unknown influence overlap should allow camp placement")
+	}
+}
+
 func TestBuildPreviewLoggingCampBlockedByNodeFootprint(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
