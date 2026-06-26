@@ -1551,6 +1551,43 @@ func TestTickSystemView_FreezesSim(t *testing.T) {
 	}
 }
 
+// TestSwitchToPlanet_IsolatesLocalStockpiles verifies that Economy.Wood and
+// Economy.Water are per-planet: switching planets neither bleeds one planet's
+// stockpile into another nor loses it when returning.
+func TestSwitchToPlanet_IsolatesLocalStockpiles(t *testing.T) {
+	w := newRevealedWorld() // planet 0 "active" (live), world in system view
+
+	// Awaken planet 1 so switchToPlanet can load it.
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1)
+
+	// Set known stockpiles on planet 0 (still live — PlanetStates[0] is nil until parked).
+	w.Economy.Wood = 100
+	w.Economy.Water = 25
+
+	// Switch to echo planet 1: parks planet 0 (saves Wood=100, Water=25) then loads planet 1.
+	switchToPlanet(w, 1)
+	if w.Economy.Wood != 0 {
+		t.Errorf("echo planet 1 Wood: want 0, got %.4f", w.Economy.Wood)
+	}
+	if w.Economy.Water != 0 {
+		t.Errorf("echo planet 1 Water: want 0, got %.4f", w.Economy.Water)
+	}
+
+	// Simulate delivery on planet 1 — must not contaminate planet 0's stockpile.
+	w.Economy.Wood = 42
+	w.Economy.Water = 7
+
+	// Switch back to planet 0 — stockpile must be exactly as parked.
+	switchToPlanet(w, 0)
+	if w.Economy.Wood != 100 {
+		t.Errorf("planet 0 Wood after return: want 100, got %.4f", w.Economy.Wood)
+	}
+	if w.Economy.Water != 25 {
+		t.Errorf("planet 0 Water after return: want 25, got %.4f", w.Economy.Water)
+	}
+}
+
 func TestTickSystemEconomy_AllocatesToPotential(t *testing.T) {
 	w := newRevealedWorld() // starting planet Completed, AbstractRate>0
 
