@@ -1491,39 +1491,28 @@ func TestTickTriggersUnlockExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestAbstractIncome_PlanetView(t *testing.T) {
+func TestSystemWoodRate_OnlyCompletedContribute(t *testing.T) {
 	w := newMasteredWorld()
 	addWorker(w)
 	runSim(w, 2)
-	Tick(w, dt) // unlock
+	Tick(w, dt) // unlock → starting planet Completed=true, echoes not Completed
+
+	base := w.System.Planets[0].AbstractRate
+	if base <= 0 {
+		t.Fatal("starting planet AbstractRate must be > 0 after unlock")
+	}
+
+	// System view: only starting planet (Completed) contributes; echoes have AbstractRate=0.
+	got := systemWoodRate(w)
+	if math.Abs(got-base) > 1e-9 {
+		t.Errorf("systemWoodRate in system view: got %f, want %f (starting planet only)", got, base)
+	}
+
+	// Planet view: active-planet skip no longer applies; result is the same.
 	enterPlanetView(w)
-
-	inc := abstractIncome(w)
-	// In planet view: only echoes (indices 1 and 2) should contribute.
-	expected := w.System.Planets[1].AbstractRate + w.System.Planets[2].AbstractRate
-	if math.Abs(inc-expected) > 1e-9 {
-		t.Errorf("abstractIncome in planet view: got %f, want %f (echoes only)", inc, expected)
-	}
-
-	// Starting planet must NOT be included.
-	if inc >= w.System.Planets[0].AbstractRate+expected {
-		t.Error("starting planet must not contribute abstract income in planet view")
-	}
-}
-
-func TestAbstractIncome_SystemView(t *testing.T) {
-	w := newMasteredWorld()
-	addWorker(w)
-	runSim(w, 2)
-	Tick(w, dt) // unlock → ViewSystem
-
-	inc := abstractIncome(w)
-	// In system view: starting + both echoes.
-	expected := w.System.Planets[0].AbstractRate +
-		w.System.Planets[1].AbstractRate +
-		w.System.Planets[2].AbstractRate
-	if math.Abs(inc-expected) > 1e-9 {
-		t.Errorf("abstractIncome in system view: got %f, want %f", inc, expected)
+	got = systemWoodRate(w)
+	if math.Abs(got-base) > 1e-9 {
+		t.Errorf("systemWoodRate in planet view: got %f, want %f", got, base)
 	}
 }
 
@@ -1559,6 +1548,28 @@ func TestTickSystemView_FreezesSim(t *testing.T) {
 	// Economy.Wood must not change in system view — planets have local stockpiles only.
 	if w.Economy.Wood != 0 {
 		t.Errorf("Economy.Wood should stay at 0 in system view (no stockpile), got %.4f", w.Economy.Wood)
+	}
+}
+
+func TestTickSystemEconomy_AllocatesToPotential(t *testing.T) {
+	w := newRevealedWorld() // starting planet Completed, AbstractRate>0
+
+	woodRate := w.System.Planets[0].AbstractRate
+	before := w.Economy.Potential[PotentialForest]
+
+	// With WoodAllocPotential=1.0 (default) and 1 second: all wood rate goes to Potential.
+	tickSystemEconomy(w, 1.0)
+
+	want := before + woodRate*1.0
+	got := w.Economy.Potential[PotentialForest]
+	if math.Abs(got-want) > 1e-9 {
+		t.Errorf("Potential[Forest] after 1s: got %f, want %f", got, want)
+	}
+	if w.SystemEconomy.WoodRate != woodRate {
+		t.Errorf("WoodRate: got %f, want %f", w.SystemEconomy.WoodRate, woodRate)
+	}
+	if w.SystemEconomy.WoodResearch != 0 {
+		t.Errorf("WoodResearch: got %f, want 0 when alloc=1.0", w.SystemEconomy.WoodResearch)
 	}
 }
 
@@ -1613,35 +1624,63 @@ func newRevealedWorld() *World {
 	return w
 }
 
-func TestAbstractIncome_AwakenedEchoUnviewed(t *testing.T) {
+func TestTriggerUnlock_EchoesGetProjectedRate(t *testing.T) {
 	w := newRevealedWorld()
-	// Awaken echo 1 — its AbstractRate should remain the pre-awakened fraction.
-	originalRate := w.System.Planets[1].AbstractRate
+
+	// Starting planet must be Completed with AbstractRate > 0.
+	if !w.System.Planets[0].Completed {
+		t.Error("starting planet must be Completed after triggerUnlock")
+	}
+	base := w.System.Planets[0].AbstractRate
+	if base <= 0 {
+		t.Errorf("starting planet AbstractRate: got %f, want > 0", base)
+	}
+
+	// Echoes must have ProjectedRate set but AbstractRate=0 and Completed=false.
+	for _, idx := range []int{1, 2} {
+		p := w.System.Planets[idx]
+		if p.AbstractRate != 0 {
+			t.Errorf("echo %d: AbstractRate should be 0, got %f", idx, p.AbstractRate)
+		}
+		if p.ProjectedRate <= 0 {
+			t.Errorf("echo %d: ProjectedRate should be > 0, got %f", idx, p.ProjectedRate)
+		}
+		if p.Completed {
+			t.Errorf("echo %d: should not be Completed after unlock", idx)
+		}
+	}
+	if math.Abs(w.System.Planets[1].ProjectedRate-base*echoRateFracA) > 1e-9 {
+		t.Errorf("echo 1 ProjectedRate: got %f, want base*echoRateFracA=%f",
+			w.System.Planets[1].ProjectedRate, base*echoRateFracA)
+	}
+	if math.Abs(w.System.Planets[2].ProjectedRate-base*echoRateFracB) > 1e-9 {
+		t.Errorf("echo 2 ProjectedRate: got %f, want base*echoRateFracB=%f",
+			w.System.Planets[2].ProjectedRate, base*echoRateFracB)
+	}
+}
+
+func TestSystemWoodRate_NonCompletedEchoExcluded(t *testing.T) {
+	w := newRevealedWorld()
+	base := w.System.Planets[0].AbstractRate
+
+	// Awakened-but-not-completed echo has ProjectedRate but AbstractRate=0.
 	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, 1)
-
-	// Enter echo 1 (planet view on the echo).
 	switchToPlanet(w, 1)
 	enterPlanetView(w)
 
-	inc := abstractIncome(w)
-	// Active echo (idx 1) must NOT contribute abstract income; echo 2 and starting must.
-	expected := w.System.Planets[0].AbstractRate + w.System.Planets[2].AbstractRate
-	if math.Abs(inc-expected) > 1e-9 {
-		t.Errorf("abstractIncome with echo active: got %f, want %f", inc, expected)
+	// Only the Completed starting planet contributes.
+	got := systemWoodRate(w)
+	if math.Abs(got-base) > 1e-9 {
+		t.Errorf("systemWoodRate with awakened-but-not-completed echo: got %f, want %f (starting only)", got, base)
 	}
 
-	// Switch away: echo 1 should contribute its original rate again.
-	switchToPlanet(w, 0)
-	enterPlanetView(w)
-	incAway := abstractIncome(w)
-	if math.Abs(w.System.Planets[1].AbstractRate-originalRate) > 1e-9 {
-		t.Errorf("echo 1 AbstractRate changed while unviewed: got %f, want %f",
-			w.System.Planets[1].AbstractRate, originalRate)
-	}
-	expectedAway := w.System.Planets[1].AbstractRate + w.System.Planets[2].AbstractRate
-	if math.Abs(incAway-expectedAway) > 1e-9 {
-		t.Errorf("abstractIncome with starting active: got %f, want %f", incAway, expectedAway)
+	// After manually completing echo 1, its AbstractRate is included.
+	w.System.Planets[1].AbstractRate = 5.0
+	w.System.Planets[1].Completed = true
+	got = systemWoodRate(w)
+	if math.Abs(got-(base+5.0)) > 1e-9 {
+		t.Errorf("systemWoodRate after echo completion: got %f, want %f", got, base+5.0)
 	}
 }
 
@@ -2132,7 +2171,7 @@ func TestWaterFrontierCompletion_Idempotent(t *testing.T) {
 	}
 }
 
-func TestAbstractWaterIncome_CompletedFrontier(t *testing.T) {
+func TestSystemWaterRate_CompletedFrontier(t *testing.T) {
 	w := newWaterFrontierForCompletion(t)
 	for _, b := range w.Buildings {
 		if b.Kind == KindDock {
@@ -2141,13 +2180,13 @@ func TestAbstractWaterIncome_CompletedFrontier(t *testing.T) {
 	}
 	checkActivePlanetCompletion(w)
 
-	// Return to system view and verify abstractWaterIncome sums the frontier rate.
+	// Return to system view and verify systemWaterRate sums the frontier rate.
 	switchToPlanet(w, 0)
 	enterSystemView(w)
 	wantWater := w.System.Planets[3].AbstractWaterRate
-	got := abstractWaterIncome(w)
+	got := systemWaterRate(w)
 	if math.Abs(got-wantWater) > 1e-9 {
-		t.Errorf("abstractWaterIncome after frontier complete: got %f, want %f", got, wantWater)
+		t.Errorf("systemWaterRate after frontier complete: got %f, want %f", got, wantWater)
 	}
 }
 
@@ -2722,6 +2761,24 @@ func TestAwakenPlanet_FrontierSpendsBothPotentials(t *testing.T) {
 	}
 }
 
+func TestAwakenPlanet_FrontierProjectedRates(t *testing.T) {
+	w := newRevealedWorld()
+	base := w.System.Planets[0].AbstractRate
+	w.Economy.Potential[PotentialForest] = 1
+	w.Economy.Potential[PotentialWater] = 1
+	awakenPlanet(w, 3)
+
+	p := w.System.Planets[3]
+	wantWood := base * waterFrontierProjectedWoodFrac
+	wantWater := base * waterFrontierProjectedWaterFrac
+	if math.Abs(p.ProjectedRate-wantWood) > 1e-9 {
+		t.Errorf("frontier ProjectedRate: got %f, want %f", p.ProjectedRate, wantWood)
+	}
+	if math.Abs(p.ProjectedWaterRate-wantWater) > 1e-9 {
+		t.Errorf("frontier ProjectedWaterRate: got %f, want %f", p.ProjectedWaterRate, wantWater)
+	}
+}
+
 func TestAwakenPlanet_FrontierZoomableWhenAwakened(t *testing.T) {
 	w := newRevealedWorld()
 	if w.System.Planets[3].zoomable() {
@@ -2780,32 +2837,35 @@ func TestAwakenPlanet_FrontierCreatesValidPlanetState(t *testing.T) {
 	}
 }
 
-func TestAbstractWaterIncome_ZeroWhenNoPlanetProduces(t *testing.T) {
+func TestSystemWaterRate_ZeroWithNoCompletedPlanets(t *testing.T) {
 	w := newRevealedWorld()
-	// No planet has AbstractWaterRate set; income must be 0.
-	if got := abstractWaterIncome(w); got != 0 {
-		t.Errorf("abstractWaterIncome: got %f, want 0 when no rates set", got)
+	// Completed starting planet has AbstractWaterRate=0 (pure wood planet).
+	if got := systemWaterRate(w); got != 0 {
+		t.Errorf("systemWaterRate: got %f, want 0 when no completed planet has water rate", got)
 	}
 }
 
-func TestAbstractWaterIncome_SumsNonActivePlanets(t *testing.T) {
+func TestSystemWaterRate_SumsCompletedPlanets(t *testing.T) {
 	w := newRevealedWorld()
+	// Mark echoes as completed with authored water rates.
 	w.System.Planets[1].AbstractWaterRate = 2.5
+	w.System.Planets[1].Completed = true
 	w.System.Planets[2].AbstractWaterRate = 1.5
+	w.System.Planets[2].Completed = true
 
-	// In system view both contribute.
-	w.System.View = ViewSystem
-	got := abstractWaterIncome(w)
+	// All completed planets contribute regardless of view mode.
+	// Starting planet (completed, AbstractWaterRate=0) + echo1 (2.5) + echo2 (1.5) = 4.0.
+	got := systemWaterRate(w)
 	if math.Abs(got-4.0) > 1e-9 {
-		t.Errorf("abstractWaterIncome (system view): got %f, want 4.0", got)
+		t.Errorf("systemWaterRate: got %f, want 4.0", got)
 	}
 
-	// In planet view with planet 1 active, planet 1 is excluded.
+	// View mode does not affect the result.
 	w.System.View = ViewPlanet
 	w.Active = 1
-	got = abstractWaterIncome(w)
-	if math.Abs(got-1.5) > 1e-9 {
-		t.Errorf("abstractWaterIncome (planet view, active=1): got %f, want 1.5", got)
+	got = systemWaterRate(w)
+	if math.Abs(got-4.0) > 1e-9 {
+		t.Errorf("systemWaterRate (planet view): got %f, want 4.0", got)
 	}
 }
 
