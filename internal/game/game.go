@@ -238,7 +238,6 @@ func (g *Game) Update() error {
 	// Reveal: lock out normal input and tick the animation timer.
 	if g.revealActive {
 		g.revealElapsed += dt
-		g.world.Economy.Wood += abstractIncome(g.world) * dt
 		if g.revealElapsed >= revealDuration {
 			g.revealActive = false
 		}
@@ -736,16 +735,26 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			return col
 		}
 
+		var woodText, waterText string
+		if g.world.System.View == ViewSystem {
+			// System view: no stockpile; show total rate from all planets.
+			woodText = systemRateText(abstractIncome(g.world))
+			waterText = systemRateText(abstractWaterIncome(g.world))
+		} else {
+			// Planet view: local stockpile + live production rate.
+			woodText = fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(EstimateRate(g.world)))
+			waterText = fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(EstimateWaterRate(g.world)))
+		}
 		columns := []systemResourceColumn{
 			mkColumn(
 				g.world.ResourceDiscovered || g.world.System.Unlocked,
-				fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(abstractIncome(g.world))),
+				woodText,
 				colWoodResource, colWoodLabel,
 				PotentialForest, colForestPotential, colForestPotentialLabel,
 			),
 			mkColumn(
 				g.world.Economy.WaterDiscovered,
-				fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(abstractWaterIncome(g.world))),
+				waterText,
 				colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220},
 				PotentialWater, colWaterPotential, colWaterPotentialLabel,
 			),

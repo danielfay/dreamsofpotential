@@ -1556,9 +1556,9 @@ func TestTickSystemView_FreezesSim(t *testing.T) {
 		t.Errorf("SimTime advanced in system view (want frozen at %f, got %f)", simTimeBefore, w.SimTime)
 	}
 
-	// Abstract wood should have accumulated.
-	if w.Economy.Wood <= 0 {
-		t.Error("expected abstract wood to accumulate in system view")
+	// Economy.Wood must not change in system view — planets have local stockpiles only.
+	if w.Economy.Wood != 0 {
+		t.Errorf("Economy.Wood should stay at 0 in system view (no stockpile), got %.4f", w.Economy.Wood)
 	}
 }
 
