@@ -786,6 +786,16 @@ func waterFieldCanSpawnSparkle(w *World, f *ResourceField) bool {
 	if f == nil {
 		return false
 	}
+	if !waterSparkleSpawningUnlocked(w) {
+		return false
+	}
+	return waterFieldCanSpawnSparkleRaw(w, f)
+}
+
+func waterFieldCanSpawnSparkleRaw(w *World, f *ResourceField) bool {
+	if f == nil {
+		return false
+	}
 	innerR := w.Planet.Radius * sparkleInnerFrac
 	outerR := w.Planet.Radius * sparkleOuterFrac
 	const angularSteps = 16
@@ -804,6 +814,10 @@ func waterFieldCanSpawnSparkle(w *World, f *ResourceField) bool {
 		}
 	}
 	return false
+}
+
+func waterSparkleSpawningUnlocked(w *World) bool {
+	return dockExists(w)
 }
 
 // spawnSparkle places a new interior water sparkle in f. Tries golden-angle-
@@ -875,6 +889,95 @@ func spawnSparkle(w *World, f *ResourceField) growthResult {
 		result.NodeID = upgraded.ID
 	}
 	return result
+}
+
+func spawnSparkleAt(w *World, f *ResourceField, pos Vec) growthResult {
+	result := growthResult{
+		Outcome:     growthOutcomeNone,
+		Kind:        f.Kind,
+		CenterAngle: f.CenterAngle,
+		HalfArc:     f.HalfArc,
+		NodeID:      -1,
+	}
+	if !sparkleSpawnPosValid(w, f, pos) {
+		return result
+	}
+	n := newSparkle(w, pos)
+	w.Nodes = append(w.Nodes, n)
+	activatePulse(w, &n.Pulse)
+	result.Outcome = growthOutcomeSpawnedNode
+	result.NodeID = n.ID
+	return result
+}
+
+func spawnSparkleInDockReach(w *World, f *ResourceField, dock *Building) growthResult {
+	midR := w.Planet.Radius * 0.75
+	innerR := w.Planet.Radius * sparkleInnerFrac
+	outerR := w.Planet.Radius * sparkleOuterFrac
+	if midR < innerR {
+		midR = innerR
+	}
+	if midR > outerR {
+		midR = outerR
+	}
+	radii := []float64{midR, w.Planet.Radius * 0.70, w.Planet.Radius * 0.80}
+	offsets := []float64{0, dockWedgeHalfArc * 0.35, -dockWedgeHalfArc * 0.35, dockWedgeHalfArc * 0.7, -dockWedgeHalfArc * 0.7}
+	for _, off := range offsets {
+		angle := normAngle(dock.Angle + off)
+		if !angleWithinField(f, angle) {
+			continue
+		}
+		for _, r := range radii {
+			if r < innerR || r > outerR {
+				continue
+			}
+			pos := Vec{
+				X: w.Planet.Center.X + r*math.Cos(angle),
+				Y: w.Planet.Center.Y + r*math.Sin(angle),
+			}
+			if result := spawnSparkleAt(w, f, pos); result.Outcome != growthOutcomeNone {
+				return result
+			}
+		}
+	}
+	return growthResult{
+		Outcome:     growthOutcomeNone,
+		Kind:        f.Kind,
+		CenterAngle: f.CenterAngle,
+		HalfArc:     f.HalfArc,
+		NodeID:      -1,
+	}
+}
+
+func seedInitialDockSparkles(w *World, dock *Building) {
+	guaranteed := false
+	for _, f := range w.Planet.Fields {
+		if f.Kind != KindWater || !f.Known {
+			continue
+		}
+		if !guaranteed && angleWithinField(f, dock.Angle) {
+			if result := spawnSparkleInDockReach(w, f, dock); result.Outcome != growthOutcomeNone {
+				guaranteed = true
+			}
+		}
+		for i := 0; i < initialDockSparkles; i++ {
+			if !waterFieldCanSpawnSparkleRaw(w, f) {
+				break
+			}
+			spawnSparkle(w, f)
+		}
+	}
+	assignServicingDocks(w)
+	if guaranteed {
+		return
+	}
+	for _, f := range w.Planet.Fields {
+		if f.Kind == KindWater && f.Known && angleWithinField(f, dock.Angle) {
+			spawnSparkleInDockReach(w, f, dock)
+			assignServicingDocks(w)
+			return
+		}
+	}
 }
 
 // upgradeNearestSparkle grows the interior sparkle in f closest to the field

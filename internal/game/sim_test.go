@@ -2968,8 +2968,82 @@ func TestWaterSparkleGrowthCueFiresOnSpawn(t *testing.T) {
 	}
 }
 
+func TestWaterSparklesDeferredUntilFirstDock(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	f := fieldForKind(w, KindWater)
+	if f == nil {
+		t.Fatal("water field missing")
+	}
+	fp := w.Planet.FieldProgress[KindWater]
+	fp.EXP = fp.Cap - 0.1
+
+	depositToField(w, KindWater, 1.0)
+
+	if waterSparkleCount(w) != 0 {
+		t.Fatalf("water sparkles should not spawn before first dock, got %d", waterSparkleCount(w))
+	}
+	if fp.EXP < fp.Cap {
+		t.Errorf("water EXP should remain ready to grow after dock placement; EXP %.2f cap %.2f", fp.EXP, fp.Cap)
+	}
+
+	if !placeBuildingWithFreePlacement(w, shoreEdgeAngle(), true) {
+		t.Fatal("could not place first dock")
+	}
+	if waterSparkleCount(w) == 0 {
+		t.Fatal("first dock should seed initial water sparkles")
+	}
+}
+
+func TestFirstDockSeedsAllKnownWaterFieldsAndDockReach(t *testing.T) {
+	w := newWorldWithSeed(88)
+	w.Planet.Fields = []*ResourceField{
+		{Kind: KindWood, CenterAngle: -math.Pi / 2, HalfArc: math.Pi / 8, Known: true},
+		{Kind: KindWater, CenterAngle: 0, HalfArc: math.Pi / 5, Known: true},
+		{Kind: KindWater, CenterAngle: math.Pi, HalfArc: math.Pi / 5, Known: true},
+	}
+	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{
+		KindWood:  {Cap: woodFieldBaseEXP},
+		KindWater: {Cap: waterFieldBaseEXP},
+	}
+	w.Nodes = nil
+	placeBuildingWithFreePlacement(w, -math.Pi/2, true)
+
+	if !placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("could not place first dock")
+	}
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("dock missing after placement")
+	}
+
+	for i, f := range w.Planet.Fields {
+		if f.Kind != KindWater {
+			continue
+		}
+		count := 0
+		for _, n := range w.Nodes {
+			if n.Interior && n.Kind == KindWater && angleWithinField(f, n.Angle) {
+				count++
+			}
+		}
+		if count == 0 {
+			t.Errorf("known water field %d got no initial sparkles", i)
+		}
+	}
+	if got := len(dockServiceableSparkles(w, dock)); got == 0 {
+		t.Error("first dock should have at least one serviceable sparkle in cone range")
+	}
+}
+
 func TestDepositToFieldWaterGrowsSparkle(t *testing.T) {
 	w := newWaterSparkleTestWorld()
+	placeBuildingWithFreePlacement(w, shoreEdgeAngle(), true)
 	// Ensure the water field has EXP progress tracking.
 	if w.Planet.FieldProgress[KindWater] == nil {
 		t.Fatal("water field has no FieldProgress entry")
@@ -2994,6 +3068,7 @@ func TestDepositToFieldWaterGrowsSparkle(t *testing.T) {
 
 func TestNurtureFieldWaterSpawnsSparkle(t *testing.T) {
 	w := newWaterSparkleTestWorld()
+	placeBuildingWithFreePlacement(w, shoreEdgeAngle(), true)
 	f := fieldForKind(w, KindWater)
 	if f == nil {
 		t.Fatal("water field missing")
@@ -3192,6 +3267,13 @@ func TestWaterFocusIdleNoSparkles(t *testing.T) {
 	w := newWaterSparkleTestWorld()
 	shoreEdge := shoreEdgeAngle()
 	placeBuildingWithFreePlacement(w, shoreEdge, true)
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if n.Kind != KindWater {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
 	assignServicingDocks(w)
 
 	var dock *Building
@@ -3244,8 +3326,11 @@ func TestNurtureFieldPlanetWide(t *testing.T) {
 	if fieldCanSpawnNode(w, w.Planet.Fields[0]) {
 		t.Fatal("wood field should be saturated after fillWoodFieldNodes")
 	}
+	if !placeBuildingWithFreePlacement(w, shoreEdgeAngle(), true) {
+		t.Fatal("could not place dock")
+	}
 
-	// nurtureField should still succeed by spawning into the water field.
+	// With a dock placed, nurtureField should still succeed by spawning into the water field.
 	nodesBefore := len(w.Nodes)
 	if !nurtureField(w) {
 		t.Fatal("nurtureField returned false on a planet with an unsaturated water field")
@@ -3262,9 +3347,9 @@ func TestNurtureFieldPlanetWide(t *testing.T) {
 	}
 }
 
-// TestNurtureAttentionDockZeroWater verifies that nurtureAttentionActive fires
-// when a dock exists but EstimateWaterRate is zero, even before town is full.
-func TestNurtureAttentionDockZeroWater(t *testing.T) {
+// TestFirstDockSeedingPreventsZeroWaterAttention verifies that first-dock
+// sparkle seeding gives the dock reachable work instead of relying on Nurture.
+func TestFirstDockSeedingPreventsZeroWaterAttention(t *testing.T) {
 	w := newWorldWithSeed(11)
 	w.Planet.Fields = []*ResourceField{
 		{Kind: KindWood, CenterAngle: waterFrontierShoreAngle, HalfArc: waterFrontierShoreArc, Known: true},
@@ -3286,12 +3371,25 @@ func TestNurtureAttentionDockZeroWater(t *testing.T) {
 	// Place a dock at the shore edge (must be inLake so buildPreview routes to dockPreview).
 	placeBuildingWithFreePlacement(w, shoreEdgeAngle(), true)
 
-	// Dock exists, EstimateWaterRate == 0 (no sparkles), resource discovered → should fire.
-	if EstimateWaterRate(w) != 0 {
-		t.Skip("EstimateWaterRate is non-zero; dock may already be servicing something")
+	assignServicingDocks(w)
+	if waterSparkleCount(w) == 0 {
+		t.Fatal("first dock should seed water sparkles")
 	}
-	if !nurtureAttentionActive(w) {
-		t.Error("nurtureAttentionActive should be true when dock exists but water rate is 0")
+	var dock *Building
+	for _, b := range w.Buildings {
+		if b.Kind == KindDock {
+			dock = b
+			break
+		}
+	}
+	if dock == nil {
+		t.Fatal("dock missing after placement")
+	}
+	if len(dockServiceableSparkles(w, dock)) == 0 {
+		t.Fatal("first dock should have serviceable sparkles after seeding")
+	}
+	if nurtureAttentionActive(w) {
+		t.Error("nurtureAttentionActive should be false when first-dock seeding creates reachable water work")
 	}
 }
 

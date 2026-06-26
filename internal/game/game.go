@@ -24,6 +24,12 @@ const (
 	holdNurture = 2
 )
 
+const (
+	costPulseWood = 1 << iota
+	costPulseWater
+	costPulseNurture
+)
+
 // Game is the root ebiten game object.
 type Game struct {
 	world                        *World
@@ -37,7 +43,7 @@ type Game struct {
 	debug                        bool              // F3 — verbose debug panel; session-only, not persisted
 	debugSection                 int               // selected debug panel section; session-only
 	pulseTime                    float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget                  int               // which button pulses: 0=none, 1=build, 2=capacity, 3=nurture
+	pulseTarget                  int               // costPulse* bitmask for unaffordable-cost flash targets
 	rejectTime                   float64           // seconds remaining on invalid placement feedback
 	screenW                      int               // current screen dimensions, updated each Draw()
 	screenH                      int
@@ -49,6 +55,7 @@ type Game struct {
 	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
 	workerRatioAttentionCooldown float64     // counts down to next worker-ratio attention pulse
 	workerRatioAttentionLeft     float64     // seconds remaining on the worker-ratio attention flash
+	workerRatioAttentionReady    bool        // previous-frame state for first-available worker-ratio attention
 	dockUpgradeAttentionCooldown float64     // counts down to next dock-upgrade attention pulse
 	holdAction                   int         // current held purchase action (holdNone, holdNurture, …)
 	holdTimer                    float64     // counts down to next repeat fire
@@ -76,6 +83,8 @@ type Game struct {
 	thCapacityRect              sysRect // capacity button in TH tray
 	thTrayRect                  sysRect // entire TH tray background rect
 	thCapacityAttentionCooldown float64 // counts down to next TH capacity attention pulse
+	thCapacityAttentionLeft     float64 // seconds remaining on the TH first-house attention ripple
+	thFirstCapacityBuildable    bool    // previous-frame state for the first house teaching pulse
 
 	// labor focus control overlay
 	showFocusControl bool
@@ -158,10 +167,41 @@ func (g *Game) tryHoldAction(action int) bool {
 			g.nurtureConfirmLeft = nurtureConfirmDuration
 			return true
 		}
-		g.pulseTime = pulseDuration
-		g.pulseTarget = 3
+		g.flashCostTargets(costPulseNurture)
 	}
 	return false
+}
+
+func (g *Game) flashCostTargets(targets int) {
+	if targets == 0 {
+		return
+	}
+	g.pulseTime = pulseDuration
+	g.pulseTarget = targets
+}
+
+func missingCostTargets(w *World, woodCost, waterCost float64) int {
+	targets := 0
+	if woodCost > 0 && w.Economy.Wood < woodCost {
+		targets |= costPulseWood
+	}
+	if waterCost > 0 && w.Economy.Water < waterCost {
+		targets |= costPulseWater
+	}
+	return targets
+}
+
+func missingPlacementCostTargets(w *World, pv *placementPreview) int {
+	switch pv.Kind {
+	case KindDock:
+		if pv.Extension {
+			return missingCostTargets(w, dockExtWoodCost, dockExtWaterCost)
+		}
+		return missingCostTargets(w, dockShoreCost, 0)
+	case KindLoggingCamp:
+		return missingCostTargets(w, CampCost(w), 0)
+	}
+	return 0
 }
 
 func (g *Game) Update() error {
@@ -260,6 +300,11 @@ func (g *Game) Update() error {
 		if g.workerRatioAttentionLeft > 0 {
 			g.workerRatioAttentionLeft -= dt
 		}
+		workerRatioReady := workerRatioAttentionActive(g.world)
+		if workerRatioReady && !g.workerRatioAttentionReady {
+			g.workerRatioAttentionLeft = nurtureAttentionPulseDur
+		}
+		g.workerRatioAttentionReady = workerRatioReady
 		g.nurtureAttentionCooldown -= dt
 		if g.nurtureAttentionCooldown <= 0 {
 			g.nurtureAttentionCooldown = nurtureAttentionInterval
@@ -270,7 +315,7 @@ func (g *Game) Update() error {
 		g.workerRatioAttentionCooldown -= dt
 		if g.workerRatioAttentionCooldown <= 0 {
 			g.workerRatioAttentionCooldown = nurtureAttentionInterval
-			if workerRatioAttentionActive(g.world) {
+			if workerRatioReady {
 				g.workerRatioAttentionLeft = nurtureAttentionPulseDur
 			}
 		}
@@ -281,12 +326,19 @@ func (g *Game) Update() error {
 				activatePulse(g.world, &dock.Pulse)
 			}
 		}
+		firstCapacityBuildable := firstTownCapacityBuildable(g.world)
+		if firstCapacityBuildable && !g.thFirstCapacityBuildable {
+			g.fireTownCapacityAttention()
+		}
+		g.thFirstCapacityBuildable = firstCapacityBuildable
+		if g.thCapacityAttentionLeft > 0 {
+			g.thCapacityAttentionLeft -= dt
+		}
 		g.thCapacityAttentionCooldown -= dt
 		if g.thCapacityAttentionCooldown <= 0 {
 			g.thCapacityAttentionCooldown = nurtureAttentionInterval
-			if th := townHall(g.world); th != nil && !townFieldFull(g.world) &&
-				g.world.Economy.Wood >= townCapacityCost(g.world) {
-				activatePulse(g.world, &th.Pulse)
+			if firstTownCapacityBuildable(g.world) {
+				g.fireTownCapacityAttention()
 			}
 		}
 		if g.rejectTime > 0 {
@@ -359,6 +411,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	g.ui.Draw(screen)
 	g.drawOverlay(screen)
+}
+
+func (g *Game) fireTownCapacityAttention() {
+	if townHall(g.world) == nil {
+		return
+	}
+	g.thCapacityAttentionLeft = nurtureAttentionPulseDur
 }
 
 // intScale returns the floor'd integer view scale, clamped to at least 1.
@@ -473,19 +532,8 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		srw := float32(sr.Max.X - sr.Min.X)
 		srh := float32(sr.Max.Y - sr.Min.Y)
 		if g.nurtureAttentionPulseLeft > 0 {
-			// Square pulse: a rect expands from the button centre outward, fading as it grows.
-			// t=1 at fire, t=0 at end; expand is the inverse so the rect starts small.
-			t := float32(g.nurtureAttentionPulseLeft / nurtureAttentionPulseDur)
-			expand := 1 - t
-			cx := srx + srw/2
-			cy := sry + srh/2
-			halfW := srw / 2 * expand * 1.35
-			halfH := srh / 2 * expand * 1.35
-			if halfW > 0.5 {
-				col := colNurtureAttention
-				col.A = uint8(220 * t)
-				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
-			}
+			drawAttentionRipple(screen, srx+srw/2, sry+srh/2, srw, srh,
+				g.nurtureAttentionPulseLeft, nurtureAttentionPulseDur, colNurtureAttention, 0)
 		}
 		if g.nurtureConfirmLeft > 0 {
 			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
@@ -500,19 +548,12 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			wry := float32(wr.Min.Y)
 			wrw := float32(wr.Max.X - wr.Min.X)
 			wrh := float32(wr.Max.Y - wr.Min.Y)
-			t := float32(g.workerRatioAttentionLeft / nurtureAttentionPulseDur)
-			expand := 1 - t
-			cx := wrx + wrw/2
-			cy := wry + wrh/2
-			halfW := wrw / 2 * expand * 1.35
-			halfH := wrh / 2 * expand * 1.35
-			if halfW > 0.5 {
-				col := colNurtureAttention
-				col.A = uint8(220 * t)
-				vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
-			}
+			drawAttentionRipple(screen, wrx+wrw/2, wry+wrh/2, wrw, wrh,
+				g.workerRatioAttentionLeft, nurtureAttentionPulseDur, colNurtureAttention, 0)
 		}
 	}
+
+	g.drawTownHallAttention(screen)
 
 	// Selected-building trays.
 	g.drawDockTray(screen)
@@ -528,25 +569,21 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 	if g.pulseTime > 0 {
 		colPulse := colCostPulse
 		colPulse.A = uint8(200 * g.pulseTime / pulseDuration)
-		switch g.pulseTarget {
-		case 1:
-			// Camp unaffordable: flash around the wood resource display.
-			if g.hud.resourceHUD != nil {
-				pr := g.hud.resourceHUD.GetWidget().Rect
-				vector.StrokeRect(screen,
-					float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-					float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-					2, colPulse, false)
-			}
-		case 2:
-			// Capacity unaffordable: flash around the TH tray capacity button.
-			if g.thCapacityRect.w > 0 {
-				cr := g.thCapacityRect
-				vector.StrokeRect(screen,
-					cr.x-2, cr.y-2, cr.w+4, cr.h+4,
-					2, colPulse, false)
-			}
-		case 3:
+		if g.pulseTarget&costPulseWood != 0 && g.hud.resourceHUD != nil {
+			pr := g.hud.resourceHUD.GetWidget().Rect
+			vector.StrokeRect(screen,
+				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+				2, colPulse, false)
+		}
+		if g.pulseTarget&costPulseWater != 0 && g.hud.waterHUD != nil {
+			pr := g.hud.waterHUD.GetWidget().Rect
+			vector.StrokeRect(screen,
+				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+				2, colPulse, false)
+		}
+		if g.pulseTarget&costPulseNurture != 0 {
 			pr := g.hud.resourceSquare.GetWidget().Rect
 			vector.StrokeRect(screen,
 				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
@@ -569,6 +606,44 @@ func affordabilityFrac(wood, cost float64) float32 {
 		return 0
 	}
 	return float32(wood / cost)
+}
+
+func (g *Game) worldToScreen(v Vec) (float32, float32) {
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	return float32(offX + v.X*scale), float32(offY + v.Y*scale)
+}
+
+func (g *Game) drawTownHallAttention(screen *ebiten.Image) {
+	if g.thCapacityAttentionLeft <= 0 || g.world.System.View != ViewPlanet {
+		return
+	}
+	th := townHall(g.world)
+	if th == nil {
+		return
+	}
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	center := insetPoint(g.world.Planet, th.Angle, float64(townHallBldInset))
+	cx, cy := g.worldToScreen(center)
+	baseW := float32(townHallBldHalfW*2+6) * float32(scale)
+	baseH := float32(townHallBldHalfH*2+6) * float32(scale)
+	drawAttentionRipple(screen, cx, cy, baseW, baseH,
+		g.thCapacityAttentionLeft, nurtureAttentionPulseDur, colTownHall, 0.25)
+}
+
+func drawAttentionRipple(screen *ebiten.Image, cx, cy, baseW, baseH float32, timeLeft, duration float64, baseColor color.RGBA, startScale float32) {
+	if timeLeft <= 0 || duration <= 0 {
+		return
+	}
+	t := float32(timeLeft / duration)
+	expand := 1 - t
+	halfW := baseW / 2 * (startScale + expand*1.35)
+	halfH := baseH / 2 * (startScale + expand*1.35)
+	if halfW <= 0.5 || halfH <= 0.5 {
+		return
+	}
+	col := baseColor
+	col.A = uint8(220 * t)
+	vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
 }
 
 func drawButtonProgress(screen *ebiten.Image, btn *widget.Button, frac float32, col color.RGBA) {
@@ -596,13 +671,12 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 // Add an entry here to display any new resource — the tray loop handles the rest.
 type sysTrayRateSpec struct {
 	getRate func(SystemPlanet) float64
-	iconCol color.RGBA
 	textCol color.RGBA
 }
 
 var sysTrayRateSpecs = []sysTrayRateSpec{
-	{func(p SystemPlanet) float64 { return p.AbstractRate }, colWoodResource, colWoodLabel},
-	{func(p SystemPlanet) float64 { return p.AbstractWaterRate }, colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220}},
+	{func(p SystemPlanet) float64 { return p.AbstractRate }, colWoodLabel},
+	{func(p SystemPlanet) float64 { return p.AbstractWaterRate }, color.RGBA{R: 100, G: 200, B: 255, A: 220}},
 }
 
 // drawSystemOverlay draws the system HUD and selected-planet tray.
@@ -760,16 +834,13 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	swSize := systemHUD(bottomHUDSwatchBase)
 	swY := ty + (th-swSize)/2
 
-	// Resource rates — draw each non-zero rate as [icon] [N.N/s], left-to-right.
+	// Resource rates — draw each non-zero rate as coloured text, left-to-right.
 	// Text bottom is aligned with the swatch bottom for a consistent baseline.
-	iconSz := systemHUD(bottomHUDSmallIconBase)
 	_, rateH := text.Measure("0", face, 0)
 	type rateItem struct {
 		label   string
-		iconCol color.RGBA
 		textCol color.RGBA
 		width   float32
-		icon    bool
 	}
 	var rateItems []rateItem
 	for _, spec := range sysTrayRateSpecs {
@@ -781,10 +852,8 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		rw, _ := text.Measure(rateStr, face, 0)
 		rateItems = append(rateItems, rateItem{
 			label:   rateStr,
-			iconCol: spec.iconCol,
 			textCol: spec.textCol,
-			width:   iconSz + systemHUD(bottomHUDTextGapBase) + float32(rw),
-			icon:    true,
+			width:   float32(rw),
 		})
 	}
 	if len(rateItems) == 0 {
@@ -853,24 +922,16 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 
 	cx := float32(g.screenW)/2 - totalW/2
 	swX := cx
-	vector.FillRect(screen, swX, swY, swSize, swSize, sysSwatchColor(p), false)
+	drawSystemTrayPlanetSwatch(screen, p, swX, swY, swSize)
 	cx += swSize + contentGap
 
-	iconY := swY + (swSize-iconSz)/2
 	rateY := swY + swSize - float32(rateH)
 	for i, item := range rateItems {
 		if i > 0 {
 			cx += rateGap
 		}
-		if item.icon {
-			vector.FillRect(screen, cx, iconY, iconSz, iconSz, item.iconCol, false)
-			cx += iconSz + systemHUD(bottomHUDTextGapBase)
-		}
 		drawSysText(screen, item.label, cx, rateY, item.textCol, face)
 		cx += item.width
-		if item.icon {
-			cx -= iconSz + systemHUD(bottomHUDTextGapBase)
-		}
 	}
 	cx += contentGap
 
@@ -934,6 +995,20 @@ func drawPotentialCircle(dst *ebiten.Image, cx, cy, r float32, col color.RGBA) {
 	vector.FillCircle(dst, cx, cy, r, col, false)
 }
 
+func drawSystemTrayPlanetSwatch(screen *ebiten.Image, p SystemPlanet, x, y, size float32) {
+	if systemPlanetHybridSwatch(p) {
+		halfW := size / 2
+		vector.FillRect(screen, x, y, halfW, size, colWoodResource, false)
+		vector.FillRect(screen, x+halfW, y, size-halfW, size, colWaterPotential, false)
+		return
+	}
+	vector.FillRect(screen, x, y, size, size, sysSwatchColor(p), false)
+}
+
+func systemPlanetHybridSwatch(p SystemPlanet) bool {
+	return p.AbstractRate > 0 && p.AbstractWaterRate > 0
+}
+
 func sysSwatchColor(p SystemPlanet) color.RGBA {
 	switch p.Kind {
 	case PlanetStarting, PlanetEcho:
@@ -959,11 +1034,7 @@ func drawSysText(target *ebiten.Image, s string, x, y float32, col color.RGBA, f
 }
 
 func workerRatioAttentionActive(w *World) bool {
-	return !w.WorkerRatioSeen &&
-		len(w.Workers) > 0 &&
-		w.ResourceDiscovered &&
-		w.Economy.WaterDiscovered &&
-		hasAnyLake(w)
+	return !w.WorkerRatioSeen && laborFocusControlAvailable(w)
 }
 
 // clearTransientUI resets all mid-action player state. Call on any view transition
@@ -975,8 +1046,16 @@ func clearTransientUI(g *Game) {
 	g.holdDuration = 0
 	g.showMenu = false
 	g.showFocusControl = false
+	g.closeBuildingTray()
+	g.workerRatioAttentionReady = false
+	g.thCapacityAttentionLeft = 0
+	g.thFirstCapacityBuildable = false
+}
+
+func (g *Game) closeBuildingTray() {
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
+	g.dockTrayRect = sysRect{}
 	g.thCapacityRect = sysRect{}
 	g.thTrayRect = sysRect{}
 }
@@ -988,11 +1067,12 @@ func (g *Game) openFocusControl() {
 	if total == 0 {
 		return
 	}
-	if !hasAnyLake(g.world) {
+	if !laborFocusControlAvailable(g.world) {
 		return
 	}
 	g.world.WorkerRatioSeen = true
 	g.workerRatioAttentionLeft = 0
+	g.workerRatioAttentionReady = false
 	if w, ok := g.world.LaborFocus[KindWater]; ok {
 		g.focusDraftWater = w
 	} else {
@@ -1030,8 +1110,8 @@ func (g *Game) drawReturnToSystemButton(screen *ebiten.Image) {
 
 // drawDockTray draws a bottom tray when a dock building is selected.
 // Shows dock identity on the left and an upgrade action on the right.
-// Level 1 docks show the L1→L2 upgrade cost (Wood + Water). Level 2 docks
-// show a quiet Level-3 tease (unnamed future resource, not purchasable).
+// Level 1 docks show L1→L2 affordability via fill progress. Level 2 docks show
+// a quiet Level-3 tease (unnamed future resource, not purchasable).
 func (g *Game) drawDockTray(screen *ebiten.Image) {
 	if g.selectedBuildingID < 0 || g.selectedBuildingID >= len(g.world.Buildings) {
 		g.dockUpgradeRect = sysRect{}
@@ -1046,14 +1126,8 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 	}
 
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
-	face := g.hud.sysface
 	selectedHUD := func(base float64) float32 {
 		return scaledHUDFloat(scale, selectedBuildingHUDScale, base)
-	}
-	if face == nil {
-		g.dockUpgradeRect = sysRect{}
-		g.dockTrayRect = sysRect{}
-		return
 	}
 
 	th := selectedHUD(bottomHUDHeightBase)
@@ -1156,25 +1230,6 @@ func (g *Game) drawDockTray(screen *ebiten.Image) {
 		}
 
 		g.dockUpgradeRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
-
-		// Cost icons: always use full color so they're visible against the dark/fill background.
-		iconSize := selectedHUD(bottomHUDSmallIconBase)
-		iconY := ayTop + (btnH-iconSize)/2
-		cx := btnX + 4*sp
-
-		// Wood cost icon + amount.
-		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colWoodResource, false)
-		cx += iconSize + 2*sp
-		woodStr := fmt.Sprintf("%.0f", dockL2WoodCost)
-		drawSysText(screen, woodStr, cx, iconY, colWoodLabel, face)
-		ww, _ := text.Measure(woodStr, face, 0)
-		cx += float32(ww) + 3*sp
-
-		// Water cost icon + amount.
-		vector.FillRect(screen, cx, iconY, iconSize, iconSize, colSparkle, false)
-		cx += iconSize + 2*sp
-		waterStr := fmt.Sprintf("%.0f", dockL2WaterCost)
-		drawSysText(screen, waterStr, cx, iconY, color.RGBA{R: 100, G: 190, B: 240, A: 220}, face)
 	}
 }
 
@@ -1195,14 +1250,8 @@ func (g *Game) drawTownHallTray(screen *ebiten.Image) {
 	}
 
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
-	face := g.hud.sysface
 	selectedHUD := func(base float64) float32 {
 		return scaledHUDFloat(scale, selectedBuildingHUDScale, base)
-	}
-	if face == nil {
-		g.thCapacityRect = sysRect{}
-		g.thTrayRect = sysRect{}
-		return
 	}
 
 	th := selectedHUD(bottomHUDHeightBase)
@@ -1213,8 +1262,6 @@ func (g *Game) drawTownHallTray(screen *ebiten.Image) {
 	vector.FillRect(screen, tx, ty, tw, th, colSysTrayFill, false)
 	vector.StrokeLine(screen, tx, ty, tx+tw, ty, 1, colSysTrayBorder, false)
 	g.thTrayRect = sysRect{x: tx, y: ty, w: tw, h: th}
-
-	sp := selectedHUD(1)
 
 	swSize := selectedHUD(bottomHUDSwatchBase)
 	swY := ty + (th-swSize)/2
@@ -1274,23 +1321,14 @@ func (g *Game) drawTownHallTray(screen *ebiten.Image) {
 		}
 		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
 
-		// Attention pulse: glow when TH's pulse is active.
-		if pulseActive(g.world, b.Pulse) {
+		// Attention glow mirrors the first-house teaching ripple.
+		if g.thCapacityAttentionLeft > 0 {
 			atCol := colNurtureAttention
 			atCol.A = 180
 			vector.StrokeRect(screen, btnX-1, ayTop-1, btnW+2, btnH+2, 1.5, atCol, false)
 		}
 
 		g.thCapacityRect = sysRect{x: btnX, y: ayTop, w: btnW, h: btnH}
-
-		// Wood cost icon + amount.
-		iconSize := selectedHUD(bottomHUDSmallIconBase)
-		iconY := ayTop + (btnH-iconSize)/2
-		icx := btnX + 4*sp
-		vector.FillRect(screen, icx, iconY, iconSize, iconSize, colWoodResource, false)
-		icx += iconSize + 2*sp
-		costStr := fmt.Sprintf("%.0f", cost)
-		drawSysText(screen, costStr, icx, iconY, colWoodLabel, face)
 	}
 }
 
@@ -1298,7 +1336,7 @@ func (g *Game) drawTownHallTray(screen *ebiten.Image) {
 // mini slider icon and per-kind worker counts once LaborFocus is set.
 func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 	w := g.world
-	if len(w.LaborFocus) == 0 || len(w.Workers) == 0 {
+	if !laborFocusControlAvailable(w) {
 		return
 	}
 	if g.hud == nil {
@@ -1327,6 +1365,10 @@ func (g *Game) drawWorkerHUDOverlay(screen *ebiten.Image) {
 	vector.FillRect(screen, innerX, innerY, halfW, innerH, colWoodResource, false)
 	vector.FillRect(screen, innerX+halfW+halfGap, innerY, halfW, innerH, colSparkle, false)
 	vector.StrokeLine(screen, innerX+halfW+halfGap/2, innerY, innerX+halfW+halfGap/2, innerY+innerH, 1, colWorkerLaden, false)
+
+	if len(w.LaborFocus) == 0 {
+		return
+	}
 
 	// ── Worker distribution meter (drawn over workerRatio text area) ──────
 	txtR := g.hud.workerRatio.GetWidget().Rect

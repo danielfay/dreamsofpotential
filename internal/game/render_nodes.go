@@ -30,6 +30,9 @@ func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
 // drawPreview draws route lines, the camp ghost, and (in debug mode) the range
 // boundary for the given placement preview.
 func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug bool) {
+	if pv.Hidden {
+		return
+	}
 	radius := float32(planet.Radius)
 	maxDist := float32(previewArc) * radius
 	routeRadius := radius + 6
