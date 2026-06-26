@@ -520,26 +520,48 @@ func assignFocusToNewWorker(w *World, wk *Worker) {
 	if len(w.LaborFocus) == 0 {
 		return
 	}
-	counts := map[ResourceKind]int{}
-	for _, other := range w.Workers {
-		if other.ID == wk.ID || other.FocusedKind == focusKindNone {
-			continue
-		}
-		counts[other.FocusedKind]++
+
+	// Compare the LaborFocus sum to the number of existing workers (excluding the
+	// new one). If focus has more slots than workers there is a genuine vacancy to
+	// fill; use FocusedKind counts to identify it. Otherwise every slot is already
+	// claimed and this worker is an overflow — extend LaborFocus via ratioBalancedKind.
+	//
+	// Counting FocusedKind is unreliable for idle workers: assignFocusToIdleWorker
+	// clears FocusedKind to focusKindNone when no work is available, making idle
+	// water workers appear unallocated. Using the focusSum comparison instead avoids
+	// the flicker that results from the overflow worker being bounced between wood
+	// dispatch and reconcileLaborFocus recall.
+	focusSum := 0
+	for _, t := range w.LaborFocus {
+		focusSum += t
 	}
+	existingWorkers := len(w.Workers) - 1
+
 	var bestKind ResourceKind = focusKindNone
-	bestDeficit := 0
-	for kind, target := range w.LaborFocus {
-		deficit := target - counts[kind]
-		// Use > for strict improvement; tiebreak by preferring higher ResourceKind
-		// value (KindWater > KindWood) so water workers are filled first on ties.
-		if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
-			bestDeficit = deficit
-			bestKind = kind
+	if focusSum > existingWorkers {
+		// Genuine deficit: LaborFocus has more slots than current workers.
+		counts := map[ResourceKind]int{}
+		for _, other := range w.Workers {
+			if other.ID == wk.ID || other.FocusedKind == focusKindNone {
+				continue
+			}
+			counts[other.FocusedKind]++
+		}
+		bestDeficit := 0
+		for kind, target := range w.LaborFocus {
+			deficit := target - counts[kind]
+			// Use > for strict improvement; tiebreak by preferring higher ResourceKind
+			// value (KindWater > KindWood) so water workers are filled first on ties.
+			if deficit > bestDeficit || (deficit == bestDeficit && bestKind != focusKindNone && kind > bestKind) {
+				bestDeficit = deficit
+				bestKind = kind
+			}
 		}
 	}
-	// Overflow: all targets met. Pick the kind that best maintains the saved ratio
-	// and extend LaborFocus so the sum stays equal to len(w.Workers).
+
+	// Overflow: all focus slots already allocated (or deficit path found nothing).
+	// Pick the kind that best maintains the saved ratio and extend LaborFocus so
+	// the sum stays equal to len(w.Workers).
 	if bestKind == focusKindNone {
 		bestKind = ratioBalancedKind(w)
 		if bestKind != focusKindNone {

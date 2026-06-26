@@ -609,3 +609,45 @@ func TestOverflowWorkerStartsWorking(t *testing.T) {
 		t.Errorf("overflow worker still idle/settling after settling period (state=%v)", wk6.State)
 	}
 }
+
+// TestSpawnWithIdleWaterWorkerExtendsFocus verifies that when assignFocusToIdleWorker
+// has cleared an idle water worker's FocusedKind (no dock available), a newly
+// spawned worker still goes through the overflow path and extends LaborFocus rather
+// than taking the apparent deficit slot. This prevents the flicker where the new
+// worker is bounced between wood dispatch and reconcileLaborFocus recall.
+func TestSpawnWithIdleWaterWorkerExtendsFocus(t *testing.T) {
+	w := newFocusWorld(t, 3)
+	w.Economy.WorkerCapacity = 10
+
+	// Manually wire the state that triggers the bug:
+	// 2 wood workers active, 1 water worker idle with FocusedKind cleared
+	// (simulating what assignFocusToIdleWorker does when no dock is free).
+	w.LaborFocus = map[ResourceKind]int{KindWood: 2, KindWater: 1}
+	w.SavedLaborRatio = map[ResourceKind]int{KindWood: 1, KindWater: 1}
+
+	wks := w.Workers
+	wks[0].State = StateLoading // in wood loop
+	wks[0].FocusedKind = KindWood
+	wks[1].State = StateLoading
+	wks[1].FocusedKind = KindWood
+	wks[2].State = StateIdleWaiting
+	wks[2].FocusedKind = focusKindNone // cleared by assignFocusToIdleWorker
+
+	// focusSum (3) == existingWorkers (3): the new worker must take the overflow path.
+	focusSumBefore := w.LaborFocus[KindWood] + w.LaborFocus[KindWater]
+	if focusSumBefore != len(w.Workers) {
+		t.Fatalf("precondition: focusSum=%d != workers=%d", focusSumBefore, len(w.Workers))
+	}
+
+	wk4 := spawnWorkerAtTownHall(w)
+	if wk4 == nil {
+		t.Fatal("could not spawn 4th worker")
+	}
+
+	// LaborFocus must have been extended: sum should now equal the new worker count.
+	focusSumAfter := w.LaborFocus[KindWood] + w.LaborFocus[KindWater]
+	if focusSumAfter != len(w.Workers) {
+		t.Errorf("LaborFocus sum = %d after spawn, want %d; overflow path must extend LaborFocus",
+			focusSumAfter, len(w.Workers))
+	}
+}
