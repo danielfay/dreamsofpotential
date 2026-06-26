@@ -987,8 +987,7 @@ func dockHasServiceableSparkles(w *World) bool {
 }
 
 func laborFocusControlAvailable(w *World) bool {
-	return len(w.Workers) > 0 &&
-		(w.Economy.WaterDiscovered || dockHasServiceableSparkles(w))
+	return len(w.Workers) > 0 && dockHasServiceableSparkles(w)
 }
 
 // setAutoProofSplit initialises LaborFocus to 1 water + rest wood worker,
