@@ -207,30 +207,45 @@ func checkActivePlanetCompletion(w *World) {
 	}
 }
 
-// injectCirclePacket spends 1 whole Potential circle of kind on the active planet:
-// deducts 1.0 from the fractional pool, activates the matching field family if
-// not yet active, and grants a flat local resource packet. Returns false if the
-// player cannot afford the circle.
+// injectCirclePacket spends 1 whole Potential circle of kind on the selected
+// system planet: deducts 1.0 from the fractional pool, activates the matching
+// field family if not yet active, and grants a flat local resource packet.
+// Returns false if the player cannot afford the circle.
 func injectCirclePacket(w *World, kind PotentialKind) bool {
 	if math.Floor(w.Economy.Potential[kind]) < 1 {
 		return false
 	}
+	sel := w.System.Selected
+	if sel < 0 {
+		return false
+	}
 	w.Economy.Potential[kind] -= 1.0
-	switch kind {
-	case PotentialForest:
-		activateFieldFamily(w, KindWood)
-		w.Economy.Wood += circlePacketWood
-	case PotentialWater:
-		activateFieldFamily(w, KindWater)
-		w.Economy.Water += circlePacketWater
+	if sel == w.Active {
+		switch kind {
+		case PotentialForest:
+			activateFieldFamily(w.Planet.Fields, KindWood)
+			w.Economy.Wood += circlePacketWood
+		case PotentialWater:
+			activateFieldFamily(w.Planet.Fields, KindWater)
+			w.Economy.Water += circlePacketWater
+		}
+	} else if ps := w.PlanetStates[sel]; ps != nil {
+		switch kind {
+		case PotentialForest:
+			activateFieldFamily(ps.Planet.Fields, KindWood)
+			ps.LocalWood += circlePacketWood
+		case PotentialWater:
+			activateFieldFamily(ps.Planet.Fields, KindWater)
+			ps.LocalWater += circlePacketWater
+		}
 	}
 	return true
 }
 
-// activateFieldFamily marks the first field of kind as Known on the active planet
-// if none is already known. No-op if the family is already active.
-func activateFieldFamily(w *World, kind ResourceKind) {
-	for _, f := range w.Planet.Fields {
+// activateFieldFamily marks the first field of kind as Known in fields if none
+// is already known. No-op if the family is already active.
+func activateFieldFamily(fields []*ResourceField, kind ResourceKind) {
+	for _, f := range fields {
 		if f.Kind == kind && !f.Known {
 			f.Known = true
 			return

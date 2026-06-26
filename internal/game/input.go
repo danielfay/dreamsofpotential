@@ -49,6 +49,30 @@ func (g *Game) handleSystemInput() {
 		}
 	}
 
+	// Circle inject buttons in the top HUD.
+	if g.world.System.Unlocked && g.world.System.Selected >= 0 {
+		if r := g.sysInjectWoodRect; r.w > 0 &&
+			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
+			float32(my) >= r.y && float32(my) < r.y+r.h {
+			if injectCirclePacket(g.world, PotentialForest) {
+				g.spawnInjectDots(PotentialForest)
+			} else {
+				g.flashCostTargets(costPulseForestCircle)
+			}
+			return
+		}
+		if r := g.sysInjectWaterRect; r.w > 0 &&
+			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
+			float32(my) >= r.y && float32(my) < r.y+r.h {
+			if injectCirclePacket(g.world, PotentialWater) {
+				g.spawnInjectDots(PotentialWater)
+			} else {
+				g.flashCostTargets(costPulseWaterCircle)
+			}
+			return
+		}
+	}
+
 	// Planet selection: convert to virtual world coords and check disks.
 	wp := g.screenToWorld(mx, my)
 	for i, p := range g.world.System.Planets {
@@ -156,26 +180,6 @@ func (g *Game) handleInput() {
 		return
 	}
 	mx, my := ebiten.CursorPosition()
-
-	// Circle inject buttons in the top system HUD (planet view only).
-	if g.world.System.Unlocked {
-		if r := g.sysInjectWoodRect; r.w > 0 &&
-			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
-			float32(my) >= r.y && float32(my) < r.y+r.h {
-			if !injectCirclePacket(g.world, PotentialForest) {
-				g.flashCostTargets(costPulseForestCircle)
-			}
-			return
-		}
-		if r := g.sysInjectWaterRect; r.w > 0 &&
-			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
-			float32(my) >= r.y && float32(my) < r.y+r.h {
-			if !injectCirclePacket(g.world, PotentialWater) {
-				g.flashCostTargets(costPulseWaterCircle)
-			}
-			return
-		}
-	}
 
 	// TH tray: any click inside is consumed. The tray stays open so capacity can
 	// be bought repeatedly while resources allow.

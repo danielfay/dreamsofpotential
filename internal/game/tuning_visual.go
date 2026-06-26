@@ -66,6 +66,9 @@ var (
 	colNurtureAttention = color.RGBA{R: 120, G: 255, B: 150, A: 255}
 	colNurtureConfirm   = color.RGBA{R: 200, G: 255, B: 210, A: 255}
 
+	// Inject-circle hover rim (white glow, alpha set per-frame via constant).
+	colInjectHover = color.RGBA{R: 255, G: 255, B: 255, A: 180}
+
 	// Unaffordable-cost flash — red stroke around the button (alpha set per-frame).
 	colCostPulse = color.RGBA{R: 220, G: 60, B: 60, A: 255}
 
