@@ -368,9 +368,9 @@ func TestBuildQAWorld_CompleteFrontier(t *testing.T) {
 	}
 	// Both Potential types should have been awarded.
 	if got := w.Economy.Potential[PotentialForest]; got <= 0 {
-		t.Errorf("Forest Potential after CompleteFrontier: got %d, want > 0", got)
+		t.Errorf("Forest Potential after CompleteFrontier: got %.0f, want > 0", got)
 	}
 	if got := w.Economy.Potential[PotentialWater]; got <= 0 {
-		t.Errorf("Water Potential after CompleteFrontier: got %d, want > 0", got)
+		t.Errorf("Water Potential after CompleteFrontier: got %.0f, want > 0", got)
 	}
 }

@@ -1556,9 +1556,9 @@ func TestTickSystemView_FreezesSim(t *testing.T) {
 		t.Errorf("SimTime advanced in system view (want frozen at %f, got %f)", simTimeBefore, w.SimTime)
 	}
 
-	// Abstract wood should have accumulated.
-	if w.Economy.Wood <= 0 {
-		t.Error("expected abstract wood to accumulate in system view")
+	// Economy.Wood must not change in system view — planets have local stockpiles only.
+	if w.Economy.Wood != 0 {
+		t.Errorf("Economy.Wood should stay at 0 in system view (no stockpile), got %.4f", w.Economy.Wood)
 	}
 }
 
@@ -1767,7 +1767,7 @@ func TestAwakenPlanet_SpendsPotentialNotWood(t *testing.T) {
 		t.Fatal("echo 1 should be awakened after awakenPlanet")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
-		t.Errorf("Forest Potential after awaken: got %d, want 0", got)
+		t.Errorf("Forest Potential after awaken: got %.0f, want 0", got)
 	}
 	if w.Economy.Wood != startWood {
 		t.Errorf("Wood changed after awaken: got %.2f, want %.2f", w.Economy.Wood, startWood)
@@ -1779,11 +1779,11 @@ func TestTriggerUnlock_AwardsForestPotential(t *testing.T) {
 	addWorker(w)
 	runSim(w, 2)
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
-		t.Errorf("Forest Potential before unlock: got %d, want 0", got)
+		t.Errorf("Forest Potential before unlock: got %.0f, want 0", got)
 	}
 	Tick(w, dt) // triggers unlock → awards Potential
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after starting completion: got %d, want 1", got)
+		t.Errorf("Forest Potential after starting completion: got %.0f, want 1", got)
 	}
 }
 
@@ -1808,19 +1808,19 @@ func TestEchoCompletion_AwardsForestPotential(t *testing.T) {
 	fillWoodFieldNodes(w, false)
 
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
-		t.Errorf("Forest Potential before echo completion: got %d, want 0", got)
+		t.Errorf("Forest Potential before echo completion: got %.0f, want 0", got)
 	}
 	checkActivePlanetCompletion(w)
 	if !w.System.Planets[1].Completed {
 		t.Fatal("echo 1 should be marked Completed")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after echo completion: got %d, want 1", got)
+		t.Errorf("Forest Potential after echo completion: got %.0f, want 1", got)
 	}
 	// Must not double-award.
 	checkActivePlanetCompletion(w)
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential double-award guard: got %d, want 1", got)
+		t.Errorf("Forest Potential double-award guard: got %.0f, want 1", got)
 	}
 }
 
@@ -1852,10 +1852,10 @@ func TestTightGrove_CompletionAwardsForestPotentialOnly(t *testing.T) {
 		t.Fatal("Tight Grove should be marked Completed")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after Tight Grove: got %d, want 1", got)
+		t.Errorf("Forest Potential after Tight Grove: got %.0f, want 1", got)
 	}
 	if got := w.Economy.Potential[PotentialWater]; got != 0 {
-		t.Errorf("Water Potential after Tight Grove: got %d, want 0", got)
+		t.Errorf("Water Potential after Tight Grove: got %.0f, want 0", got)
 	}
 }
 
@@ -1873,10 +1873,10 @@ func TestLakewood_CompletionAwardsForestAndWaterPotential(t *testing.T) {
 		t.Fatal("Lakewood should be marked Completed")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after Lakewood: got %d, want 1", got)
+		t.Errorf("Forest Potential after Lakewood: got %.0f, want 1", got)
 	}
 	if got := w.Economy.Potential[PotentialWater]; got != 1 {
-		t.Errorf("Water Potential after Lakewood: got %d, want 1", got)
+		t.Errorf("Water Potential after Lakewood: got %.0f, want 1", got)
 	}
 }
 
@@ -1945,7 +1945,7 @@ func TestLakewood_AwakensWithForestPotential(t *testing.T) {
 	}
 	awakenPlanet(w, 1) // layoutID 0 = Lakewood
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
-		t.Errorf("Forest Potential after awakening Lakewood: got %d, want 0", got)
+		t.Errorf("Forest Potential after awakening Lakewood: got %.0f, want 0", got)
 	}
 	if !w.System.Planets[1].Awakened {
 		t.Error("Lakewood (planet 1) should be awakened")
@@ -1962,7 +1962,7 @@ func newWaterFrontierForCompletion(t *testing.T) *World {
 	w := newRevealedWorld()
 	// Grant + spend Potential to awaken frontier (index 3).
 	for kind, cost := range planetAwakenCost(w, 3) {
-		w.Economy.Potential[kind] += cost
+		w.Economy.Potential[kind] += float64(cost)
 	}
 	awakenPlanet(w, 3)
 	switchToPlanet(w, 3)
@@ -2067,7 +2067,7 @@ func TestWaterPlanetComplete_GateDockLevel(t *testing.T) {
 func TestWaterFrontierCompletion_DualPotential(t *testing.T) {
 	w := newWaterFrontierForCompletion(t)
 	// Start with 0 Potential (frontier awakening spent them).
-	w.Economy.Potential = make(map[PotentialKind]int)
+	w.Economy.Potential = make(map[PotentialKind]float64)
 	for _, b := range w.Buildings {
 		if b.Kind == KindDock {
 			b.Level = 2
@@ -2078,10 +2078,10 @@ func TestWaterFrontierCompletion_DualPotential(t *testing.T) {
 		t.Fatal("frontier should be marked Completed")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 1 {
-		t.Errorf("Forest Potential after frontier completion: got %d, want 1", got)
+		t.Errorf("Forest Potential after frontier completion: got %.0f, want 1", got)
 	}
 	if got := w.Economy.Potential[PotentialWater]; got != 1 {
-		t.Errorf("Water Potential after frontier completion: got %d, want 1", got)
+		t.Errorf("Water Potential after frontier completion: got %.0f, want 1", got)
 	}
 }
 
@@ -2709,10 +2709,10 @@ func TestAwakenPlanet_FrontierSpendsBothPotentials(t *testing.T) {
 		t.Fatal("frontier (Planets[3]) should be Awakened after awakenPlanet")
 	}
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
-		t.Errorf("Forest Potential after frontier awaken: got %d, want 0", got)
+		t.Errorf("Forest Potential after frontier awaken: got %.0f, want 0", got)
 	}
 	if got := w.Economy.Potential[PotentialWater]; got != 0 {
-		t.Errorf("Water Potential after frontier awaken: got %d, want 0", got)
+		t.Errorf("Water Potential after frontier awaken: got %.0f, want 0", got)
 	}
 	if w.Economy.Wood != startWood {
 		t.Errorf("Wood changed after frontier awaken: got %.2f, want %.2f", w.Economy.Wood, startWood)
@@ -2818,7 +2818,7 @@ func TestWaterInfluence_NoSpuriousWaterPotential(t *testing.T) {
 	checkActivePlanetCompletion(w)
 
 	if got := w.Economy.Potential[PotentialWater]; got != 1 {
-		t.Errorf("Water Potential: got %d, want exactly 1 (from KindWater only, not KindWaterInfluence)", got)
+		t.Errorf("Water Potential: got %.0f, want exactly 1 (from KindWater only, not KindWaterInfluence)", got)
 	}
 }
 
@@ -2833,7 +2833,7 @@ func newWaterSparkleTestWorld() *World {
 		Economy: Economy{
 			TownGrowthCap:  ps.TownGrowthCap,
 			WorkerCapacity: 5,
-			Potential:      make(map[PotentialKind]int),
+			Potential:      make(map[PotentialKind]float64),
 		},
 		PlanetStates: make([]*PlanetState, 4),
 		System:       System{Planets: []SystemPlanet{{}, {}, {}, {}}},

@@ -68,17 +68,13 @@ func assignNodes(w *World) {
 // Returns true exactly once: on the tick that triggers the unlock reveal.
 func Tick(w *World, dt float64) (justUnlocked bool) {
 	if w.System.Unlocked && w.System.View == ViewSystem {
-		// System view: live sim is frozen; abstract producers add wood and water.
-		w.Economy.Wood += abstractIncome(w) * dt
-		w.Economy.Water += abstractWaterIncome(w) * dt
+		// System view: live sim is frozen; no stockpile accumulation.
 		return false
 	}
 	// Planet view (or pre-unlock): run the live sim.
 	Step(w, dt)
 	if w.System.Unlocked {
-		// Post-unlock planet view: abstract income + check for echo completion + rate ratchet.
-		w.Economy.Wood += abstractIncome(w) * dt
-		w.Economy.Water += abstractWaterIncome(w) * dt
+		// Post-unlock planet view: check for echo completion + rate ratchet.
 		checkActivePlanetCompletion(w)
 		updateActiveAbstractRate(w, dt)
 		return false

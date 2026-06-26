@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"math"
 	"strings"
 
 	"github.com/ebitenui/ebitenui"
@@ -135,7 +136,7 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	thWood, campWood := deliveryTotals(w)
 	h.woodText.Label = fmt.Sprintf("wood: %.0f (%.2f/s)  TH %.1f  camps %.1f  forest:%d water:%d",
 		w.Economy.Wood, EstimateRate(w), thWood, campWood,
-		w.Economy.Potential[PotentialForest], w.Economy.Potential[PotentialWater])
+		int(math.Floor(w.Economy.Potential[PotentialForest])), int(math.Floor(w.Economy.Potential[PotentialWater])))
 
 	active, returning, settling, reaction, waiting := 0, 0, 0, 0, 0
 	for _, wk := range w.Workers {

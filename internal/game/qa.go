@@ -214,7 +214,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			return nil, fmt.Errorf("awakenEchoes: planet %d is not an echo", idx)
 		}
 		if !w.System.Planets[idx].Awakened {
-			w.Economy.Potential[PotentialForest]++
+			w.Economy.Potential[PotentialForest] += 1.0
 			awakenPlanet(w, idx)
 		}
 	}
@@ -227,7 +227,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			return nil, fmt.Errorf("completeEchoes: planet %d is not an echo", idx)
 		}
 		if !w.System.Planets[idx].Awakened {
-			w.Economy.Potential[PotentialForest]++
+			w.Economy.Potential[PotentialForest] += 1.0
 			awakenPlanet(w, idx)
 		}
 		// Build out the echo to meet the completion gate.
@@ -259,7 +259,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		const frontierIdx = 3
 		if !w.System.Planets[frontierIdx].Awakened {
 			for kind, cost := range planetAwakenCost(w, frontierIdx) {
-				w.Economy.Potential[kind] += cost
+				w.Economy.Potential[kind] += float64(cost)
 			}
 			awakenPlanet(w, frontierIdx)
 		}
@@ -301,10 +301,10 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	// Potential stamps — applied after all lifecycle overrides so callers can set
 	// exact balances regardless of what the growth path happened to award.
 	if p.ForestPotential != nil {
-		w.Economy.Potential[PotentialForest] = *p.ForestPotential
+		w.Economy.Potential[PotentialForest] = float64(*p.ForestPotential)
 	}
 	if p.WaterPotential != nil {
-		w.Economy.Potential[PotentialWater] = *p.WaterPotential
+		w.Economy.Potential[PotentialWater] = float64(*p.WaterPotential)
 	}
 
 	// Select a specific planet in system view.
