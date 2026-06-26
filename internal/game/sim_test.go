@@ -1566,9 +1566,11 @@ func TestSwitchToPlanet_IsolatesLocalStockpiles(t *testing.T) {
 	w.Economy.Water = 25
 
 	// Switch to echo planet 1: parks planet 0 (saves Wood=100, Water=25) then loads planet 1.
+	// Echo bootstrap seeds LocalWood = awakenBaselineWood + circlePacketWood (1 forest circle spent).
 	switchToPlanet(w, 1)
-	if w.Economy.Wood != 0 {
-		t.Errorf("echo planet 1 Wood: want 0, got %.4f", w.Economy.Wood)
+	wantEchoWood := awakenBaselineWood + circlePacketWood
+	if w.Economy.Wood != wantEchoWood {
+		t.Errorf("echo planet 1 Wood: want %.4f (bootstrap), got %.4f", wantEchoWood, w.Economy.Wood)
 	}
 	if w.Economy.Water != 0 {
 		t.Errorf("echo planet 1 Water: want 0, got %.4f", w.Economy.Water)

@@ -49,6 +49,30 @@ func (g *Game) handleSystemInput() {
 		}
 	}
 
+	// Circle inject buttons in the top HUD.
+	if g.world.System.Unlocked && g.world.System.Selected >= 0 {
+		if r := g.sysInjectWoodRect; r.w > 0 &&
+			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
+			float32(my) >= r.y && float32(my) < r.y+r.h {
+			if injectCirclePacket(g.world, PotentialForest) {
+				g.spawnInjectDots(PotentialForest)
+			} else {
+				g.flashCostTargets(costPulseForestCircle)
+			}
+			return
+		}
+		if r := g.sysInjectWaterRect; r.w > 0 &&
+			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
+			float32(my) >= r.y && float32(my) < r.y+r.h {
+			if injectCirclePacket(g.world, PotentialWater) {
+				g.spawnInjectDots(PotentialWater)
+			} else {
+				g.flashCostTargets(costPulseWaterCircle)
+			}
+			return
+		}
+	}
+
 	// Planet selection: convert to virtual world coords and check disks.
 	wp := g.screenToWorld(mx, my)
 	for i, p := range g.world.System.Planets {

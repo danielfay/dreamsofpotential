@@ -28,6 +28,8 @@ const (
 	costPulseWood = 1 << iota
 	costPulseWater
 	costPulseNurture
+	costPulseForestCircle
+	costPulseWaterCircle
 )
 
 // Game is the root ebiten game object.
@@ -67,10 +69,14 @@ type Game struct {
 	revealActive  bool
 	revealElapsed float64
 
-	// system-view button rects in native screen space (set during drawOverlay; read by handleInput)
-	sysEnterRect  sysRect // enter-planet tray button
-	sysAwakenRect sysRect // awaken-echo tray button
-	sysReturnRect sysRect // return-to-system button in planet view
+	// system-view button rects in native screen space (set during drawOverlay; read by handleSystemInput)
+	sysEnterRect       sysRect // enter-planet tray button
+	sysAwakenRect      sysRect // awaken-echo tray button
+	sysReturnRect      sysRect // return-to-system button in planet view
+	sysInjectWoodRect  sysRect // forest-circle inject button (system view)
+	sysInjectWaterRect sysRect // water-circle inject button (system view)
+
+	sysInjectDots []sysInjectDot // active circle-packet injection animations
 
 	// double-click tracking for system-view planet zoom
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
@@ -98,6 +104,16 @@ type Game struct {
 
 // sysRect is a simple native-space hit-test rectangle.
 type sysRect struct{ x, y, w, h float32 }
+
+// sysInjectDot is one particle in the circle-packet injection animation.
+// Dots travel from the HUD circle toward the target planet and fade out.
+type sysInjectDot struct {
+	ox, oy float32 // origin screen pos
+	tx, ty float32 // target planet center screen pos
+	age    float32 // seconds elapsed
+	life   float32 // total lifetime
+	col    color.RGBA
+}
 
 // New constructs and returns a ready-to-run Game.
 // It loads a saved world from disk if one exists, otherwise starts fresh.
@@ -278,6 +294,16 @@ func (g *Game) Update() error {
 			}
 		}
 	}
+
+	// Advance inject-dot animations.
+	alive := g.sysInjectDots[:0]
+	for _, d := range g.sysInjectDots {
+		d.age += dt
+		if d.age < d.life {
+			alive = append(alive, d)
+		}
+	}
+	g.sysInjectDots = alive
 
 	justUnlocked := Tick(g.world, dt)
 	if justUnlocked {
@@ -589,6 +615,14 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
 				2, colPulse, false)
 		}
+		if g.pulseTarget&costPulseForestCircle != 0 && g.sysInjectWoodRect.w > 0 {
+			r := g.sysInjectWoodRect
+			vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+		}
+		if g.pulseTarget&costPulseWaterCircle != 0 && g.sysInjectWaterRect.w > 0 {
+			r := g.sysInjectWaterRect
+			vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+		}
 	}
 }
 
@@ -689,6 +723,10 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		return scaledHUDFloat(scale, systemTopHUDScale, base)
 	}
 
+	// Reset inject rects; set below when circles are visible in planet view.
+	g.sysInjectWoodRect = sysRect{}
+	g.sysInjectWaterRect = sysRect{}
+
 	// Global resources — full-width top band. Square resources occupy the top
 	// row; matching Potential circles sit beneath them by resource colour/type.
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
@@ -701,6 +739,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			circleText    string
 			circleCol     color.RGBA
 			circleTextCol color.RGBA
+			potKind       PotentialKind
 			width         float32
 		}
 
@@ -720,6 +759,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				circleText:    fmt.Sprintf("%d", int(math.Floor(count))),
 				circleCol:     circleCol,
 				circleTextCol: circleTextCol,
+				potKind:       potKind,
 			}
 			if showSquare {
 				tw, _ := text.Measure(squareText, face, 0)
@@ -815,6 +855,21 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 					if col.circleText != "" {
 						_, th := text.Measure(col.circleText, face, 0)
 						drawSysText(screen, col.circleText, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
+					}
+					// Store inject hit-test rect for system view clicks; draw hover rim.
+					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
+						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
+						switch col.potKind {
+						case PotentialForest:
+							g.sysInjectWoodRect = r
+						case PotentialWater:
+							g.sysInjectWaterRect = r
+						}
+						mx, my := ebiten.CursorPosition()
+						if float32(mx) >= r.x && float32(mx) < r.x+r.w &&
+							float32(my) >= r.y && float32(my) < r.y+r.h {
+							vector.StrokeCircle(screen, rowX+circleR, circleY, circleR+1.5, 1.5, colInjectHover, false)
+						}
 					}
 				}
 				cx += col.width
@@ -996,6 +1051,57 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		vector.FillCircle(screen, bCx, bCy, bR, colEnterGlyph, false)
 		drawSystemOrbitRing(screen, bCx, bCy, bR+systemHUD(2), 1, colEnterOrbit)
 		g.sysEnterRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
+	}
+
+	// Draw inject-dot animations.
+	for _, d := range g.sysInjectDots {
+		t := d.age / d.life
+		x := d.ox + (d.tx-d.ox)*t
+		y := d.oy + (d.ty-d.oy)*t
+		r := float32(3)*(1-t) + 1
+		c := d.col
+		c.A = uint8(float32(200) * (1 - t))
+		vector.FillCircle(screen, x, y, r, c, false)
+	}
+}
+
+// spawnInjectDots spawns 8 particles from the inject circle toward the selected planet.
+func (g *Game) spawnInjectDots(kind PotentialKind) {
+	sel := g.world.System.Selected
+	if sel < 0 || sel >= len(g.world.System.Planets) {
+		return
+	}
+	var r sysRect
+	var col color.RGBA
+	switch kind {
+	case PotentialForest:
+		r = g.sysInjectWoodRect
+		col = colForestPotential
+	case PotentialWater:
+		r = g.sysInjectWaterRect
+		col = colWaterPotential
+	}
+	if r.w <= 0 {
+		return
+	}
+	px, py := g.worldToScreen(g.world.System.Planets[sel].Pos)
+	circleR := r.h / 2
+	cx := r.x + circleR
+	cy := r.y + circleR
+	const n = 8
+	const spread = float32(4)
+	const life = float32(0.85)
+	for i := 0; i < n; i++ {
+		angle := float64(i) * math.Pi * 2 / n
+		g.sysInjectDots = append(g.sysInjectDots, sysInjectDot{
+			ox:   cx + float32(math.Cos(angle))*spread,
+			oy:   cy + float32(math.Sin(angle))*spread,
+			tx:   px,
+			ty:   py,
+			age:  0,
+			life: life,
+			col:  col,
+		})
 	}
 }
 
