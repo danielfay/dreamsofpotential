@@ -914,7 +914,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 							if i < allocLevel {
 								pipCol = col.circleCol
 							} else {
-								pipCol = color.RGBA{R: col.circleCol.R, G: col.circleCol.G, B: col.circleCol.B, A: 50}
+								pipCol = color.RGBA{R: 55, G: 55, B: 75, A: 220}
 							}
 							vector.FillRect(screen, px, allocY, allocPipSz, allocPipSz, pipCol, false)
 						}
