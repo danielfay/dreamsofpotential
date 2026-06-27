@@ -67,17 +67,21 @@ func assignNodes(w *World) {
 // It gates the live sim by view mode and detects first-planet completion.
 // Returns true exactly once: on the tick that triggers the unlock reveal.
 func Tick(w *World, dt float64) (justUnlocked bool) {
-	if w.System.Unlocked && w.System.View == ViewSystem {
-		// System view: live sim is frozen; allocate system economy.
-		tickSystemEconomy(w, dt)
-		return false
+	// The active planet's live sim runs whenever the player is not in system view.
+	// It is frozen in system view so the player can navigate the map without
+	// the local economy advancing.
+	planetSimRuns := !(w.System.Unlocked && w.System.View == ViewSystem)
+	if planetSimRuns {
+		Step(w, dt)
 	}
-	// Planet view (or pre-unlock): run the live sim.
-	Step(w, dt)
 	if w.System.Unlocked {
-		// Post-unlock planet view: check for echo completion + rate ratchet + system economy.
-		checkActivePlanetCompletion(w)
-		updateActiveAbstractRate(w, dt)
+		if planetSimRuns {
+			checkActivePlanetCompletion(w)
+			updateActiveAbstractRate(w, dt)
+		}
+		// System economy (research + Potential generation) is a background
+		// process that runs every frame post-unlock, independent of the active
+		// view. The system is never "parked" like a planet — issue 106.
 		tickSystemEconomy(w, dt)
 		return false
 	}
