@@ -1,0 +1,13 @@
+{
+  "name": "circle-injection",
+  "description": "Echo planet 1 active, with 3 forest circles in wallet. Expected: HUD shows forest circles; spending one injects 200 local wood.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "awakenEchoes": [1],
+  "enterPlanet": 1,
+  "forestPotential": 3,
+  "wood": 50
+}
