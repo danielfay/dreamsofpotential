@@ -259,18 +259,9 @@ func startDeparture(w *World, wk *Worker, node *ResourceNode) {
 
 func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 	gross := wk.Carried
-	if gross > 0 {
-		w.ResourceDiscovered = true
-	}
-	banked := gross * (1 - woodFieldReturnRatio)
-	returned := gross * woodFieldReturnRatio
-	w.Economy.Wood += banked
-	w.lastDelivery = deliverySplit{Gross: gross, Banked: banked, Returned: returned}
-	if b := nearestCamp(w, node); b != nil {
-		b.DeliveredWood += gross
-		b.DeliveryCount++
-	}
-	depositToField(w, node.Kind, returned)
+	camp := nearestCamp(w, node)
+	split := bankDelivery(w, node.Kind, gross, camp)
+	w.lastDelivery = split
 	w.Economy.TownGrowth += gross
 	tryConsumeGrowth(w)
 	wk.Carried = 0
@@ -284,12 +275,36 @@ func completeUnload(w *World, wk *Worker, node *ResourceNode) {
 		return
 	}
 	wk.PendingNodeID = -1
-	if node.OwnerID == wk.ID && nearestCamp(w, node) != nil {
+	if node.OwnerID == wk.ID && camp != nil {
 		wk.State = StateToForest
 		wk.Timer = 0
 		return
 	}
 	startReturnHome(w, wk)
+}
+
+func bankDelivery(w *World, kind ResourceKind, gross float64, b *Building) deliverySplit {
+	if gross > 0 {
+		if kind == KindWater {
+			w.Economy.WaterDiscovered = true
+		} else {
+			w.ResourceDiscovered = true
+		}
+	}
+	split := deliverySplit{
+		Gross:    gross,
+		Banked:   gross * (1 - woodFieldReturnRatio),
+		Returned: gross * woodFieldReturnRatio,
+	}
+	if fam := familyForResource(kind); fam != nil {
+		*fam.Stockpile(&w.Economy) += split.Banked
+	}
+	if b != nil {
+		b.DeliveredWood += gross
+		b.DeliveryCount++
+	}
+	depositToField(w, kind, split.Returned)
+	return split
 }
 
 func startReturnHome(w *World, wk *Worker) {
@@ -413,14 +428,8 @@ func assignFocusToIdleWorker(w *World, wk *Worker) {
 }
 
 func focusKindHasAvailableWork(w *World, kind ResourceKind) bool {
-	switch kind {
-	case KindWood:
-		return bestFreeNodeForKind(w, KindWood) != nil
-	case KindWater:
-		return bestFreeDock(w) != nil
-	default:
-		return false
-	}
+	fam := workerFamilyForResource(kind)
+	return fam != nil && fam.hasFreeWork(w)
 }
 
 func activeWorkerCountsByKind(w *World) map[ResourceKind]int {
@@ -434,14 +443,13 @@ func activeWorkerCountsByKind(w *World) map[ResourceKind]int {
 }
 
 func activeWorkerKind(wk *Worker) ResourceKind {
-	switch {
-	case workerInWaterLoop(wk):
-		return KindWater
-	case workerInWoodAssignment(wk):
-		return KindWood
-	default:
-		return focusKindNone
+	for i := range workerFamilies {
+		fam := &workerFamilies[i]
+		if fam.inLoop(wk) {
+			return fam.Resource
+		}
 	}
+	return focusKindNone
 }
 
 func workerInWoodAssignment(wk *Worker) bool {
@@ -851,15 +859,8 @@ func workerShouldAbortKind(w *World, wk *Worker, kind ResourceKind) bool {
 		if other.ID == wk.ID {
 			continue
 		}
-		switch kind {
-		case KindWater:
-			if workerInWaterLoop(other) {
-				count++
-			}
-		case KindWood:
-			if workerInLoop(other) {
-				count++
-			}
+		if fam := workerFamilyForResource(kind); fam != nil && fam.inLoop(other) {
+			count++
 		}
 	}
 	return count >= target
@@ -958,9 +959,7 @@ func returnToDockFromDive(w *World, wk *Worker, dock *Building) {
 func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	gross := wk.Carried
 	wasDiscovered := w.Economy.WaterDiscovered
-	if gross > 0 {
-		w.Economy.WaterDiscovered = true
-	}
+	bankDelivery(w, KindWater, gross, dock)
 	// On first water delivery: reveal unknown water fields on all planets so
 	// previously-teased lakes become real (enabling nurture and progression).
 	// Also auto-set a labor split if the player hasn't configured one yet.
@@ -970,15 +969,9 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 			setAutoProofSplit(w)
 		}
 	}
-	banked := gross * (1 - woodFieldReturnRatio)
-	returned := gross * woodFieldReturnRatio
-	w.Economy.Water += banked
 	if dock != nil {
-		dock.DeliveredWood += gross
-		dock.DeliveryCount++
 		activatePulse(w, &dock.Pulse)
 	}
-	depositToField(w, KindWater, returned)
 	wk.Carried = 0
 	releaseInteriorNodes(w, wk.ID)
 
@@ -1023,8 +1016,5 @@ func setAutoProofSplit(w *World) {
 	if wood < 0 {
 		wood = 0
 	}
-	w.LaborFocus = map[ResourceKind]int{
-		KindWater: 1,
-		KindWood:  wood,
-	}
+	w.LaborFocus = laborFocusMap(wood, 1)
 }

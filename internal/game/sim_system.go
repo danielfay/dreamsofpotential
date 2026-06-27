@@ -52,32 +52,20 @@ func waterPlanetComplete(w *World) bool {
 	return false
 }
 
-// abstractRateSpec pairs a live rate estimator with the PlanetState field it updates.
-// Add an entry here to track any new resource — the rolling-window update handles the rest.
-type abstractRateSpec struct {
-	estimate func(*World) float64
-	getField func(*SystemPlanet) *float64
-}
-
-var activeAbstractRateSpecs = []abstractRateSpec{
-	{EstimateRate, func(p *SystemPlanet) *float64 { return &p.AbstractRate }},
-	{EstimateWaterRate, func(p *SystemPlanet) *float64 { return &p.AbstractWaterRate }},
-}
-
 // updateActiveAbstractRate samples each resource estimator into its own rolling
 // bucket-min window and ratchets the planet's abstract rate upward (raise-only)
 // when the sustained floor exceeds the stored value. Windows reset on planet
 // change so pre-filled samples can't carry across enter/exit cycles (anti-fishing).
 // Call only from the post-unlock planet-view branch of Tick.
 func updateActiveAbstractRate(w *World, dt float64) {
-	if len(w.abstractRateWins) != len(activeAbstractRateSpecs) {
-		w.abstractRateWins = make([]abstractRateWindow, len(activeAbstractRateSpecs))
+	if len(w.abstractRateWins) != len(resourceFamilies) {
+		w.abstractRateWins = make([]abstractRateWindow, len(resourceFamilies))
 	}
 
 	bucketSpan := abstractRateWindowSec / abstractRateBuckets
 	p := &w.System.Planets[w.Active]
 
-	for i, spec := range activeAbstractRateSpecs {
+	for i, fam := range resourceFamilies {
 		win := &w.abstractRateWins[i]
 
 		// Reset when the active planet has changed (or on first call).
@@ -92,7 +80,7 @@ func updateActiveAbstractRate(w *World, dt float64) {
 			win.planet = w.Active
 		}
 
-		rate := spec.estimate(w)
+		rate := fam.Estimate(w)
 
 		// Advance the bucket pointer when the current bucket's span has elapsed.
 		win.elapsed += dt
@@ -123,48 +111,46 @@ func updateActiveAbstractRate(w *World, dt float64) {
 			}
 		}
 
-		field := spec.getField(p)
+		field := fam.AbstractRate(p)
 		if windowMin > *field {
 			*field = windowMin
 		}
 	}
 }
 
-// systemWoodRate returns total wood/sec from all completed planets.
-func systemWoodRate(w *World) float64 {
+// systemRate returns total resource/sec from all completed planets for fam.
+func systemRate(w *World, fam *resourceFamily) float64 {
 	var total float64
 	for _, p := range w.System.Planets {
 		if !p.Completed {
 			continue
 		}
-		total += p.AbstractRate
+		total += *fam.AbstractRate(&p)
 	}
 	return total
 }
 
+// systemWoodRate returns total wood/sec from all completed planets.
+func systemWoodRate(w *World) float64 {
+	return systemRate(w, familyForResource(KindWood))
+}
+
 // systemWaterRate returns total water/sec from all completed planets.
 func systemWaterRate(w *World) float64 {
-	var total float64
-	for _, p := range w.System.Planets {
-		if !p.Completed {
-			continue
-		}
-		total += p.AbstractWaterRate
-	}
-	return total
+	return systemRate(w, familyForResource(KindWater))
 }
 
 // tickSystemEconomy computes system-wide rates from completed planets and
 // allocates them to Potential and Research accumulators.
 func tickSystemEconomy(w *World, dt float64) {
-	woodRate := systemWoodRate(w)
-	waterRate := systemWaterRate(w)
-	w.SystemEconomy.WoodRate = woodRate
-	w.SystemEconomy.WaterRate = waterRate
-	w.Economy.Potential[PotentialForest] += woodRate * w.SystemEconomy.WoodAllocPotential * dt
-	w.Economy.Potential[PotentialWater] += waterRate * w.SystemEconomy.WaterAllocPotential * dt
-	w.SystemEconomy.WoodResearch += woodRate * (1 - w.SystemEconomy.WoodAllocPotential) * dt
-	w.SystemEconomy.WaterResearch += waterRate * (1 - w.SystemEconomy.WaterAllocPotential) * dt
+	for i := range resourceFamilies {
+		fam := &resourceFamilies[i]
+		rate := systemRate(w, fam)
+		*fam.SystemRate(&w.SystemEconomy) = rate
+		alloc := *fam.AllocPotential(&w.SystemEconomy)
+		w.Economy.Potential[fam.Potential] += rate * alloc * dt
+		*fam.Research(&w.SystemEconomy) += rate * (1 - alloc) * dt
+	}
 }
 
 // allEchoesComplete reports whether every echo planet in the system is completed.
@@ -220,24 +206,16 @@ func injectCirclePacket(w *World, kind PotentialKind) bool {
 		return false
 	}
 	w.Economy.Potential[kind] -= 1.0
+	fam := familyForPotential(kind)
+	if fam == nil {
+		return false
+	}
 	if sel == w.Active {
-		switch kind {
-		case PotentialForest:
-			activateFieldFamily(w.Planet.Fields, KindWood)
-			w.Economy.Wood += circlePacketWood
-		case PotentialWater:
-			activateFieldFamily(w.Planet.Fields, KindWater)
-			w.Economy.Water += circlePacketWater
-		}
+		activateFieldFamily(w.Planet.Fields, fam.Resource)
+		*fam.Stockpile(&w.Economy) += fam.CirclePacket
 	} else if ps := w.PlanetStates[sel]; ps != nil {
-		switch kind {
-		case PotentialForest:
-			activateFieldFamily(ps.Planet.Fields, KindWood)
-			ps.LocalWood += circlePacketWood
-		case PotentialWater:
-			activateFieldFamily(ps.Planet.Fields, KindWater)
-			ps.LocalWater += circlePacketWater
-		}
+		activateFieldFamily(ps.Planet.Fields, fam.Resource)
+		*fam.LocalStockpile(ps) += fam.CirclePacket
 	}
 	return true
 }
@@ -307,13 +285,12 @@ func awakenPlanet(w *World, idx int) {
 	// Lives in parked state; materialises into Economy.Wood/Water when player enters.
 	w.PlanetStates[idx].LocalWood += awakenBaselineWood
 	for kind, cost := range planetAwakenCost(w, idx) {
+		fam := familyForPotential(kind)
+		if fam == nil {
+			continue
+		}
 		for range cost {
-			switch kind {
-			case PotentialForest:
-				w.PlanetStates[idx].LocalWood += circlePacketWood
-			case PotentialWater:
-				w.PlanetStates[idx].LocalWater += circlePacketWater
-			}
+			*fam.LocalStockpile(w.PlanetStates[idx]) += fam.CirclePacket
 		}
 	}
 }
@@ -331,11 +308,8 @@ func awardCompletionPotential(w *World) {
 			continue
 		}
 		seen[f.Kind] = true
-		switch f.Kind {
-		case KindWood:
-			w.Economy.Potential[PotentialForest] += 1.0
-		case KindWater:
-			w.Economy.Potential[PotentialWater] += 1.0
+		if fam := familyForResource(f.Kind); fam != nil {
+			w.Economy.Potential[fam.Potential] += 1.0
 		}
 	}
 }

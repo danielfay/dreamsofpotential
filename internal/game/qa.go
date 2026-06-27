@@ -362,10 +362,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		if p.LaborFocusWater != nil {
 			water = *p.LaborFocusWater
 		}
-		w.LaborFocus = map[ResourceKind]int{
-			KindWood:  wood,
-			KindWater: water,
-		}
+		w.LaborFocus = laborFocusMap(wood, water)
 	}
 
 	return w, nil
@@ -426,31 +423,19 @@ func fillWoodFieldNodes(w *World, leaveSpaceForOne bool) {
 // fillWaterFieldSparkles spawns interior sparkles in all known KindWater fields
 // until no more can be placed (i.e., the field is saturated).
 func fillWaterFieldSparkles(w *World) {
-	innerR := w.Planet.Radius * sparkleInnerFrac
-	outerR := w.Planet.Radius * sparkleOuterFrac
-	const angularSteps = 16
-	const radialSteps = 4
 	for _, f := range w.Planet.Fields {
 		if f.Kind != KindWater || !f.Known {
 			continue
 		}
-		// Try exactly the 16×4 grid positions that waterFieldCanSpawnSparkle samples.
 		// Placing sparkles at every valid grid position guarantees the gate check sees
 		// no remaining valid positions and returns false (no golden-angle divergence).
-		for ai := range angularSteps {
-			angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*float64(ai)/float64(angularSteps-1))
-			for ri := range radialSteps {
-				r := innerR + (outerR-innerR)*float64(ri)/float64(radialSteps-1)
-				pos := Vec{
-					X: w.Planet.Center.X + r*math.Cos(angle),
-					Y: w.Planet.Center.Y + r*math.Sin(angle),
-				}
-				if sparkleSpawnPosValid(w, f, pos) {
-					n := newSparkle(w, pos)
-					w.Nodes = append(w.Nodes, n)
-				}
+		forEachSparkleGridPos(w, f, func(pos Vec) bool {
+			if sparkleSpawnPosValid(w, f, pos) {
+				n := newSparkle(w, pos)
+				w.Nodes = append(w.Nodes, n)
 			}
-		}
+			return true
+		})
 	}
 }
 

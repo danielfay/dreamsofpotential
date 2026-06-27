@@ -24,14 +24,33 @@ func depositToField(w *World, kind ResourceKind, amount float64) {
 		} else {
 			fp.Cap += woodFieldEXPMaxStep
 		}
-		var result growthResult
-		if kind == KindWater {
-			result = spawnSparkle(w, f)
-		} else {
-			result = spawnNode(w, f)
-		}
+		result := spawnIntoField(w, f)
 		activateGrowthCue(w, result)
 	}
+}
+
+func fieldCanSpawn(w *World, f *ResourceField) bool {
+	if f == nil || !f.Known {
+		return false
+	}
+	switch f.Kind {
+	case KindWater:
+		return waterFieldCanSpawnSparkle(w, f)
+	case KindWaterInfluence:
+		return false
+	default:
+		return fieldCanSpawnNode(w, f)
+	}
+}
+
+func spawnIntoField(w *World, f *ResourceField) growthResult {
+	if f == nil {
+		return growthResult{}
+	}
+	if f.Kind == KindWater {
+		return spawnSparkle(w, f)
+	}
+	return spawnNode(w, f)
 }
 
 // pickGrowthRegion selects a known region of the given kind to receive a new
@@ -51,13 +70,7 @@ func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
 		if fallback == nil {
 			fallback = f
 		}
-		var canSpawn bool
-		if kind == KindWater {
-			canSpawn = waterFieldCanSpawnSparkle(w, f)
-		} else {
-			canSpawn = fieldCanSpawnNode(w, f)
-		}
-		if canSpawn {
+		if fieldCanSpawn(w, f) {
 			eligible = append(eligible, f)
 		}
 	}
@@ -187,13 +200,7 @@ func pickPlanetNurtureField(w *World) *ResourceField {
 		if fallback == nil {
 			fallback = f
 		}
-		var canSpawn bool
-		if f.Kind == KindWater {
-			canSpawn = waterFieldCanSpawnSparkle(w, f)
-		} else {
-			canSpawn = fieldCanSpawnNode(w, f)
-		}
-		if canSpawn {
+		if fieldCanSpawn(w, f) {
 			eligible = append(eligible, f)
 		}
 	}
@@ -219,11 +226,7 @@ func nurtureField(w *World) bool {
 		if f == nil {
 			break
 		}
-		if f.Kind == KindWater {
-			activateGrowthCue(w, spawnSparkle(w, f))
-		} else {
-			activateGrowthCue(w, spawnNode(w, f))
-		}
+		activateGrowthCue(w, spawnIntoField(w, f))
 	}
 	return true
 }
@@ -251,14 +254,8 @@ func nurtureAttentionActive(w *World) bool {
 		if !f.Known || f.Kind == KindWaterInfluence {
 			continue
 		}
-		if f.Kind == KindWater {
-			if waterFieldCanSpawnSparkle(w, f) {
-				return true
-			}
-		} else {
-			if fieldCanSpawnNode(w, f) {
-				return true
-			}
+		if fieldCanSpawn(w, f) {
+			return true
 		}
 	}
 	return false
@@ -271,14 +268,8 @@ func anyFieldCanSpawn(w *World) bool {
 		if !f.Known || f.Kind == KindWaterInfluence {
 			continue
 		}
-		if f.Kind == KindWater {
-			if waterFieldCanSpawnSparkle(w, f) {
-				return true
-			}
-		} else {
-			if fieldCanSpawnNode(w, f) {
-				return true
-			}
+		if fieldCanSpawn(w, f) {
+			return true
 		}
 	}
 	return false
@@ -330,14 +321,8 @@ func dockUpgradeAttentionDock(w *World) *Building {
 		if !f.Known || f.Kind == KindWaterInfluence {
 			continue
 		}
-		if f.Kind == KindWater {
-			if waterFieldCanSpawnSparkle(w, f) {
-				return nil
-			}
-		} else {
-			if fieldCanSpawnNode(w, f) {
-				return nil
-			}
+		if fieldCanSpawn(w, f) {
+			return nil
 		}
 	}
 	for _, b := range w.Buildings {

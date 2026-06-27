@@ -8,6 +8,31 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
+type biomeRing struct {
+	r   float32
+	col color.RGBA
+}
+
+type biomeFleckCfg struct {
+	count      int
+	angleMul   float64
+	angleAdd   float64
+	radiusMul  float64
+	radiusAdd  float64
+	innerFrac  float32
+	spanFrac   float32
+	baseCol    color.RGBA
+	altCol     color.RGBA
+	altEvery   int
+	largeEvery int
+}
+
+type biomeFillCfg struct {
+	baseFill color.RGBA
+	rings    []biomeRing
+	flecks   biomeFleckCfg
+}
+
 // drawResourceFieldFill paints a full resource field as terrain composition.
 // Node-spawn progress is shown in the HUD, so this stays visually stable.
 func drawResourceFieldFill(scene *ebiten.Image, planet Planet, f *ResourceField, radius float32) {
@@ -85,66 +110,66 @@ func drawPreFoundingPulse(scene *ebiten.Image, planet Planet, f *ResourceField, 
 	drawFieldSectorBand(scene, cx, cy, radius-1, 3, start, end, color.RGBA{R: 95, G: 210, B: 108, A: alpha})
 }
 
+func drawBiomeFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64, cfg biomeFillCfg) {
+	drawFieldSector(scene, cx, cy, radius, startAngle, endAngle, cfg.baseFill)
+	for _, ring := range cfg.rings {
+		drawFieldSectorBand(scene, cx, cy, ring.r, 2, startAngle, endAngle, ring.col)
+	}
+	drawBiomeFlecks(scene, cx, cy, radius, startAngle, endAngle, cfg.flecks)
+}
+
 // drawForestFieldFill layers low-alpha greens so the forest reads as a filled
 // biome with subtle canopy texture instead of a flat progress disk.
 func drawForestFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
-	drawFieldSector(scene, cx, cy, radius, startAngle, endAngle, color.RGBA{R: 8, G: 52, B: 28, A: 150})
-
-	for _, ring := range []struct {
-		r   float32
-		col color.RGBA
-	}{
-		{radius * 0.94, color.RGBA{R: 44, G: 118, B: 56, A: 36}},
-		{radius * 0.76, color.RGBA{R: 4, G: 34, B: 22, A: 36}},
-		{radius * 0.51, color.RGBA{R: 42, G: 108, B: 52, A: 24}},
-		{radius * 0.29, color.RGBA{R: 5, G: 38, B: 24, A: 24}},
-	} {
-		drawFieldSectorBand(scene, cx, cy, ring.r, 2, startAngle, endAngle, ring.col)
-	}
-	drawForestCanopyFlecks(scene, cx, cy, radius, startAngle, endAngle)
+	drawBiomeFieldFill(scene, cx, cy, radius, startAngle, endAngle, biomeFillCfg{
+		baseFill: color.RGBA{R: 8, G: 52, B: 28, A: 150},
+		rings: []biomeRing{
+			{radius * 0.94, color.RGBA{R: 44, G: 118, B: 56, A: 36}},
+			{radius * 0.76, color.RGBA{R: 4, G: 34, B: 22, A: 36}},
+			{radius * 0.51, color.RGBA{R: 42, G: 108, B: 52, A: 24}},
+			{radius * 0.29, color.RGBA{R: 5, G: 38, B: 24, A: 24}},
+		},
+		flecks: biomeFleckCfg{
+			count:      58,
+			angleMul:   0.38196601125,
+			angleAdd:   0.17,
+			radiusMul:  0.75487766625,
+			radiusAdd:  0.11,
+			innerFrac:  0.15,
+			spanFrac:   0.78,
+			baseCol:    color.RGBA{R: 18, G: 82, B: 38, A: 46},
+			altCol:     color.RGBA{R: 4, G: 34, B: 22, A: 46},
+			altEvery:   3,
+			largeEvery: 11,
+		},
+	})
 }
 
 // drawWaterFieldFill layers low-alpha blues so the water reads as a filled
 // biome with subtle ripple texture, mirroring drawForestFieldFill in blue.
 func drawWaterFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
-	drawFieldSector(scene, cx, cy, radius, startAngle, endAngle, color.RGBA{R: 10, G: 40, B: 112, A: 190})
-
-	for _, ring := range []struct {
-		r   float32
-		col color.RGBA
-	}{
-		{radius * 0.93, color.RGBA{R: 18, G: 72, B: 158, A: 38}},
-		{radius * 0.75, color.RGBA{R: 6, G: 28, B: 88, A: 36}},
-		{radius * 0.52, color.RGBA{R: 24, G: 90, B: 178, A: 26}},
-		{radius * 0.30, color.RGBA{R: 8, G: 38, B: 108, A: 26}},
-	} {
-		drawFieldSectorBand(scene, cx, cy, ring.r, 2, startAngle, endAngle, ring.col)
-	}
-	drawWaterRippleFlecks(scene, cx, cy, radius, startAngle, endAngle)
-}
-
-// drawWaterRippleFlecks adds deterministic shimmer dots inside the water field,
-// mirroring the forest canopy fleck approach but in blue tones.
-func drawWaterRippleFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
-	span := endAngle - startAngle
-	for i := 0; i < 52; i++ {
-		aFrac := math.Mod(float64(i)*0.38196601125+0.23, 1)
-		rFrac := math.Sqrt(math.Mod(float64(i)*0.75487766625+0.31, 1))
-		angle := startAngle + span*aFrac
-		rr := radius * float32(0.12+0.78*rFrac)
-		x := cx + rr*float32(math.Cos(angle))
-		y := cy + rr*float32(math.Sin(angle))
-
-		col := color.RGBA{R: 55, G: 130, B: 215, A: 44}
-		if i%3 == 0 {
-			col = color.RGBA{R: 8, G: 40, B: 118, A: 44}
-		}
-		size := float32(1)
-		if i%9 == 0 {
-			size = 2
-		}
-		vector.FillRect(scene, x-size/2, y-size/2, size, size, col, false)
-	}
+	drawBiomeFieldFill(scene, cx, cy, radius, startAngle, endAngle, biomeFillCfg{
+		baseFill: color.RGBA{R: 10, G: 40, B: 112, A: 190},
+		rings: []biomeRing{
+			{radius * 0.93, color.RGBA{R: 18, G: 72, B: 158, A: 38}},
+			{radius * 0.75, color.RGBA{R: 6, G: 28, B: 88, A: 36}},
+			{radius * 0.52, color.RGBA{R: 24, G: 90, B: 178, A: 26}},
+			{radius * 0.30, color.RGBA{R: 8, G: 38, B: 108, A: 26}},
+		},
+		flecks: biomeFleckCfg{
+			count:      52,
+			angleMul:   0.38196601125,
+			angleAdd:   0.23,
+			radiusMul:  0.75487766625,
+			radiusAdd:  0.31,
+			innerFrac:  0.12,
+			spanFrac:   0.78,
+			baseCol:    color.RGBA{R: 55, G: 130, B: 215, A: 44},
+			altCol:     color.RGBA{R: 8, G: 40, B: 118, A: 44},
+			altEvery:   3,
+			largeEvery: 9,
+		},
+	})
 }
 
 // drawFieldSector fills either a full circular field or a partial wedge.
@@ -180,23 +205,22 @@ func drawFieldSectorBand(scene *ebiten.Image, cx, cy, radius, width float32, sta
 	vector.StrokePath(scene, &path, sop, drawOp)
 }
 
-// drawForestCanopyFlecks adds deterministic low-res texture inside the field.
-func drawForestCanopyFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
+func drawBiomeFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64, cfg biomeFleckCfg) {
 	span := endAngle - startAngle
-	for i := 0; i < 58; i++ {
-		aFrac := math.Mod(float64(i)*0.38196601125+0.17, 1)
-		rFrac := math.Sqrt(math.Mod(float64(i)*0.75487766625+0.11, 1))
+	for i := 0; i < cfg.count; i++ {
+		aFrac := math.Mod(float64(i)*cfg.angleMul+cfg.angleAdd, 1)
+		rFrac := math.Sqrt(math.Mod(float64(i)*cfg.radiusMul+cfg.radiusAdd, 1))
 		angle := startAngle + span*aFrac
-		rr := radius * float32(0.15+0.78*rFrac)
+		rr := radius * float32(float64(cfg.innerFrac)+float64(cfg.spanFrac)*rFrac)
 		x := cx + rr*float32(math.Cos(angle))
 		y := cy + rr*float32(math.Sin(angle))
 
-		col := color.RGBA{R: 18, G: 82, B: 38, A: 46}
-		if i%3 == 0 {
-			col = color.RGBA{R: 4, G: 34, B: 22, A: 46}
+		col := cfg.baseCol
+		if cfg.altEvery > 0 && i%cfg.altEvery == 0 {
+			col = cfg.altCol
 		}
 		size := float32(1)
-		if i%11 == 0 {
+		if cfg.largeEvery > 0 && i%cfg.largeEvery == 0 {
 			size = 2
 		}
 		vector.FillRect(scene, x-size/2, y-size/2, size, size, col, false)
