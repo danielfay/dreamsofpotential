@@ -49,6 +49,48 @@ func TestFirstTownCapacityBuildable(t *testing.T) {
 	}
 }
 
+func TestTownCapacityPaymentKindPrefersWoodOnTie(t *testing.T) {
+	w := NewWorld()
+	w.Economy.Wood = 80
+	w.Economy.Water = 80
+	if got := townCapacityPaymentKind(w); got != KindWood {
+		t.Fatalf("townCapacityPaymentKind tie = %v, want %v", got, KindWood)
+	}
+}
+
+func TestTownCapacityPaymentKindBlocksWaterBeforeFirstDock(t *testing.T) {
+	w := NewWorld()
+	w.Buildings = append(w.Buildings, &Building{
+		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
+	})
+	w.Economy.Wood = 20
+	w.Economy.Water = 200
+
+	if got := townCapacityPaymentKind(w); got != KindWood {
+		t.Fatalf("townCapacityPaymentKind before first dock = %v, want %v", got, KindWood)
+	}
+	if townCapacityAffordable(w) {
+		t.Fatal("townCapacityAffordable should stay false when only blocked water is available")
+	}
+}
+
+func TestTownCapacityPaymentKindAllowsWaterAfterFirstDock(t *testing.T) {
+	w := NewWorld()
+	w.Buildings = append(w.Buildings,
+		&Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)},
+		&Building{Kind: KindDock, Angle: 1, Pos: w.Planet.RimPoint(1)},
+	)
+	w.Economy.Wood = 20
+	w.Economy.Water = 200
+
+	if got := townCapacityPaymentKind(w); got != KindWater {
+		t.Fatalf("townCapacityPaymentKind after first dock = %v, want %v", got, KindWater)
+	}
+	if !townCapacityAffordable(w) {
+		t.Fatal("townCapacityAffordable should use water once water has local producer support")
+	}
+}
+
 func TestCampCostProgression(t *testing.T) {
 	w := NewWorld()
 	// First logging camp (CampsBought==0) costs campBaseCost.
@@ -117,15 +159,39 @@ func TestBuildTownCapacitySpends(t *testing.T) {
 	}
 }
 
+func TestBuildTownCapacitySpendsWaterWhenWaterIsHigher(t *testing.T) {
+	w := NewWorld()
+	w.Buildings = append(w.Buildings,
+		&Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)},
+		&Building{Kind: KindDock, Angle: 1, Pos: w.Planet.RimPoint(1)},
+	)
+	w.Economy.WorkerCapacity = 1
+	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
+	cost := townCapacityCost(w)
+	w.Economy.Wood = cost - 1
+	w.Economy.Water = cost + 20
+
+	if !buildTownCapacity(w) {
+		t.Fatal("buildTownCapacity with enough water should succeed")
+	}
+	if got := w.Economy.Water; math.Abs(got-20) > 1e-9 {
+		t.Errorf("Water after purchase: got %.4f, want 20", got)
+	}
+	if got := w.Economy.Wood; math.Abs(got-(cost-1)) > 1e-9 {
+		t.Errorf("Wood should be unchanged: got %.4f, want %.4f", got, cost-1)
+	}
+}
+
 func TestBuildTownCapacityInsufficientWood(t *testing.T) {
 	w := NewWorld()
 	w.Buildings = append(w.Buildings, &Building{
 		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
 	})
 	w.Economy.Wood = 0
+	w.Economy.Water = 0
 
 	if buildTownCapacity(w) {
-		t.Error("buildTownCapacity with no wood should return false")
+		t.Error("buildTownCapacity with no affordable payment resource should return false")
 	}
 	if w.Economy.WorkerCapacity != 0 {
 		t.Errorf("WorkerCapacity should stay 0 when purchase fails; got %d", w.Economy.WorkerCapacity)

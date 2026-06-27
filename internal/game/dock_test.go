@@ -156,18 +156,23 @@ func TestLoggingCampStillOnLand(t *testing.T) {
 	}
 }
 
-// TestDockShoreCost verifies that shore dock placement deducts dockShoreCost wood.
+// TestDockShoreCost verifies that shore dock placement deducts dockExtWoodCost wood and dockExtWaterCost water.
 func TestDockShoreCost(t *testing.T) {
 	w := newWaterFrontierFixture()
 	w.Economy.Wood = 1000
+	w.Economy.Water = 1000
 	angle := shoreEdgeAngle()
 
-	before := w.Economy.Wood
+	woodBefore := w.Economy.Wood
+	waterBefore := w.Economy.Water
 	if !placeBuildingWithFreePlacement(w, angle, false) {
 		t.Fatal("paid shore dock placement failed")
 	}
-	if got, want := before-w.Economy.Wood, dockShoreCost; math.Abs(got-want) > 1e-9 {
+	if got, want := woodBefore-w.Economy.Wood, dockExtWoodCost; math.Abs(got-want) > 1e-9 {
 		t.Errorf("shore dock wood cost: deducted %.1f, want %.1f", got, want)
+	}
+	if got, want := waterBefore-w.Economy.Water, dockExtWaterCost; math.Abs(got-want) > 1e-9 {
+		t.Errorf("shore dock water cost: deducted %.1f, want %.1f", got, want)
 	}
 }
 

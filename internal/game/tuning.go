@@ -17,7 +17,7 @@ const (
 	// but meaningful ramp for the rest of the planet.
 	townGrowthInitialCap = 70.0  // first fill only — fires just before house is affordable
 	townGrowthBaseCap    = 250.0 // normal-play base, used from the second fill onward
-	townGrowthCapGrowth  = 1.18  // cap multiplier per worker arrival (phase 2)
+	townGrowthCapGrowth  = 1.10  // cap multiplier per worker arrival (phase 2)
 
 	// Town field geometry — the settlement wedge anchored to the Town Hall angle.
 	townFieldHalfArc     = 0.60 // half angular width of the town wedge (radians)
@@ -44,6 +44,7 @@ const (
 	nurtureTreesPerPress = 5    // trees spawned directly per Nurture button press
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
+	thFlankingNodeSize   = 2.0 // size of the two trees that flank the Town Hall at founding
 
 	// ── Tight Grove (echoB, layoutID 1) ─────────────────────────────────────
 	// Compact full-forest planet. TH placement immediately spawns many more trees
@@ -87,12 +88,12 @@ const (
 	// Shore (90° arc) + lake (270° arc) tile the full ring. Shore is at the top,
 	// lake wraps the bottom/sides. Fields edge-to-edge: shore ends at ±135°, lake starts there.
 	waterFrontierRadius     = lakewoodRadius
-	waterFrontierShoreAngle = -math.Pi / 2     // top of rim (–90°) — tiny forest shore
-	waterFrontierShoreArc   = math.Pi / 4      // 45° half-arc → 90° arc total
-	waterFrontierLakeAngle  = math.Pi / 2      // 90° — tiles edge-to-edge with shore
-	waterFrontierLakeArc    = 3 * math.Pi / 4  // 135° half-arc → 270° arc total (dominant water field)
-	waterFrontierStartNodes = 2                // TH + flanking pair only — tiny shore leaves minimal camp room
-	waterFieldBaseEXP       = woodFieldBaseEXP // placeholder cap; Phase 4 will tune water-field growth rate
+	waterFrontierShoreAngle = -math.Pi / 2    // top of rim (–90°) — tiny forest shore
+	waterFrontierShoreArc   = math.Pi / 4     // 45° half-arc → 90° arc total
+	waterFrontierLakeAngle  = math.Pi / 2     // 90° — tiles edge-to-edge with shore
+	waterFrontierLakeArc    = 3 * math.Pi / 4 // 135° half-arc → 270° arc total (dominant water field)
+	waterFrontierStartNodes = 2               // TH + flanking pair only — tiny shore leaves minimal camp room
+	waterFieldBaseEXP       = 5.0             // EXP threshold for the first sparkle spawn (grows geometrically); half of woodFieldBaseEXP so sparkles seed faster
 
 	// ── Water sparkles (interior nodes) ─────────────────────────────────────────
 	// Interior water sparkles live in the field's pie-slice, not on the rim.
@@ -101,14 +102,17 @@ const (
 	// point and away from the rim ring.
 	sparkleInnerFrac        = 0.13 // minimum r as fraction of planet radius
 	sparkleOuterFrac        = 0.80 // maximum r — leaves room for the 4 px rim ring
-	sparkleSoftRadiusFactor = 8.0  // per-unit-Size soft-overlap radius (px)
+	sparkleSoftRadiusFactor = 5.0  // per-unit-Size soft-overlap radius (px); smaller → denser packing
+	sparkleMinSize          = 0.4  // minimum sparkle size on spawn
+	sparkleSizeRange        = 0.6  // random size added on top of sparkleMinSize → [0.4, 1.0], mean 0.7
+	waterBaseLoad           = 15.0 // water units carried per trip (×sparkle.Size); separate from wood's baseLoadAmount
 	initialDockSparkles     = 3    // first dock seeds this many sparkles per known water field
 
 	// ── Dock buildings ───────────────────────────────────────────────────────────
-	// Shore dock cost (wood only) and extension dock costs (wood + water).
-	dockShoreCost    = 200.0 // wood cost to place a shore dock
-	dockExtWoodCost  = 100.0 // wood cost for an extension dock
-	dockExtWaterCost = 30.0  // water cost for an extension dock
+	// All L1 docks cost wood + water (no special shore-only case).
+	// Water is provided via the awakening packet, so shore docks are affordable immediately.
+	dockExtWoodCost  = 100.0 // wood cost per L1 dock placement (shore and open-water alike)
+	dockExtWaterCost = 30.0  // water cost per L1 dock placement
 
 	// Dock upgrade costs: Level 1→2 spends both wood and water.
 	dockL2WoodCost  = 150.0 // wood cost for L1→L2 dock upgrade
@@ -140,9 +144,8 @@ const (
 	abstractRateBuckets   = 12   // sub-buckets (each spans abstractRateWindowSec/abstractRateBuckets s)
 
 	// ── Circle packet injection ───────────────────────────────────────────────────
-	// Local resources granted per Potential circle spent; also used as the per-circle
-	// component of the awakening bootstrap. Values are TBD — tune during QA.
-	awakenBaselineWood = 350.0 // baseline wood granted to every newly awakened planet
-	circlePacketWood   = 200.0 // local wood granted per PotentialForest circle spent
-	circlePacketWater  = 100.0 // local water granted per PotentialWater circle spent
+	// Local resources granted per Potential circle spent — both on awakening and
+	// during active play. Values are TBD — tune during QA.
+	circlePacketWood  = 200.0 // local wood granted per PotentialForest circle spent
+	circlePacketWater = 100.0 // local water granted per PotentialWater circle spent
 )

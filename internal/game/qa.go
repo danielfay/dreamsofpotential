@@ -421,21 +421,17 @@ func fillWoodFieldNodes(w *World, leaveSpaceForOne bool) {
 }
 
 // fillWaterFieldSparkles spawns interior sparkles in all known KindWater fields
-// until no more can be placed (i.e., the field is saturated).
+// until no more can be placed under the real spawn logic.
 func fillWaterFieldSparkles(w *World) {
 	for _, f := range w.Planet.Fields {
 		if f.Kind != KindWater || !f.Known {
 			continue
 		}
-		// Placing sparkles at every valid grid position guarantees the gate check sees
-		// no remaining valid positions and returns false (no golden-angle divergence).
-		forEachSparkleGridPos(w, f, func(pos Vec) bool {
-			if sparkleSpawnPosValid(w, f, pos) {
-				n := newSparkle(w, pos)
-				w.Nodes = append(w.Nodes, n)
+		for waterFieldCanSpawnSparkle(w, f) {
+			if result := spawnSparkle(w, f); result.Outcome != growthOutcomeSpawnedNode {
+				break
 			}
-			return true
-		})
+		}
 	}
 }
 

@@ -1566,9 +1566,9 @@ func TestSwitchToPlanet_IsolatesLocalStockpiles(t *testing.T) {
 	w.Economy.Water = 25
 
 	// Switch to echo planet 1: parks planet 0 (saves Wood=100, Water=25) then loads planet 1.
-	// Echo bootstrap seeds LocalWood = awakenBaselineWood + circlePacketWood (1 forest circle spent).
+	// Echo bootstrap seeds LocalWood = circlePacketWood per circle spent (1 forest circle).
 	switchToPlanet(w, 1)
-	wantEchoWood := awakenBaselineWood + circlePacketWood
+	wantEchoWood := circlePacketWood
 	if w.Economy.Wood != wantEchoWood {
 		t.Errorf("echo planet 1 Wood: want %.4f (bootstrap), got %.4f", wantEchoWood, w.Economy.Wood)
 	}
@@ -3613,9 +3613,9 @@ func TestAwakenBootstrap_LocalWoodSufficientForCamp(t *testing.T) {
 	awakenPlanet(w, 1)
 	switchToPlanet(w, 1)
 	enterPlanetView(w)
-	wantWood := awakenBaselineWood + circlePacketWood
+	wantWood := circlePacketWood
 	if w.Economy.Wood != wantWood {
-		t.Errorf("bootstrap wood: got %.2f, want %.2f (awakenBaselineWood+circlePacketWood)",
+		t.Errorf("bootstrap wood: got %.2f, want %.2f (circlePacketWood × 1 forest circle)",
 			w.Economy.Wood, wantWood)
 	}
 	if w.Economy.Wood < CampCost(w) {

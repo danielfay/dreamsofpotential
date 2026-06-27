@@ -221,14 +221,21 @@ func missingCostTargets(w *World, woodCost, waterCost float64) int {
 func missingPlacementCostTargets(w *World, pv *placementPreview) int {
 	switch pv.Kind {
 	case KindDock:
-		if pv.Extension {
-			return missingCostTargets(w, dockExtWoodCost, dockExtWaterCost)
-		}
-		return missingCostTargets(w, dockShoreCost, 0)
+		return missingCostTargets(w, dockExtWoodCost, dockExtWaterCost)
 	case KindLoggingCamp:
 		return missingCostTargets(w, CampCost(w), 0)
 	}
 	return 0
+}
+
+func townCapacityCostTargets(w *World) int {
+	cost := townCapacityCost(w)
+	switch townCapacityPaymentKind(w) {
+	case KindWater:
+		return missingCostTargets(w, 0, cost)
+	default:
+		return missingCostTargets(w, cost, 0)
+	}
 }
 
 func (g *Game) Update() error {

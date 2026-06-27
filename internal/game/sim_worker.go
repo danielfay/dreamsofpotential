@@ -206,7 +206,7 @@ func stepWorker(w *World, wk *Worker, dt float64) {
 		wk.Timer -= dt
 		if wk.Timer <= 0 {
 			if target != nil {
-				wk.Carried += baseLoadAmount * target.Size
+				wk.Carried += waterBaseLoad * target.Size
 			}
 			next := nextDiveSparkle(w, dock, wk)
 			if next == nil {
@@ -960,6 +960,8 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	gross := wk.Carried
 	wasDiscovered := w.Economy.WaterDiscovered
 	bankDelivery(w, KindWater, gross, dock)
+	w.Economy.TownGrowth += gross
+	tryConsumeGrowth(w)
 	// On first water delivery: reveal unknown water fields on all planets so
 	// previously-teased lakes become real (enabling nurture and progression).
 	// Also auto-set a labor split if the player hasn't configured one yet.

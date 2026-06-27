@@ -281,9 +281,8 @@ func awakenPlanet(w *World, idx int) {
 		p.LayoutID = p.RingColorIdx
 		w.PlanetStates[idx] = newEchoPlanetState(p.LayoutID)
 	}
-	// Bootstrap: seed baseline wood plus a packet for each circle spent on awakening.
+	// Bootstrap: grant a circle packet for each Potential circle spent on awakening.
 	// Lives in parked state; materialises into Economy.Wood/Water when player enters.
-	w.PlanetStates[idx].LocalWood += awakenBaselineWood
 	for kind, cost := range planetAwakenCost(w, idx) {
 		fam := familyForPotential(kind)
 		if fam == nil {
