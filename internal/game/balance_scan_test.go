@@ -13,7 +13,10 @@ package game
 import (
 	"fmt"
 	"math"
+	"os"
+	"strings"
 	"testing"
+	"time"
 )
 
 // ── BotAI interface ───────────────────────────────────────────────────────────
@@ -44,15 +47,43 @@ type DefaultBot struct {
 	CampsPlaced  int
 	SpaceBlocked bool
 	Blocks       []blockPeriod // house supply-block durations
+	HoldPeriods  int
 
 	field      *ResourceField
 	inBlock    bool
 	blockStart float64
+	inHold     bool
 }
 
 type blockPeriod struct {
 	startTime float64
 	duration  float64
+}
+
+// metricsSnapshot is a flat capture of all balance-scan metrics from one run.
+// Collected after each sub-run and passed to writeBalanceScanLog for file output.
+type metricsSnapshot struct {
+	label        string
+	campCap      int
+	campsPlaced  int
+	spaceBlocked bool
+	holdPeriods  int
+	blocks       []blockPeriod
+
+	firstCampSeen bool
+	firstCampTime float64
+
+	workerEvents [][2]float64
+	endSimTime   float64
+
+	popMaxed      bool
+	popMaxTime    float64
+	treesAtPopMax int
+	woodAtPopMax  float64
+	endWood       float64
+
+	stallDetected bool
+	stallTime     float64
 }
 
 func (b *DefaultBot) Act(w *World) []string {
@@ -90,6 +121,12 @@ func (b *DefaultBot) Act(w *World) []string {
 
 	// Priority 2: hold when supply-blocked AND growth bar > 50%.
 	holdForHouse := supplyBlocked && growthFrac > 0.5
+	if holdForHouse && !b.inHold {
+		b.HoldPeriods++
+		b.inHold = true
+	} else if !holdForHouse {
+		b.inHold = false
+	}
 
 	// Priority 3: buy camp if not holding and below cap.
 	if !holdForHouse && b.CampsPlaced < b.CampCap && !b.SpaceBlocked {
@@ -185,10 +222,21 @@ type balanceScanRunner struct {
 	// worker spawn timeline: [[simTime, workerCount], ...]
 	workerEvents [][2]float64
 
+	// first camp
+	firstCampTime float64
+	firstCampSeen bool
+
 	// pop-max tracking
-	popMaxed     bool
-	popMaxTime   float64
-	woodAtPopMax float64
+	popMaxed      bool
+	popMaxTime    float64
+	woodAtPopMax  float64
+	treesAtPopMax int
+
+	// economy stall detection (post pop-max)
+	prevTickWood   float64
+	lastWoodUpdate float64
+	stallTime      float64
+	stallDetected  bool
 
 	// end-of-run snapshot (updated every tick so printMetrics can read it)
 	endWood    float64
@@ -245,6 +293,16 @@ func (r *balanceScanRunner) PlayerAI(w *World) []string {
 func (r *balanceScanRunner) Events(w *World) []string {
 	var events []string
 
+	if !r.firstCampSeen {
+		for _, b := range w.Buildings {
+			if b.Kind == KindLoggingCamp {
+				r.firstCampTime = w.SimTime
+				r.firstCampSeen = true
+				break
+			}
+		}
+	}
+
 	if cur := len(w.Workers); cur != r.prevWorkers {
 		events = append(events, fmt.Sprintf("+worker→%d (growth=%.0f/%.0f)",
 			cur, w.Economy.TownGrowth, w.Economy.TownGrowthCap))
@@ -256,7 +314,21 @@ func (r *balanceScanRunner) Events(w *World) []string {
 		r.popMaxed = true
 		r.popMaxTime = w.SimTime
 		r.woodAtPopMax = w.Economy.Wood
+		r.treesAtPopMax = woodTreeCount(w)
+		r.lastWoodUpdate = w.SimTime
+		r.prevTickWood = w.Economy.Wood
 		events = append(events, fmt.Sprintf("*** pop maxed — %d workers ***", len(w.Workers)))
+	}
+
+	if r.popMaxed && !r.stallDetected {
+		if w.Economy.Wood != r.prevTickWood {
+			r.lastWoodUpdate = w.SimTime
+		}
+		r.prevTickWood = w.Economy.Wood
+		if w.SimTime-r.lastWoodUpdate >= 30 {
+			r.stallDetected = true
+			r.stallTime = r.lastWoodUpdate
+		}
 	}
 
 	r.endWood = w.Economy.Wood
@@ -283,12 +355,19 @@ func (r *balanceScanRunner) printMetrics(t *testing.T) {
 	t.Helper()
 	t.Log("─── metrics ────────────────────────────────────────────────")
 
+	if r.firstCampSeen {
+		t.Logf("first camp:    t=%.0fs", r.firstCampTime)
+	} else {
+		t.Log("first camp:    never placed")
+	}
+
 	if db, ok := r.bot.(*DefaultBot); ok {
 		label := ""
 		if db.SpaceBlocked {
 			label = "  (space-blocked)"
 		}
 		t.Logf("camps:         %d / %d%s", db.CampsPlaced, db.CampCap, label)
+		t.Logf("hold events:   %d periods", db.HoldPeriods)
 
 		if len(db.Blocks) == 0 {
 			t.Log("supply blocks: none")
@@ -319,14 +398,145 @@ func (r *balanceScanRunner) printMetrics(t *testing.T) {
 	}
 
 	if r.popMaxed {
-		t.Logf("pop-max at:    t=%.0fs", r.popMaxTime)
+		t.Logf("pop-max at:    t=%.0fs  trees=%d  wood=%.0f", r.popMaxTime, r.treesAtPopMax, r.woodAtPopMax)
 		if elapsed := r.endSimTime - r.popMaxTime; elapsed > 0 {
 			rate := (r.endWood - r.woodAtPopMax) / elapsed
 			t.Logf("steady rate:   ~%.2f wood/s (over %.0fs)", rate, elapsed)
 		}
+		if r.stallDetected {
+			t.Logf("economy stall: t=%.0fs (%.0fs after pop-max)", r.stallTime, r.stallTime-r.popMaxTime)
+		} else {
+			t.Log("economy stall: none detected in sim window")
+		}
 	} else {
 		t.Log("pop-max at:    never reached in sim window")
 	}
+}
+
+// snapshot captures all current metrics into a flat struct for file logging.
+func (r *balanceScanRunner) snapshot(label string) metricsSnapshot {
+	s := metricsSnapshot{
+		label:         label,
+		firstCampSeen: r.firstCampSeen,
+		firstCampTime: r.firstCampTime,
+		workerEvents:  r.workerEvents,
+		endSimTime:    r.endSimTime,
+		popMaxed:      r.popMaxed,
+		popMaxTime:    r.popMaxTime,
+		treesAtPopMax: r.treesAtPopMax,
+		woodAtPopMax:  r.woodAtPopMax,
+		endWood:       r.endWood,
+		stallDetected: r.stallDetected,
+		stallTime:     r.stallTime,
+	}
+	if db, ok := r.bot.(*DefaultBot); ok {
+		s.campCap = db.CampCap
+		s.campsPlaced = db.CampsPlaced
+		s.spaceBlocked = db.SpaceBlocked
+		s.holdPeriods = db.HoldPeriods
+		s.blocks = append([]blockPeriod{}, db.Blocks...)
+	}
+	return s
+}
+
+// writeBalanceScanLog writes a formatted comparison table of all snapshots to
+// logs/balance-scan-<scenario>.txt (overwrites on each run).
+func writeBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
+	// go test cwd is the package directory (internal/game/); step up to project root.
+	logsDir := "../../logs"
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return err
+	}
+	slug := strings.NewReplacer(" ", "-", "/", "-", "—", "-").Replace(scenario)
+	path := fmt.Sprintf("%s/balance-scan-%s.txt", logsDir, slug)
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "balance scan — %s — %s\n", scenario, time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintln(&b, strings.Repeat("═", 72))
+	fmt.Fprintln(&b)
+
+	// ── summary table ────────────────────────────────────────────────────────
+	const hdr = "%-5s  %-10s  %-8s  %-9s  %-8s  %-11s  %-12s  %-16s  %s"
+	fmt.Fprintf(&b, hdr+"\n", "cap", "first-camp", "pop-max", "trees@max", "wood@max", "steady-rate", "stall", "supply-blocks", "holds")
+	fmt.Fprintln(&b, strings.Repeat("─", 98))
+	for _, s := range snaps {
+		firstCamp := "–"
+		if s.firstCampSeen {
+			firstCamp = fmt.Sprintf("t=%.0fs", s.firstCampTime)
+		}
+		popMax, treesStr, woodStr, rateStr := "–", "–", "–", "–"
+		if s.popMaxed {
+			popMax = fmt.Sprintf("t=%.0fs", s.popMaxTime)
+			treesStr = fmt.Sprintf("%d", s.treesAtPopMax)
+			woodStr = fmt.Sprintf("%.0f", s.woodAtPopMax)
+			if elapsed := s.endSimTime - s.popMaxTime; elapsed > 0 {
+				rate := (s.endWood - s.woodAtPopMax) / elapsed
+				rateStr = fmt.Sprintf("%.2f/s", rate)
+			}
+		}
+		stallStr := "–"
+		if s.stallDetected {
+			stallStr = fmt.Sprintf("t=%.0fs (+%.0fs)", s.stallTime, s.stallTime-s.popMaxTime)
+		}
+		blocksStr := "none"
+		if len(s.blocks) > 0 {
+			total := 0.0
+			for _, blk := range s.blocks {
+				total += blk.duration
+			}
+			label := ""
+			if s.spaceBlocked {
+				label = " space-blocked"
+			}
+			blocksStr = fmt.Sprintf("%d (%.0fs total)%s", len(s.blocks), total, label)
+		}
+		fmt.Fprintf(&b, "%-5d  %-10s  %-8s  %-9s  %-8s  %-11s  %-12s  %-16s  %d\n",
+			s.campCap, firstCamp, popMax, treesStr, woodStr, rateStr, stallStr, blocksStr, s.holdPeriods)
+	}
+	fmt.Fprintln(&b)
+
+	// ── worker timeline ──────────────────────────────────────────────────────
+	if len(snaps) > 0 {
+		maxCols := 0
+		for _, s := range snaps {
+			if n := len(s.workerEvents); n > maxCols {
+				maxCols = n
+			}
+		}
+		fmt.Fprintln(&b, "worker timeline (seconds at each count):")
+		// Header: worker counts from the first snapshot.
+		fmt.Fprintf(&b, "%-7s", "count")
+		for i := 0; i < maxCols; i++ {
+			wc := 0
+			for _, s := range snaps {
+				if i < len(s.workerEvents) {
+					wc = int(s.workerEvents[i][1])
+					break
+				}
+			}
+			fmt.Fprintf(&b, " %4d", wc)
+		}
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, strings.Repeat("─", 7+maxCols*5))
+		for _, s := range snaps {
+			fmt.Fprintf(&b, "cap=%-3d", s.campCap)
+			for i, ev := range s.workerEvents {
+				end := s.endSimTime
+				if i+1 < len(s.workerEvents) {
+					end = s.workerEvents[i+1][0]
+				}
+				dur := end - ev[0]
+				if dur < 0 {
+					dur = 0
+				}
+				fmt.Fprintf(&b, " %4.0f", dur)
+			}
+			fmt.Fprintln(&b)
+		}
+	}
+
+	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
 // ── Test ──────────────────────────────────────────────────────────────────────
@@ -341,13 +551,21 @@ func TestSimTraceBalanceScan(t *testing.T) {
 	if testing.Short() {
 		t.Skip("balance scan: skipped in short mode")
 	}
+	var snaps []metricsSnapshot
 	for _, campCap := range []int{1, 3, 6} {
 		campCap := campCap
 		t.Run(fmt.Sprintf("camps=%d", campCap), func(t *testing.T) {
 			bot := &DefaultBot{CampCap: campCap}
 			runner := newBalanceScanRunner(bot)
+			label := fmt.Sprintf("camps=%d", campCap)
 			runSimTrace(t, fmt.Sprintf("starting planet — %d-camp cap", campCap), 25, runner)
 			runner.printMetrics(t)
+			snaps = append(snaps, runner.snapshot(label))
 		})
+	}
+	if err := writeBalanceScanLog("starting-planet", snaps); err != nil {
+		t.Logf("balance scan: failed to write log: %v", err)
+	} else {
+		t.Logf("balance scan: metrics written to logs/balance-scan-starting-planet.txt")
 	}
 }
