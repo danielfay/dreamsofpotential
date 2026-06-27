@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -16,7 +17,53 @@ func (g *Game) handleSystemInput() {
 		return
 	}
 
-	// Mouse wheel up: not applicable in system view (already here).
+	mx, my := ebiten.CursorPosition()
+
+	// Allocation pip strips: left-click increments, right-click decrements by one step.
+	if g.world.System.Unlocked {
+		stepAlloc := func(r sysRect, get func() float64, set func(float64), delta int) bool {
+			if r.w <= 0 {
+				return false
+			}
+			if float32(mx) < r.x || float32(mx) >= r.x+r.w ||
+				float32(my) < r.y || float32(my) >= r.y+r.h {
+				return false
+			}
+			cur := int(math.Round(get() * 4))
+			next := cur + delta
+			if next < 0 {
+				next = 0
+			} else if next > 4 {
+				next = 4
+			}
+			set(float64(next) / 4)
+			return true
+		}
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			if stepAlloc(g.sysAllocWoodRect,
+				func() float64 { return g.world.SystemEconomy.WoodAllocPotential },
+				func(v float64) { g.world.SystemEconomy.WoodAllocPotential = v }, +1) {
+				return
+			}
+			if stepAlloc(g.sysAllocWaterRect,
+				func() float64 { return g.world.SystemEconomy.WaterAllocPotential },
+				func(v float64) { g.world.SystemEconomy.WaterAllocPotential = v }, +1) {
+				return
+			}
+		}
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+			if stepAlloc(g.sysAllocWoodRect,
+				func() float64 { return g.world.SystemEconomy.WoodAllocPotential },
+				func(v float64) { g.world.SystemEconomy.WoodAllocPotential = v }, -1) {
+				return
+			}
+			if stepAlloc(g.sysAllocWaterRect,
+				func() float64 { return g.world.SystemEconomy.WaterAllocPotential },
+				func(v float64) { g.world.SystemEconomy.WaterAllocPotential = v }, -1) {
+				return
+			}
+		}
+	}
 
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
 		g.world.System.Selected = -1
@@ -26,7 +73,6 @@ func (g *Game) handleSystemInput() {
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		return
 	}
-	mx, my := ebiten.CursorPosition()
 
 	// Check awaken-echo tray button.
 	if g.sysAwakenRect.w > 0 {

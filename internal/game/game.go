@@ -75,6 +75,8 @@ type Game struct {
 	sysReturnRect      sysRect // return-to-system button in planet view
 	sysInjectWoodRect  sysRect // forest-circle inject button (system view)
 	sysInjectWaterRect sysRect // water-circle inject button (system view)
+	sysAllocWoodRect   sysRect // wood allocation pip strip (system view)
+	sysAllocWaterRect  sysRect // water allocation pip strip (system view)
 
 	sysInjectDots []sysInjectDot // active circle-packet injection animations
 
@@ -723,9 +725,11 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		return scaledHUDFloat(scale, systemTopHUDScale, base)
 	}
 
-	// Reset inject rects; set below when circles are visible in planet view.
+	// Reset inject and alloc rects; set below when visible.
 	g.sysInjectWoodRect = sysRect{}
 	g.sysInjectWaterRect = sysRect{}
+	g.sysAllocWoodRect = sysRect{}
+	g.sysAllocWaterRect = sysRect{}
 
 	// Global resources — full-width top band. Square resources occupy the top
 	// row; matching Potential circles sit beneath them by resource colour/type.
@@ -736,7 +740,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			squareCol     color.RGBA
 			squareTextCol color.RGBA
 			showCircle    bool
-			circleText    string
+			circleCount   float64
 			circleCol     color.RGBA
 			circleTextCol color.RGBA
 			potKind       PotentialKind
@@ -756,7 +760,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				squareCol:     squareCol,
 				squareTextCol: squareTextCol,
 				showCircle:    earned,
-				circleText:    fmt.Sprintf("%d", int(math.Floor(count))),
+				circleCount:   count,
 				circleCol:     circleCol,
 				circleTextCol: circleTextCol,
 				potKind:       potKind,
@@ -766,10 +770,20 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				col.width = squareSize + textGap + float32(tw)
 			}
 			if earned {
-				tw, _ := text.Measure(col.circleText, face, 0)
+				whole := int(math.Floor(count))
+				circleStr := fmt.Sprintf("%d", whole)
+				tw, _ := text.Measure(circleStr, face, 0)
 				w := circleR*2 + textGap + float32(tw)
 				if w > col.width {
 					col.width = w
+				}
+			}
+			if g.world.System.View == ViewSystem && g.world.System.Unlocked {
+				allocPipSz := systemTopHUD(systemTopHUDAllocPipBase)
+				allocPipGap := systemTopHUD(1)
+				allocW := 4*allocPipSz + 3*allocPipGap
+				if allocW > col.width {
+					col.width = allocW
 				}
 			}
 			return col
@@ -844,19 +858,26 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 					}
 				}
 				if col.showCircle {
-					rowW := circleR * 2
-					if col.circleText != "" {
-						tw, _ := text.Measure(col.circleText, face, 0)
-						rowW += textGap + float32(tw)
-					}
+					count := col.circleCount
+					whole := int(math.Floor(count))
+					frac := count - float64(whole)
+					circleStr := fmt.Sprintf("%d", whole)
+					tw, _ := text.Measure(circleStr, face, 0)
+					rowW := circleR*2 + textGap + float32(tw)
 					rowX := cx + (col.width-rowW)/2
 					circleY := bottomY + circleR
-					drawPotentialCircle(screen, rowX+circleR, circleY, circleR, col.circleCol)
-					if col.circleText != "" {
-						_, th := text.Measure(col.circleText, face, 0)
-						drawSysText(screen, col.circleText, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
+					circleCX := rowX + circleR
+					if frac > 0.01 {
+						bgCol := col.circleCol
+						bgCol.A = 50
+						drawPotentialCircle(screen, circleCX, circleY, circleR, bgCol)
+						drawFractionalCircle(screen, circleCX, circleY, circleR, frac, col.circleCol)
+					} else {
+						drawPotentialCircle(screen, circleCX, circleY, circleR, col.circleCol)
 					}
-					// Store inject hit-test rect for system view clicks; draw hover rim.
+					_, th := text.Measure(circleStr, face, 0)
+					drawSysText(screen, circleStr, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
+					// Inject hit-test rect and hover rim.
 					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
 						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
 						switch col.potKind {
@@ -868,7 +889,41 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 						mx, my := ebiten.CursorPosition()
 						if float32(mx) >= r.x && float32(mx) < r.x+r.w &&
 							float32(my) >= r.y && float32(my) < r.y+r.h {
-							vector.StrokeCircle(screen, rowX+circleR, circleY, circleR+1.5, 1.5, colInjectHover, false)
+							vector.StrokeCircle(screen, circleCX, circleY, circleR+1.5, 1.5, colInjectHover, false)
+						}
+					}
+					// Allocation pip row: 4 square pips split between Potential and Research.
+					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
+						var allocVal float64
+						switch col.potKind {
+						case PotentialForest:
+							allocVal = g.world.SystemEconomy.WoodAllocPotential
+						case PotentialWater:
+							allocVal = g.world.SystemEconomy.WaterAllocPotential
+						}
+						allocLevel := int(math.Round(allocVal * 4))
+						const nAllocPips = 4
+						allocPipSz := systemTopHUD(systemTopHUDAllocPipBase)
+						allocPipGap := systemTopHUD(1)
+						allocW := float32(nAllocPips)*allocPipSz + float32(nAllocPips-1)*allocPipGap
+						allocX := cx + (col.width-allocW)/2
+						allocY := bottomY + circleR*2 + systemTopHUD(systemTopHUDRowGapBase)
+						for i := 0; i < nAllocPips; i++ {
+							px := allocX + float32(i)*(allocPipSz+allocPipGap)
+							var pipCol color.RGBA
+							if i < allocLevel {
+								pipCol = col.circleCol
+							} else {
+								pipCol = color.RGBA{R: 55, G: 55, B: 75, A: 220}
+							}
+							vector.FillRect(screen, px, allocY, allocPipSz, allocPipSz, pipCol, false)
+						}
+						r := sysRect{x: allocX, y: allocY, w: allocW, h: allocPipSz}
+						switch col.potKind {
+						case PotentialForest:
+							g.sysAllocWoodRect = r
+						case PotentialWater:
+							g.sysAllocWaterRect = r
 						}
 					}
 				}
@@ -907,21 +962,36 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		width   float32
 	}
 	var rateItems []rateItem
-	for _, spec := range sysTrayRateSpecs {
-		rate := spec.getRate(p)
-		if rate <= 0 {
-			continue
+	if p.Completed {
+		for _, spec := range sysTrayRateSpecs {
+			rate := spec.getRate(p)
+			if rate <= 0 {
+				continue
+			}
+			rateStr := fmt.Sprintf("%.1f/s", rate)
+			rw, _ := text.Measure(rateStr, face, 0)
+			rateItems = append(rateItems, rateItem{label: rateStr, textCol: spec.textCol, width: float32(rw)})
 		}
-		rateStr := fmt.Sprintf("%.1f/s", rate)
-		rw, _ := text.Measure(rateStr, face, 0)
-		rateItems = append(rateItems, rateItem{
-			label:   rateStr,
-			textCol: spec.textCol,
-			width:   float32(rw),
-		})
+	} else {
+		// Dormant or incomplete: show projected rates in dimmed colour.
+		type projSpec struct {
+			rate    float64
+			textCol color.RGBA
+		}
+		projSpecs := []projSpec{
+			{p.ProjectedRate, color.RGBA{R: colWoodLabel.R, G: colWoodLabel.G, B: colWoodLabel.B, A: colWoodLabel.A / 2}},
+			{p.ProjectedWaterRate, color.RGBA{R: 100, G: 200, B: 255, A: 110}},
+		}
+		for _, ps := range projSpecs {
+			if ps.rate <= 0 {
+				continue
+			}
+			rateStr := fmt.Sprintf("%.1f/s", ps.rate)
+			rw, _ := text.Measure(rateStr, face, 0)
+			rateItems = append(rateItems, rateItem{label: rateStr, textCol: ps.textCol, width: float32(rw)})
+		}
 	}
 	if len(rateItems) == 0 {
-		// Newly awakened planet with no measured rate yet — show wood placeholder.
 		placeholder := "-.--/s"
 		pw, _ := text.Measure(placeholder, face, 0)
 		rateItems = append(rateItems, rateItem{
@@ -1108,6 +1178,27 @@ func (g *Game) spawnInjectDots(kind PotentialKind) {
 // drawPotentialCircle draws a single Potential token circle centered at (cx, cy).
 func drawPotentialCircle(dst *ebiten.Image, cx, cy, r float32, col color.RGBA) {
 	vector.FillCircle(dst, cx, cy, r, col, false)
+}
+
+// drawFractionalCircle fills a pie sector covering frac (0–1) of a circle at
+// (cx,cy) with radius r, sweeping clockwise from 12 o'clock.
+func drawFractionalCircle(dst *ebiten.Image, cx, cy, r float32, frac float64, col color.RGBA) {
+	if frac <= 0 {
+		return
+	}
+	if frac >= 1 {
+		vector.FillCircle(dst, cx, cy, r, col, false)
+		return
+	}
+	startAngle := float32(-math.Pi / 2)
+	endAngle := startAngle + float32(2*math.Pi*frac)
+	var p vector.Path
+	p.MoveTo(cx, cy)
+	p.Arc(cx, cy, r, startAngle, endAngle, vector.Clockwise)
+	p.Close()
+	op := &vector.DrawPathOptions{}
+	op.ColorScale.ScaleWithColor(col)
+	vector.FillPath(dst, &p, nil, op)
 }
 
 func drawSystemTrayPlanetSwatch(screen *ebiten.Image, p SystemPlanet, x, y, size float32) {
