@@ -98,6 +98,8 @@ type metricsSnapshot struct {
 
 	stallDetected bool
 	stallTime     float64
+
+	dockUpgradeTimes []float64
 }
 
 func (b *DefaultBot) Act(w *World) []string {
@@ -508,6 +510,7 @@ func (r *balanceScanRunner) snapshot(label string) metricsSnapshot {
 		s.spaceBlocked = wfb.SpaceBlocked
 		s.holdPeriods = wfb.HoldPeriods
 		s.blocks = append([]blockPeriod{}, wfb.Blocks...)
+		s.dockUpgradeTimes = append([]float64{}, wfb.DockUpgrades...)
 	}
 	return s
 }
@@ -646,23 +649,38 @@ func runForestBalanceScan(t *testing.T, scenario string, campCaps []int, preSetu
 
 // ── WaterFrontierBot ──────────────────────────────────────────────────────────
 
+// DockStrategy controls the order in which the bot places and upgrades docks.
+type DockStrategy int
+
+const (
+	// DockStrategyBatch places all docks up to DockCap (respecting the 1-worker-per-dock
+	// ratio), then upgrades each to Level 2 once all are placed.
+	DockStrategyBatch DockStrategy = iota
+	// DockStrategySequential upgrades each dock to Level 2 before placing the next,
+	// so every dock earns at L2 from the moment the next one goes down.
+	DockStrategySequential
+)
+
 // WaterFrontierBot is the player AI for the water-frontier planet.
 //
 // Priority each tick:
 //  1. Buy a house immediately when affordable and at worker cap.
 //  2. Hold (save wood) when supply-blocked on a house AND growth bar > 50%.
-//  3. Buy docks (coverage-first) until DockCap.
+//  3. Dock + upgrade logic (strategy-dependent; respects 1-worker-per-dock ratio).
 //  4. Buy a logging camp until CampCap.
-//  5. Nurture whenever the attention condition fires.
+//  5. Set LaborFocus: 1 water worker per placed dock, always ≥1 on wood.
+//  6. Nurture whenever the attention condition fires.
 type WaterFrontierBot struct {
-	CampCap int
-	DockCap int
+	CampCap   int
+	DockCap   int
+	DockStrat DockStrategy
 
 	CampsPlaced  int
 	DocksPlaced  int
 	SpaceBlocked bool
 	Blocks       []blockPeriod
 	HoldPeriods  int
+	DockUpgrades []float64 // simTime of each dock reaching Level 2
 
 	field      *ResourceField
 	inBlock    bool
@@ -710,11 +728,49 @@ func (b *WaterFrontierBot) Act(w *World) []string {
 	}
 
 	if !holdForHouse {
-		if b.DocksPlaced < b.DockCap {
-			if a, ok := b.bestDockAngle(w); ok {
-				if placeBuilding(w, a) {
-					b.DocksPlaced++
-					events = append(events, fmt.Sprintf("+dock%d@%.2frad (wood=%.0f water=%.0f)", b.DocksPlaced, a, w.Economy.Wood, w.Economy.Water))
+		switch b.DockStrat {
+		case DockStrategySequential:
+			// Find the oldest L1 dock to upgrade before placing the next.
+			var l1Dock *Building
+			for _, bld := range w.Buildings {
+				if bld.Kind == KindDock && bld.Level < 2 {
+					l1Dock = bld
+					break
+				}
+			}
+			if l1Dock != nil {
+				if upgradeDock(w, l1Dock) {
+					b.DockUpgrades = append(b.DockUpgrades, w.SimTime)
+					events = append(events, fmt.Sprintf("+dock-L2 #%d (wood=%.0f water=%.0f)", len(b.DockUpgrades), w.Economy.Wood, w.Economy.Water))
+				}
+			} else if len(w.Workers) > b.DocksPlaced && b.DocksPlaced < b.DockCap {
+				// All existing docks are L2; place next when worker ratio allows.
+				if a, ok := b.bestDockAngle(w); ok {
+					if placeBuilding(w, a) {
+						b.DocksPlaced++
+						events = append(events, fmt.Sprintf("+dock%d@%.2frad (wood=%.0f water=%.0f)", b.DocksPlaced, a, w.Economy.Wood, w.Economy.Water))
+					}
+				}
+			}
+
+		case DockStrategyBatch:
+			// Place all docks first (worker-ratio gated), then upgrade.
+			if b.DocksPlaced < b.DockCap && len(w.Workers) > b.DocksPlaced {
+				if a, ok := b.bestDockAngle(w); ok {
+					if placeBuilding(w, a) {
+						b.DocksPlaced++
+						events = append(events, fmt.Sprintf("+dock%d@%.2frad (wood=%.0f water=%.0f)", b.DocksPlaced, a, w.Economy.Wood, w.Economy.Water))
+					}
+				}
+			} else if b.DocksPlaced >= b.DockCap {
+				for _, bld := range w.Buildings {
+					if bld.Kind == KindDock && bld.Level < 2 {
+						if upgradeDock(w, bld) {
+							b.DockUpgrades = append(b.DockUpgrades, w.SimTime)
+							events = append(events, fmt.Sprintf("+dock-L2 #%d (wood=%.0f water=%.0f)", len(b.DockUpgrades), w.Economy.Wood, w.Economy.Water))
+						}
+						break
+					}
 				}
 			}
 		}
@@ -731,6 +787,13 @@ func (b *WaterFrontierBot) Act(w *World) []string {
 				}
 			}
 		}
+	}
+
+	// Maintain worker assignment: 1 water worker per dock, always ≥1 on wood
+	// so TownGrowth keeps filling and the player never soft-locks on houses.
+	if total := len(w.Workers); total > 0 {
+		waterWorkers := min(b.DocksPlaced, total-1)
+		w.LaborFocus = laborFocusMap(total-waterWorkers, waterWorkers)
 	}
 
 	if nurtureAttentionActive(w) {
@@ -842,25 +905,35 @@ func (b *WaterFrontierBot) bestCampAngle(w *World) (float64, bool) {
 
 // ── Water scan runner ─────────────────────────────────────────────────────────
 
-// runWaterBalanceScan runs all campCap×dockCap combinations through the balance
-// scan and writes a comparison table to logs/balance-scan-<scenario>.txt.
+// runWaterBalanceScan runs all campCap×dockCap×strategy combinations through
+// the balance scan and writes a comparison table to logs/balance-scan-<scenario>.txt.
 // Runs cap out at 600 s so camp=0 scenarios (which never pop-max) still terminate.
 func runWaterBalanceScan(t *testing.T, scenario string, campCaps, dockCaps []int, preSetup func(w *World)) {
 	t.Helper()
+	type stratEntry struct {
+		strat DockStrategy
+		tag   string
+	}
+	strategies := []stratEntry{
+		{DockStrategyBatch, "bat"},
+		{DockStrategySequential, "seq"},
+	}
 	var snaps []metricsSnapshot
 	for _, campCap := range campCaps {
 		for _, dockCap := range dockCaps {
-			campCap, dockCap := campCap, dockCap
-			label := fmt.Sprintf("c=%d,d=%d", campCap, dockCap)
-			t.Run(label, func(t *testing.T) {
-				bot := &WaterFrontierBot{CampCap: campCap, DockCap: dockCap}
-				runner := newBalanceScanRunner(bot)
-				runner.preSetup = preSetup
-				runner.maxScanTime = 600.0
-				runSimTrace(t, fmt.Sprintf("%s — %s", scenario, label), 25, runner)
-				runner.printMetrics(t)
-				snaps = append(snaps, runner.snapshot(label))
-			})
+			for _, se := range strategies {
+				campCap, dockCap, se := campCap, dockCap, se
+				label := fmt.Sprintf("c=%d,d=%d,%s", campCap, dockCap, se.tag)
+				t.Run(label, func(t *testing.T) {
+					bot := &WaterFrontierBot{CampCap: campCap, DockCap: dockCap, DockStrat: se.strat}
+					runner := newBalanceScanRunner(bot)
+					runner.preSetup = preSetup
+					runner.maxScanTime = 600.0
+					runSimTrace(t, fmt.Sprintf("%s — %s", scenario, label), 25, runner)
+					runner.printMetrics(t)
+					snaps = append(snaps, runner.snapshot(label))
+				})
+			}
 		}
 	}
 	if err := writeWaterBalanceScanLog(scenario, snaps); err != nil {
@@ -891,9 +964,9 @@ func writeWaterBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 		fmt.Fprintf(&b, "starting resources: wood=%.0f  water=%.0f\n\n", s0.startingWood, s0.startingWater)
 	}
 
-	const hdr = "%-9s  %-10s  %-10s  %-8s  %-9s  %-8s  %-9s  %-8s  %-8s  %-16s  %s"
+	const hdr = "%-13s  %-10s  %-10s  %-8s  %-9s  %-8s  %-9s  %-8s  %-8s  %-16s  %s"
 	fmt.Fprintf(&b, hdr+"\n", "build", "first-dock", "first-camp", "pop-max", "trees@max", "wood@max", "water@end", "wood/s", "water/s", "supply-blocks", "holds")
-	fmt.Fprintln(&b, strings.Repeat("─", 118))
+	fmt.Fprintln(&b, strings.Repeat("─", 122))
 
 	for _, s := range snaps {
 		firstDock := "–"
@@ -929,7 +1002,7 @@ func writeWaterBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 			blocksStr = fmt.Sprintf("%d (%.0fs total)%s", len(s.blocks), total, lbl)
 		}
 
-		fmt.Fprintf(&b, "%-9s  %-10s  %-10s  %-8s  %-9s  %-8s  %-9s  %-8s  %-8s  %-16s  %d\n",
+		fmt.Fprintf(&b, "%-13s  %-10s  %-10s  %-8s  %-9s  %-8s  %-9s  %-8s  %-8s  %-16s  %d\n",
 			s.label, firstDock, firstCamp, popMax, treesStr, woodMaxStr, waterEndStr, woodRateStr, waterRateStr, blocksStr, s.holdPeriods)
 	}
 	fmt.Fprintln(&b)
@@ -942,7 +1015,7 @@ func writeWaterBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 			}
 		}
 		fmt.Fprintln(&b, "worker timeline (seconds at each count):")
-		fmt.Fprintf(&b, "%-9s", "count")
+		fmt.Fprintf(&b, "%-13s", "count")
 		for i := 0; i < maxCols; i++ {
 			wc := 0
 			for _, s := range snaps {
@@ -954,9 +1027,9 @@ func writeWaterBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 			fmt.Fprintf(&b, " %4d", wc)
 		}
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, strings.Repeat("─", 9+maxCols*5))
+		fmt.Fprintln(&b, strings.Repeat("─", 13+maxCols*5))
 		for _, s := range snaps {
-			fmt.Fprintf(&b, "%-9s", s.label)
+			fmt.Fprintf(&b, "%-13s", s.label)
 			for i, ev := range s.workerEvents {
 				end := s.endSimTime
 				if i+1 < len(s.workerEvents) {
@@ -967,6 +1040,35 @@ func writeWaterBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 					dur = 0
 				}
 				fmt.Fprintf(&b, " %4.0f", dur)
+			}
+			fmt.Fprintln(&b)
+		}
+	}
+
+	// ── dock upgrade timeline ────────────────────────────────────────────────
+	maxUpgrades := 0
+	for _, s := range snaps {
+		if n := len(s.dockUpgradeTimes); n > maxUpgrades {
+			maxUpgrades = n
+		}
+	}
+	if maxUpgrades > 0 {
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "dock upgrade times (t= seconds from start):")
+		fmt.Fprintf(&b, "%-13s", "")
+		for i := 0; i < maxUpgrades; i++ {
+			fmt.Fprintf(&b, "  %-7s", fmt.Sprintf("L2#%d", i+1))
+		}
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, strings.Repeat("─", 13+maxUpgrades*9))
+		for _, s := range snaps {
+			fmt.Fprintf(&b, "%-13s", s.label)
+			for i := 0; i < maxUpgrades; i++ {
+				if i < len(s.dockUpgradeTimes) {
+					fmt.Fprintf(&b, "  %-7s", fmt.Sprintf("t=%.0fs", s.dockUpgradeTimes[i]))
+				} else {
+					fmt.Fprintf(&b, "  %-7s", "–")
+				}
 			}
 			fmt.Fprintln(&b)
 		}
