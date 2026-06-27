@@ -141,25 +141,7 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 		return
 	}
 
-	// Choose atmosphere colour and gradient by planet type / layout.
-	var (
-		base      color.RGBA
-		atmosGrad colorgrad.Gradient
-	)
-	switch {
-	case p.Kind == PlanetUnknown:
-		base = colAtmosphereWater
-		atmosGrad = gradAtmosphereWater
-	case p.Kind == PlanetEcho && p.LayoutID == 1:
-		base = colAtmosphereB
-		atmosGrad = gradAtmosphereB
-	case p.Kind == PlanetEcho:
-		base = colAtmosphereA
-		atmosGrad = gradAtmosphereA
-	default:
-		base = colAtmosphereStart
-		atmosGrad = gradAtmosphereStart
-	}
+	base, atmosGrad := atmosphereFor(p)
 
 	// Intro progress: 0→1 over atmosphereIntroDur seconds, quadratic ease-out.
 	animAge := w.SimTime - completedAt
@@ -197,6 +179,19 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 			B: uint8(float32(base.B) * a / 255),
 			A: uint8(a),
 		}, false)
+	}
+}
+
+func atmosphereFor(p SystemPlanet) (color.RGBA, colorgrad.Gradient) {
+	switch {
+	case p.Kind == PlanetUnknown:
+		return colAtmosphereWater, gradAtmosphereWater
+	case p.Kind == PlanetEcho && p.LayoutID == 1:
+		return colAtmosphereB, gradAtmosphereB
+	case p.Kind == PlanetEcho:
+		return colAtmosphereA, gradAtmosphereA
+	default:
+		return colAtmosphereStart, gradAtmosphereStart
 	}
 }
 
