@@ -467,16 +467,79 @@ func townFieldFull(w *World) bool {
 	return townHall(w) != nil && w.Economy.WorkerCapacity >= maxTownSlots(w)
 }
 
-// townCapacityCost returns the wood cost of the next paid capacity slot.
+// townCapacityCost returns the base cost of the next paid capacity slot.
 func townCapacityCost(w *World) float64 {
 	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
+}
+
+func townCapacityPaymentAllowed(w *World, kind ResourceKind) bool {
+	if kind == KindWood {
+		return true
+	}
+	if fam := familyForResource(kind); fam != nil {
+		if rate := fam.SystemRate(&w.SystemEconomy); rate != nil && *rate > 0 {
+			return true
+		}
+	}
+	return townCapacityLocalProducerReady(w, kind)
+}
+
+func townCapacityLocalProducerReady(w *World, kind ResourceKind) bool {
+	switch kind {
+	case KindWater:
+		for _, b := range w.Buildings {
+			if b.Kind == KindDock {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// townCapacityPaymentKind returns which local resource the next house will
+// spend. Ties prefer wood so the opening remains stable before the water
+// economy overtakes it.
+func townCapacityPaymentKind(w *World) ResourceKind {
+	bestKind := KindWood
+	bestAmt := w.Economy.Wood
+	for i := range resourceFamilies {
+		fam := &resourceFamilies[i]
+		if fam.Resource == KindWood || !townCapacityPaymentAllowed(w, fam.Resource) {
+			continue
+		}
+		amt := *fam.Stockpile(&w.Economy)
+		if amt > bestAmt {
+			bestKind = fam.Resource
+			bestAmt = amt
+		}
+	}
+	return bestKind
+}
+
+func townCapacityAffordable(w *World) bool {
+	cost := townCapacityCost(w)
+	switch townCapacityPaymentKind(w) {
+	case KindWater:
+		return w.Economy.Water >= cost
+	default:
+		return w.Economy.Wood >= cost
+	}
+}
+
+func townCapacityPaymentAmount(w *World) float64 {
+	switch townCapacityPaymentKind(w) {
+	case KindWater:
+		return w.Economy.Water
+	default:
+		return w.Economy.Wood
+	}
 }
 
 func firstTownCapacityBuildable(w *World) bool {
 	return townHall(w) != nil &&
 		w.Economy.WorkerCapacity == 1 &&
 		!townFieldFull(w) &&
-		w.Economy.Wood >= townCapacityCost(w)
+		townCapacityAffordable(w)
 }
 
 // addFreeCapacity unlocks one worker slot without spending wood. Debug-only.
@@ -493,7 +556,8 @@ func addFreeCapacity(w *World) bool {
 	return true
 }
 
-// buildTownCapacity spends wood to unlock one worker slot. Calls
+// buildTownCapacity spends the currently dominant local resource to unlock one
+// worker slot. Calls
 // tryConsumeGrowth so a worker arrives immediately if growth is already full.
 func buildTownCapacity(w *World) bool {
 	if townHall(w) == nil {
@@ -503,10 +567,18 @@ func buildTownCapacity(w *World) bool {
 		return false
 	}
 	cost := townCapacityCost(w)
-	if w.Economy.Wood < cost {
-		return false
+	switch townCapacityPaymentKind(w) {
+	case KindWater:
+		if w.Economy.Water < cost {
+			return false
+		}
+		w.Economy.Water -= cost
+	default:
+		if w.Economy.Wood < cost {
+			return false
+		}
+		w.Economy.Wood -= cost
 	}
-	w.Economy.Wood -= cost
 	w.Economy.WorkerCapacity++
 	w.Economy.CapacityBought++
 	tryConsumeGrowth(w)

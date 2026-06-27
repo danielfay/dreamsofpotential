@@ -208,8 +208,8 @@ func (g *Game) handleInput() {
 	// be bought repeatedly while resources allow.
 	if g.thTrayRect.contains(fmx, fmy) {
 		if g.thCapacityRect.contains(fmx, fmy) {
-			if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
-				g.flashCostTargets(missingCostTargets(g.world, townCapacityCost(g.world), 0))
+			if !buildTownCapacity(g.world) && !townCapacityAffordable(g.world) {
+				g.flashCostTargets(townCapacityCostTargets(g.world))
 			}
 		}
 		return

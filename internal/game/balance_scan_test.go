@@ -111,7 +111,7 @@ func (b *DefaultBot) Act(w *World) []string {
 
 	atCap := len(w.Workers) >= w.Economy.WorkerCapacity
 	popFull := townFieldFull(w)
-	canAffordHouse := !popFull && w.Economy.Wood >= townCapacityCost(w)
+	canAffordHouse := !popFull && townCapacityAffordable(w)
 
 	growthFrac := 0.0
 	if w.Economy.TownGrowthCap > 0 {
@@ -122,7 +122,8 @@ func (b *DefaultBot) Act(w *World) []string {
 	if atCap && canAffordHouse {
 		b.endBlock(w.SimTime)
 		buildTownCapacity(w)
-		events = append(events, fmt.Sprintf("+house→cap%d (wood=%.0f)", w.Economy.WorkerCapacity, w.Economy.Wood))
+		payKind := townCapacityPaymentKind(w)
+		events = append(events, fmt.Sprintf("+house→cap%d (%s=%.0f)", w.Economy.WorkerCapacity, kindName(payKind), townCapacityPaymentAmount(w)))
 		return events
 	}
 
@@ -697,7 +698,7 @@ func (b *WaterFrontierBot) Act(w *World) []string {
 
 	atCap := len(w.Workers) >= w.Economy.WorkerCapacity
 	popFull := townFieldFull(w)
-	canAffordHouse := !popFull && w.Economy.Wood >= townCapacityCost(w)
+	canAffordHouse := !popFull && townCapacityAffordable(w)
 
 	growthFrac := 0.0
 	if w.Economy.TownGrowthCap > 0 {
@@ -707,7 +708,8 @@ func (b *WaterFrontierBot) Act(w *World) []string {
 	if atCap && canAffordHouse {
 		b.endBlock(w.SimTime)
 		buildTownCapacity(w)
-		events = append(events, fmt.Sprintf("+house→cap%d (wood=%.0f)", w.Economy.WorkerCapacity, w.Economy.Wood))
+		payKind := townCapacityPaymentKind(w)
+		events = append(events, fmt.Sprintf("+house→cap%d (%s=%.0f)", w.Economy.WorkerCapacity, kindName(payKind), townCapacityPaymentAmount(w)))
 		return events
 	}
 
@@ -910,35 +912,25 @@ func (b *WaterFrontierBot) bestCampAngle(w *World) (float64, bool) {
 
 // ── Water scan runner ─────────────────────────────────────────────────────────
 
-// runWaterBalanceScan runs all campCap×dockCap×strategy combinations through
-// the balance scan and writes a comparison table to logs/balance-scan-<scenario>.txt.
+// runWaterBalanceScan runs all campCap×dockCap combinations for a single dock
+// strategy and writes a comparison table to logs/balance-scan-<scenario>.txt.
 // Runs cap out at 600 s so camp=0 scenarios (which never pop-max) still terminate.
-func runWaterBalanceScan(t *testing.T, scenario string, campCaps, dockCaps []int, preSetup func(w *World)) {
+func runWaterBalanceScan(t *testing.T, scenario string, campCaps, dockCaps []int, dockStrat DockStrategy, preSetup func(w *World)) {
 	t.Helper()
-	type stratEntry struct {
-		strat DockStrategy
-		tag   string
-	}
-	strategies := []stratEntry{
-		{DockStrategyBatch, "bat"},
-		{DockStrategySequential, "seq"},
-	}
 	var snaps []metricsSnapshot
 	for _, campCap := range campCaps {
 		for _, dockCap := range dockCaps {
-			for _, se := range strategies {
-				campCap, dockCap, se := campCap, dockCap, se
-				label := fmt.Sprintf("c=%d,d=%d,%s", campCap, dockCap, se.tag)
-				t.Run(label, func(t *testing.T) {
-					bot := &WaterFrontierBot{CampCap: campCap, DockCap: dockCap, DockStrat: se.strat}
-					runner := newBalanceScanRunner(bot)
-					runner.preSetup = preSetup
-					runner.maxScanTime = 600.0
-					runSimTrace(t, fmt.Sprintf("%s — %s", scenario, label), 25, runner)
-					runner.printMetrics(t)
-					snaps = append(snaps, runner.snapshot(label))
-				})
-			}
+			campCap, dockCap := campCap, dockCap
+			label := fmt.Sprintf("c=%d,d=%d", campCap, dockCap)
+			t.Run(label, func(t *testing.T) {
+				bot := &WaterFrontierBot{CampCap: campCap, DockCap: dockCap, DockStrat: dockStrat}
+				runner := newBalanceScanRunner(bot)
+				runner.preSetup = preSetup
+				runner.maxScanTime = 600.0
+				runSimTrace(t, fmt.Sprintf("%s — %s", scenario, label), 25, runner)
+				runner.printMetrics(t)
+				snaps = append(snaps, runner.snapshot(label))
+			})
 		}
 	}
 	if err := writeWaterBalanceScanLog(scenario, snaps); err != nil {

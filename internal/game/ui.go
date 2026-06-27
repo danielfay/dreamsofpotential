@@ -200,8 +200,8 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 	}
 
 	cc := townCapacityCost(w)
-	h.buildCapacityDbg.SetText(fmt.Sprintf("Build capacity (%.0f)", cc))
-	h.buildCapacityDbg.GetWidget().Disabled = w.Economy.Wood < cc || townHall(w) == nil || townFieldFull(w)
+	h.buildCapacityDbg.SetText(fmt.Sprintf("Build capacity (%.0f %s)", cc, kindName(townCapacityPaymentKind(w))))
+	h.buildCapacityDbg.GetWidget().Disabled = !townCapacityAffordable(w) || townHall(w) == nil || townFieldFull(w)
 	h.freeCapacityDbg.GetWidget().Disabled = townHall(w) == nil || townFieldFull(w)
 	h.addWorkerDbg.GetWidget().Disabled = townHall(w) == nil
 

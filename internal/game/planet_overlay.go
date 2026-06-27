@@ -208,26 +208,33 @@ func (g *Game) drawTownHallTray(screen *ebiten.Image) {
 		vector.StrokeRect(screen, axLeft, ayTop, actionWpx, actionH, 1, colSysTrayBorder, false)
 	} else {
 		cost := townCapacityCost(g.world)
-		affordable := g.world.Economy.Wood >= cost
+		payKind := townCapacityPaymentKind(g.world)
+		affordable := townCapacityAffordable(g.world)
 		btnX := axLeft
 		btnW := actionWpx
 		btnH := actionH
 
 		vector.FillRect(screen, btnX, ayTop, btnW, btnH, colSysTrayFill, false)
 
+		fillCol := colWoodResource
+		fillA := uint8(200)
 		frac := affordabilityFrac(g.world.Economy.Wood, cost)
+		if payKind == KindWater {
+			fillCol = colSparkle
+			frac = affordabilityFrac(g.world.Economy.Water, cost)
+		}
 		if frac > 0 && frac < 1 {
 			fillH := btnH * frac
 			vector.FillRect(screen, btnX, ayTop+btnH-fillH, btnW, fillH,
-				color.RGBA{R: 120, G: 75, B: 30, A: 200}, false)
+				color.RGBA{R: fillCol.R, G: fillCol.G, B: fillCol.B, A: fillA}, false)
 		} else if affordable {
 			vector.FillRect(screen, btnX, ayTop, btnW, btnH,
-				color.RGBA{R: 120, G: 75, B: 30, A: 200}, false)
+				color.RGBA{R: fillCol.R, G: fillCol.G, B: fillCol.B, A: fillA}, false)
 		}
 
-		borderCol := colSysTrayBorder
+		borderCol := colTownCapacity
 		if affordable {
-			borderCol = color.RGBA{R: 200, G: 120, B: 50, A: 220}
+			borderCol = color.RGBA{R: colTownCapacity.R, G: colTownCapacity.G, B: colTownCapacity.B, A: 220}
 		}
 		vector.StrokeRect(screen, btnX, ayTop, btnW, btnH, 1, borderCol, false)
 

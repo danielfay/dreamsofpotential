@@ -186,7 +186,7 @@ func (r *startingPlanetRunner) PlayerAI(w *World) []string {
 	var events []string
 
 	// Buy capacity the moment it becomes affordable.
-	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+	if !townFieldFull(w) && townCapacityAffordable(w) {
 		buildTownCapacity(w)
 	}
 
@@ -243,9 +243,10 @@ func (r *startingPlanetRunner) Events(w *World) []string {
 	}
 
 	// First-lesson milestones: log the moment each button first lights up.
-	if !r.houseAffordableLogged && !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
-		events = append(events, fmt.Sprintf("-- house affordable (wood %.0f, growth %.0f/%.0f)",
-			w.Economy.Wood, w.Economy.TownGrowth, w.Economy.TownGrowthCap))
+	if !r.houseAffordableLogged && !townFieldFull(w) && townCapacityAffordable(w) {
+		payKind := townCapacityPaymentKind(w)
+		events = append(events, fmt.Sprintf("-- house affordable (%s %.0f, growth %.0f/%.0f)",
+			kindName(payKind), townCapacityPaymentAmount(w), w.Economy.TownGrowth, w.Economy.TownGrowthCap))
 		r.houseAffordableLogged = true
 	}
 	if !r.campAffordableLogged && w.Economy.Wood >= CampCost(w) {
@@ -353,7 +354,7 @@ func (r *echoCompletionRunner) ColRow(w *World) string {
 
 func (r *echoCompletionRunner) PlayerAI(w *World) []string {
 	var events []string
-	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+	if !townFieldFull(w) && townCapacityAffordable(w) {
 		buildTownCapacity(w)
 	}
 	campCount := len(w.Buildings) - 1
@@ -593,7 +594,7 @@ func (r *waterFrontierRunner) ColRow(w *World) string {
 
 func (r *waterFrontierRunner) PlayerAI(w *World) []string {
 	var events []string
-	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+	if !townFieldFull(w) && townCapacityAffordable(w) {
 		buildTownCapacity(w)
 	}
 	// Nurture whenever possible so nodes/sparkles keep growing.
@@ -732,7 +733,7 @@ func (r *waterPlanetCompletionRunner) ColRow(w *World) string {
 func (r *waterPlanetCompletionRunner) PlayerAI(w *World) []string {
 	var events []string
 	// Fill town capacity.
-	if !townFieldFull(w) && w.Economy.Wood >= townCapacityCost(w) {
+	if !townFieldFull(w) && townCapacityAffordable(w) {
 		buildTownCapacity(w)
 	}
 	// Saturate fields via Nurture.

@@ -228,6 +228,16 @@ func missingPlacementCostTargets(w *World, pv *placementPreview) int {
 	return 0
 }
 
+func townCapacityCostTargets(w *World) int {
+	cost := townCapacityCost(w)
+	switch townCapacityPaymentKind(w) {
+	case KindWater:
+		return missingCostTargets(w, 0, cost)
+	default:
+		return missingCostTargets(w, cost, 0)
+	}
+}
+
 func (g *Game) Update() error {
 	if ebiten.IsWindowBeingClosed() {
 		_ = Save(g.world)
