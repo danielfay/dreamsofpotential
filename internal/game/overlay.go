@@ -1,0 +1,227 @@
+package game
+
+import (
+	"image/color"
+
+	"github.com/ebitenui/ebitenui/widget"
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
+)
+
+// drawOverlay draws HUD affordances on top of EbitenUI in native screen space.
+// Widget Rects are valid here because ui.Draw already laid them out.
+func (g *Game) drawOverlay(screen *ebiten.Image) {
+	if g.showMenu || g.debug {
+		return
+	}
+
+	if g.revealActive {
+		return
+	}
+
+	if g.world.System.View == ViewSystem {
+		g.drawSystemOverlay(screen)
+		return
+	}
+
+	if g.world.System.Unlocked {
+		g.drawReturnToSystemButton(screen)
+	}
+
+	g.drawAffordabilityProgress(screen)
+
+	if g.world.ResourceDiscovered && len(g.world.Planet.Fields) > 0 {
+		f := g.world.Planet.Fields[0]
+		frac := float32(0)
+		if fp := g.world.Planet.FieldProgress[f.Kind]; fp != nil && fp.Cap > 0 {
+			frac = float32(fp.EXP / fp.Cap)
+			if frac > 1 {
+				frac = 1
+			}
+		}
+		r := g.hud.resourceHUD.GetWidget().Rect
+		x := float32(r.Min.X)
+		y := float32(r.Max.Y) + 2
+		w := float32(r.Max.X - r.Min.X)
+		const h = float32(3)
+		vector.StrokeRect(screen, x, y, w, h, 1, colWoodGaugeFrame, false)
+		if frac > 0 {
+			vector.FillRect(screen, x, y, w*frac, h, colWoodGaugeFill, false)
+		}
+		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeAfterglow > 0 {
+			t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
+			col := colGrowthGaugeAfterglow
+			col.A = uint8(120 * t)
+			vector.FillRect(screen, x, y, w, h, col, false)
+		}
+		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeRelease > 0 {
+			t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
+			col := colGrowthGaugeRelease
+			col.A = uint8(210 * t)
+			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, col, false)
+		}
+
+		if g.world.Economy.WaterDiscovered {
+			var waterFrac float32
+			if fp := g.world.Planet.FieldProgress[KindWater]; fp != nil && fp.Cap > 0 {
+				waterFrac = float32(fp.EXP / fp.Cap)
+				if waterFrac > 1 {
+					waterFrac = 1
+				}
+			}
+			wr := g.hud.waterHUD.GetWidget().Rect
+			wx := float32(wr.Min.X)
+			wy := float32(wr.Max.Y) + 2
+			ww := float32(wr.Max.X - wr.Min.X)
+			vector.StrokeRect(screen, wx, wy, ww, h, 1, colWaterGaugeFrame, false)
+			if waterFrac > 0 {
+				vector.FillRect(screen, wx, wy, ww*waterFrac, h, colWaterGaugeFill, false)
+			}
+			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeAfterglow > 0 {
+				t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
+				col := colGrowthGaugeAfterglow
+				col.A = uint8(120 * t)
+				vector.FillRect(screen, wx, wy, ww, h, col, false)
+			}
+			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeRelease > 0 {
+				t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
+				col := colGrowthGaugeRelease
+				col.A = uint8(210 * t)
+				vector.StrokeRect(screen, wx-1, wy-1, ww+2, h+2, 1, col, false)
+			}
+		}
+
+		sr := g.hud.resourceSquare.GetWidget().Rect
+		srx := float32(sr.Min.X)
+		sry := float32(sr.Min.Y)
+		srw := float32(sr.Max.X - sr.Min.X)
+		srh := float32(sr.Max.Y - sr.Min.Y)
+		if g.nurtureAttentionPulseLeft > 0 {
+			drawAttentionRipple(screen, srx+srw/2, sry+srh/2, srw, srh,
+				g.nurtureAttentionPulseLeft, nurtureAttentionPulseDur, colNurtureAttention, 0)
+		}
+		if g.nurtureConfirmLeft > 0 {
+			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
+			col := colNurtureConfirm
+			col.A = uint8(210 * t)
+			vector.FillRect(screen, srx, sry, srw, srh, col, false)
+		}
+
+		if g.workerRatioAttentionLeft > 0 && g.hud.workerSquare != nil {
+			wr := g.hud.workerSquare.GetWidget().Rect
+			wrx := float32(wr.Min.X)
+			wry := float32(wr.Min.Y)
+			wrw := float32(wr.Max.X - wr.Min.X)
+			wrh := float32(wr.Max.Y - wr.Min.Y)
+			drawAttentionRipple(screen, wrx+wrw/2, wry+wrh/2, wrw, wrh,
+				g.workerRatioAttentionLeft, nurtureAttentionPulseDur, colNurtureAttention, 0)
+		}
+	}
+
+	g.drawTownHallAttention(screen)
+	g.drawDockTray(screen)
+	g.drawTownHallTray(screen)
+	g.drawWorkerHUDOverlay(screen)
+	g.drawFocusControl(screen)
+
+	if g.pulseTime > 0 {
+		colPulse := colCostPulse
+		colPulse.A = uint8(200 * g.pulseTime / pulseDuration)
+		if g.pulseTarget&costPulseWood != 0 && g.hud.resourceHUD != nil {
+			pr := g.hud.resourceHUD.GetWidget().Rect
+			vector.StrokeRect(screen,
+				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+				2, colPulse, false)
+		}
+		if g.pulseTarget&costPulseWater != 0 && g.hud.waterHUD != nil {
+			pr := g.hud.waterHUD.GetWidget().Rect
+			vector.StrokeRect(screen,
+				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+				2, colPulse, false)
+		}
+		if g.pulseTarget&costPulseNurture != 0 {
+			pr := g.hud.resourceSquare.GetWidget().Rect
+			vector.StrokeRect(screen,
+				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
+				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
+				2, colPulse, false)
+		}
+		for i := range resourceFamilies {
+			fam := &resourceFamilies[i]
+			r := g.sysInjectRect[fam.Potential]
+			if g.pulseTarget&fam.InjectCostPulse != 0 && r.w > 0 {
+				vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+			}
+		}
+	}
+}
+
+// drawAffordabilityProgress was used to fill disabled HUD buttons from bottom to top.
+// Camp and capacity buttons have moved to the world (auto-placement) and TH tray respectively,
+// so this is now a no-op retained for potential future use.
+func (g *Game) drawAffordabilityProgress(_ *ebiten.Image) {}
+
+func affordabilityFrac(wood, cost float64) float32 {
+	if cost <= 0 || wood >= cost {
+		return 1
+	}
+	if wood <= 0 {
+		return 0
+	}
+	return float32(wood / cost)
+}
+
+func (g *Game) worldToScreen(v Vec) (float32, float32) {
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	return float32(offX + v.X*scale), float32(offY + v.Y*scale)
+}
+
+func (g *Game) drawTownHallAttention(screen *ebiten.Image) {
+	if g.thCapacityAttentionLeft <= 0 || g.world.System.View != ViewPlanet {
+		return
+	}
+	th := townHall(g.world)
+	if th == nil {
+		return
+	}
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	center := insetPoint(g.world.Planet, th.Angle, float64(townHallBldInset))
+	cx, cy := g.worldToScreen(center)
+	baseW := float32(townHallBldHalfW*2+6) * float32(scale)
+	baseH := float32(townHallBldHalfH*2+6) * float32(scale)
+	drawAttentionRipple(screen, cx, cy, baseW, baseH,
+		g.thCapacityAttentionLeft, nurtureAttentionPulseDur, colTownHall, 0.25)
+}
+
+func drawAttentionRipple(screen *ebiten.Image, cx, cy, baseW, baseH float32, timeLeft, duration float64, baseColor color.RGBA, startScale float32) {
+	if timeLeft <= 0 || duration <= 0 {
+		return
+	}
+	t := float32(timeLeft / duration)
+	expand := 1 - t
+	halfW := baseW / 2 * (startScale + expand*1.35)
+	halfH := baseH / 2 * (startScale + expand*1.35)
+	if halfW <= 0.5 || halfH <= 0.5 {
+		return
+	}
+	col := baseColor
+	col.A = uint8(220 * t)
+	vector.StrokeRect(screen, cx-halfW, cy-halfH, halfW*2, halfH*2, 1.5, col, false)
+}
+
+func drawButtonProgress(screen *ebiten.Image, btn *widget.Button, frac float32, col color.RGBA) {
+	if frac <= 0 || frac >= 1 || !btn.GetWidget().Disabled {
+		return
+	}
+	r := btn.GetWidget().Rect
+	w := float32(r.Max.X - r.Min.X)
+	h := float32(r.Max.Y-r.Min.Y) * frac
+	if w <= 0 || h <= 0 {
+		return
+	}
+	x := float32(r.Min.X)
+	y := float32(r.Max.Y) - h
+	vector.FillRect(screen, x, y, w, h, col, false)
+}
