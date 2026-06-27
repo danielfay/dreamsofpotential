@@ -115,6 +115,15 @@ type sysInjectDot struct {
 	col    color.RGBA
 }
 
+func (g *Game) ensureTransientMaps() {
+	if g.sysInjectRect == nil {
+		g.sysInjectRect = make(map[PotentialKind]sysRect, len(resourceFamilies))
+	}
+	if g.sysAllocRect == nil {
+		g.sysAllocRect = make(map[PotentialKind]sysRect, len(resourceFamilies))
+	}
+}
+
 // New constructs and returns a ready-to-run Game.
 // It loads a saved world from disk if one exists, otherwise starts fresh.
 func New() (*Game, error) {
@@ -139,6 +148,7 @@ func New() (*Game, error) {
 		sysAllocRect:                 make(map[PotentialKind]sysRect, len(resourceFamilies)),
 		selectedBuildingID:           -1,
 	}
+	g.ensureTransientMaps()
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
 		return nil, err
@@ -387,6 +397,7 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
+	g.ensureTransientMaps()
 	g.screenW, g.screenH = screen.Bounds().Dx(), screen.Bounds().Dy()
 
 	rebuildHUD := false
