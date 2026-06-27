@@ -796,7 +796,12 @@ func (b *WaterFrontierBot) Act(w *World) []string {
 		w.LaborFocus = laborFocusMap(total-waterWorkers, waterWorkers)
 	}
 
-	if nurtureAttentionActive(w) {
+	// Sparkles are interior nodes and don't block dock or camp placement, so
+	// nurture the water field proactively once all camps are placed/space-blocked.
+	// Before that point, fall back to the attention signal so we don't fill the
+	// tiny shore arc with trees before a camp can land there.
+	campsSettled := b.CampsPlaced >= b.CampCap || b.SpaceBlocked
+	if campsSettled || nurtureAttentionActive(w) {
 		nurtureField(w)
 	}
 

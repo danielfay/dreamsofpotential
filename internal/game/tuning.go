@@ -88,12 +88,12 @@ const (
 	// Shore (90° arc) + lake (270° arc) tile the full ring. Shore is at the top,
 	// lake wraps the bottom/sides. Fields edge-to-edge: shore ends at ±135°, lake starts there.
 	waterFrontierRadius     = lakewoodRadius
-	waterFrontierShoreAngle = -math.Pi / 2     // top of rim (–90°) — tiny forest shore
-	waterFrontierShoreArc   = math.Pi / 4      // 45° half-arc → 90° arc total
-	waterFrontierLakeAngle  = math.Pi / 2      // 90° — tiles edge-to-edge with shore
-	waterFrontierLakeArc    = 3 * math.Pi / 4  // 135° half-arc → 270° arc total (dominant water field)
-	waterFrontierStartNodes = 2                // TH + flanking pair only — tiny shore leaves minimal camp room
-	waterFieldBaseEXP       = woodFieldBaseEXP // placeholder cap; Phase 4 will tune water-field growth rate
+	waterFrontierShoreAngle = -math.Pi / 2    // top of rim (–90°) — tiny forest shore
+	waterFrontierShoreArc   = math.Pi / 4     // 45° half-arc → 90° arc total
+	waterFrontierLakeAngle  = math.Pi / 2     // 90° — tiles edge-to-edge with shore
+	waterFrontierLakeArc    = 3 * math.Pi / 4 // 135° half-arc → 270° arc total (dominant water field)
+	waterFrontierStartNodes = 2               // TH + flanking pair only — tiny shore leaves minimal camp room
+	waterFieldBaseEXP       = 5.0             // EXP threshold for the first sparkle spawn (grows geometrically); half of woodFieldBaseEXP so sparkles seed faster
 
 	// ── Water sparkles (interior nodes) ─────────────────────────────────────────
 	// Interior water sparkles live in the field's pie-slice, not on the rim.
@@ -102,7 +102,10 @@ const (
 	// point and away from the rim ring.
 	sparkleInnerFrac        = 0.13 // minimum r as fraction of planet radius
 	sparkleOuterFrac        = 0.80 // maximum r — leaves room for the 4 px rim ring
-	sparkleSoftRadiusFactor = 8.0  // per-unit-Size soft-overlap radius (px)
+	sparkleSoftRadiusFactor = 5.0  // per-unit-Size soft-overlap radius (px); smaller → denser packing
+	sparkleMinSize          = 0.4  // minimum sparkle size on spawn
+	sparkleSizeRange        = 0.6  // random size added on top of sparkleMinSize → [0.4, 1.0], mean 0.7
+	waterBaseLoad           = 15.0 // water units carried per trip (×sparkle.Size); separate from wood's baseLoadAmount
 	initialDockSparkles     = 3    // first dock seeds this many sparkles per known water field
 
 	// ── Dock buildings ───────────────────────────────────────────────────────────

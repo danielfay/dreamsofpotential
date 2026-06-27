@@ -457,7 +457,7 @@ func newSparkle(w *World, pos Vec) *ResourceNode {
 		Angle:              w.Planet.AngleOf(pos),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
-		Size:               0.6 + w.rng.Float64()*0.8,
+		Size:               sparkleMinSize + w.rng.Float64()*sparkleSizeRange,
 		Interior:           true,
 		ServicingDockID:    -1,
 	}
