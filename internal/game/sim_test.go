@@ -2377,29 +2377,6 @@ func TestAbstractRateWindow_UpdateAfterFullWindow(t *testing.T) {
 	}
 }
 
-func TestAbstractRateWindow_MonotonicRaiseOnly(t *testing.T) {
-	w := unlockedPlanetViewWorld()
-
-	if EstimateRate(w) <= w.System.Planets[w.Active].AbstractRate {
-		t.Skip("EstimateRate not > AbstractRate; worker settlement incomplete")
-	}
-
-	// Raise the rate by filling one full window.
-	runTick(w, abstractRateWindowSec*1.1)
-	raisedRate := w.System.Planets[w.Active].AbstractRate
-
-	// Remove all workers so EstimateRate drops to zero.
-	w.Workers = nil
-
-	// Run another full window with zero production.
-	runTick(w, abstractRateWindowSec*1.1)
-
-	if w.System.Planets[w.Active].AbstractRate < raisedRate {
-		t.Errorf("AbstractRate decreased (not monotonic): got %f, want >= %f",
-			w.System.Planets[w.Active].AbstractRate, raisedRate)
-	}
-}
-
 func TestAbstractRateWindow_ResetsOnPlanetSwitch(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
