@@ -541,7 +541,14 @@ func foundStartingNodes(w *World, townHallAngle float64) {
 	}
 	const flankCount = 2
 	for range flankCount {
-		spawnNodeNear(w, thField, townHallAngle)
+		candidate := newNode(w, thField.Kind, townHallAngle)
+		candidate.Size = thFlankingNodeSize
+		if angle, ok := findValidNodeSpawnAngle(w, thField, candidate, townHallAngle); ok {
+			candidate.Angle = angle
+			candidate.Pos = w.Planet.RimPoint(angle)
+			w.Nodes = append(w.Nodes, candidate)
+			activatePulse(w, &candidate.Pulse)
+		}
 	}
 
 	// Remaining nodes: each picks a random known field independently.

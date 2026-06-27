@@ -17,7 +17,7 @@ const (
 	// but meaningful ramp for the rest of the planet.
 	townGrowthInitialCap = 70.0  // first fill only — fires just before house is affordable
 	townGrowthBaseCap    = 250.0 // normal-play base, used from the second fill onward
-	townGrowthCapGrowth  = 1.18  // cap multiplier per worker arrival (phase 2)
+	townGrowthCapGrowth  = 1.10  // cap multiplier per worker arrival (phase 2)
 
 	// Town field geometry — the settlement wedge anchored to the Town Hall angle.
 	townFieldHalfArc     = 0.60 // half angular width of the town wedge (radians)
@@ -44,6 +44,7 @@ const (
 	nurtureTreesPerPress = 5    // trees spawned directly per Nurture button press
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
+	thFlankingNodeSize   = 2.0 // size of the two trees that flank the Town Hall at founding
 
 	// ── Tight Grove (echoB, layoutID 1) ─────────────────────────────────────
 	// Compact full-forest planet. TH placement immediately spawns many more trees
