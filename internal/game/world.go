@@ -1034,40 +1034,31 @@ func upgradeNearestSparkle(w *World, f *ResourceField) *ResourceNode {
 
 // ── Multi-planet park / load / switch ────────────────────────────────────────
 
-// parkActive saves the active planet's live fields into PlanetStates[Active].
-// After this call PlanetStates[Active] holds a snapshot; the top-level fields
-// are still live. Call loadPlanet afterwards to complete a switch.
-func parkActive(w *World) {
-	w.PlanetStates[w.Active] = &PlanetState{
-		Planet:              w.Planet,
-		Buildings:           w.Buildings,
-		Nodes:               w.Nodes,
-		Workers:             w.Workers,
-		NextNodeID:          w.NextNodeID,
-		NextWorkerID:        w.NextWorkerID,
-		NextBuildingID:      w.NextBuildingID,
-		ResourceDiscovered:  w.ResourceDiscovered,
-		SimTime:             w.SimTime,
-		WorkerCapacity:      w.Economy.WorkerCapacity,
-		CapacityBought:      w.Economy.CapacityBought,
-		CampsBought:         w.Economy.CampsBought,
-		TownGrowth:          w.Economy.TownGrowth,
-		TownGrowthCap:       w.Economy.TownGrowthCap,
-		TownGrowthOverflow:  w.Economy.TownGrowthOverflow,
-		LastWorkerSpawnTime: w.Economy.LastWorkerSpawnTime,
-		Founded:             townHall(w) != nil,
-		LaborFocus:          w.LaborFocus,
-		SavedLaborRatio:     w.SavedLaborRatio,
-		LocalWood:           w.Economy.Wood,
-		LocalWater:          w.Economy.Water,
-	}
+func writePlanetStateFromWorld(ps *PlanetState, w *World) {
+	ps.Planet = w.Planet
+	ps.Buildings = w.Buildings
+	ps.Nodes = w.Nodes
+	ps.Workers = w.Workers
+	ps.NextNodeID = w.NextNodeID
+	ps.NextWorkerID = w.NextWorkerID
+	ps.NextBuildingID = w.NextBuildingID
+	ps.ResourceDiscovered = w.ResourceDiscovered
+	ps.SimTime = w.SimTime
+	ps.WorkerCapacity = w.Economy.WorkerCapacity
+	ps.CapacityBought = w.Economy.CapacityBought
+	ps.CampsBought = w.Economy.CampsBought
+	ps.TownGrowth = w.Economy.TownGrowth
+	ps.TownGrowthCap = w.Economy.TownGrowthCap
+	ps.TownGrowthOverflow = w.Economy.TownGrowthOverflow
+	ps.LastWorkerSpawnTime = w.Economy.LastWorkerSpawnTime
+	ps.Founded = townHall(w) != nil
+	ps.LaborFocus = w.LaborFocus
+	ps.SavedLaborRatio = w.SavedLaborRatio
+	ps.LocalWood = w.Economy.Wood
+	ps.LocalWater = w.Economy.Water
 }
 
-// loadPlanet replaces the top-level live fields with PlanetStates[idx] and
-// clears the parked slot (active slot is always nil). Transient cue state is
-// cleared; it rebuilds at runtime.
-func loadPlanet(w *World, idx int) {
-	ps := w.PlanetStates[idx]
+func loadWorldFromPlanetState(w *World, ps *PlanetState) {
 	w.Planet = ps.Planet
 	w.Buildings = ps.Buildings
 	w.Nodes = ps.Nodes
@@ -1088,6 +1079,23 @@ func loadPlanet(w *World, idx int) {
 	w.Economy.TownGrowthCap = ps.TownGrowthCap
 	w.Economy.TownGrowthOverflow = ps.TownGrowthOverflow
 	w.Economy.LastWorkerSpawnTime = ps.LastWorkerSpawnTime
+}
+
+// parkActive saves the active planet's live fields into PlanetStates[Active].
+// After this call PlanetStates[Active] holds a snapshot; the top-level fields
+// are still live. Call loadPlanet afterwards to complete a switch.
+func parkActive(w *World) {
+	ps := &PlanetState{}
+	writePlanetStateFromWorld(ps, w)
+	w.PlanetStates[w.Active] = ps
+}
+
+// loadPlanet replaces the top-level live fields with PlanetStates[idx] and
+// clears the parked slot (active slot is always nil). Transient cue state is
+// cleared; it rebuilds at runtime.
+func loadPlanet(w *World, idx int) {
+	ps := w.PlanetStates[idx]
+	loadWorldFromPlanetState(w, ps)
 	w.PlanetStates[idx] = nil // active slot is always nil
 	w.Active = idx
 	w.growthCue = growthCueState{}
