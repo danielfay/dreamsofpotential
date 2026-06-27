@@ -70,13 +70,11 @@ type Game struct {
 	revealElapsed float64
 
 	// system-view button rects in native screen space (set during drawOverlay; read by handleSystemInput)
-	sysEnterRect       sysRect // enter-planet tray button
-	sysAwakenRect      sysRect // awaken-echo tray button
-	sysReturnRect      sysRect // return-to-system button in planet view
-	sysInjectWoodRect  sysRect // forest-circle inject button (system view)
-	sysInjectWaterRect sysRect // water-circle inject button (system view)
-	sysAllocWoodRect   sysRect // wood allocation pip strip (system view)
-	sysAllocWaterRect  sysRect // water allocation pip strip (system view)
+	sysEnterRect  sysRect                   // enter-planet tray button
+	sysAwakenRect sysRect                   // awaken-echo tray button
+	sysReturnRect sysRect                   // return-to-system button in planet view
+	sysInjectRect map[PotentialKind]sysRect // circle inject buttons by Potential family
+	sysAllocRect  map[PotentialKind]sysRect // alloc pip strips by Potential family
 
 	sysInjectDots []sysInjectDot // active circle-packet injection animations
 
@@ -106,6 +104,10 @@ type Game struct {
 
 // sysRect is a simple native-space hit-test rectangle.
 type sysRect struct{ x, y, w, h float32 }
+
+func (r sysRect) contains(x, y float32) bool {
+	return r.w > 0 && x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h
+}
 
 // sysInjectDot is one particle in the circle-packet injection animation.
 // Dots travel from the HUD circle toward the target planet and fade out.
@@ -137,6 +139,8 @@ func New() (*Game, error) {
 		thCapacityAttentionCooldown:  nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
+		sysInjectRect:                make(map[PotentialKind]sysRect, len(resourceFamilies)),
+		sysAllocRect:                 make(map[PotentialKind]sysRect, len(resourceFamilies)),
 		selectedBuildingID:           -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
@@ -617,13 +621,12 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
 				2, colPulse, false)
 		}
-		if g.pulseTarget&costPulseForestCircle != 0 && g.sysInjectWoodRect.w > 0 {
-			r := g.sysInjectWoodRect
-			vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
-		}
-		if g.pulseTarget&costPulseWaterCircle != 0 && g.sysInjectWaterRect.w > 0 {
-			r := g.sysInjectWaterRect
-			vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+		for i := range resourceFamilies {
+			fam := &resourceFamilies[i]
+			r := g.sysInjectRect[fam.Potential]
+			if g.pulseTarget&fam.InjectCostPulse != 0 && r.w > 0 {
+				vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
+			}
 		}
 	}
 }
@@ -714,10 +717,11 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	}
 
 	// Reset inject and alloc rects; set below when visible.
-	g.sysInjectWoodRect = sysRect{}
-	g.sysInjectWaterRect = sysRect{}
-	g.sysAllocWoodRect = sysRect{}
-	g.sysAllocWaterRect = sysRect{}
+	for i := range resourceFamilies {
+		fam := &resourceFamilies[i]
+		g.sysInjectRect[fam.Potential] = sysRect{}
+		g.sysAllocRect[fam.Potential] = sysRect{}
+	}
 
 	// Global resources — full-width top band. Square resources occupy the top
 	// row; matching Potential circles sit beneath them by resource colour/type.
@@ -868,26 +872,17 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 					// Inject hit-test rect and hover rim.
 					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
 						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
-						switch col.potKind {
-						case PotentialForest:
-							g.sysInjectWoodRect = r
-						case PotentialWater:
-							g.sysInjectWaterRect = r
-						}
+						g.sysInjectRect[col.potKind] = r
 						mx, my := ebiten.CursorPosition()
-						if float32(mx) >= r.x && float32(mx) < r.x+r.w &&
-							float32(my) >= r.y && float32(my) < r.y+r.h {
+						if r.contains(float32(mx), float32(my)) {
 							vector.StrokeCircle(screen, circleCX, circleY, circleR+1.5, 1.5, colInjectHover, false)
 						}
 					}
 					// Allocation pip row: 4 square pips split between Potential and Research.
 					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
 						var allocVal float64
-						switch col.potKind {
-						case PotentialForest:
-							allocVal = g.world.SystemEconomy.WoodAllocPotential
-						case PotentialWater:
-							allocVal = g.world.SystemEconomy.WaterAllocPotential
+						if fam := familyForPotential(col.potKind); fam != nil {
+							allocVal = *fam.AllocPotential(&g.world.SystemEconomy)
 						}
 						allocLevel := int(math.Round(allocVal * 4))
 						const nAllocPips = 4
@@ -907,12 +902,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 							vector.FillRect(screen, px, allocY, allocPipSz, allocPipSz, pipCol, false)
 						}
 						r := sysRect{x: allocX, y: allocY, w: allocW, h: allocPipSz}
-						switch col.potKind {
-						case PotentialForest:
-							g.sysAllocWoodRect = r
-						case PotentialWater:
-							g.sysAllocWaterRect = r
-						}
+						g.sysAllocRect[col.potKind] = r
 					}
 				}
 				cx += col.width
@@ -1124,16 +1114,12 @@ func (g *Game) spawnInjectDots(kind PotentialKind) {
 	if sel < 0 || sel >= len(g.world.System.Planets) {
 		return
 	}
-	var r sysRect
-	var col color.RGBA
-	switch kind {
-	case PotentialForest:
-		r = g.sysInjectWoodRect
-		col = colForestPotential
-	case PotentialWater:
-		r = g.sysInjectWaterRect
-		col = colWaterPotential
+	fam := familyForPotential(kind)
+	if fam == nil {
+		return
 	}
+	r := g.sysInjectRect[kind]
+	col := fam.PotentialColor
 	if r.w <= 0 {
 		return
 	}
@@ -1757,14 +1743,10 @@ func (g *Game) handleFocusControlInput() {
 	mx, my := ebiten.CursorPosition()
 	fmx, fmy := float32(mx), float32(my)
 
-	inRect := func(r sysRect) bool {
-		return r.w > 0 && fmx >= r.x && fmx < r.x+r.w && fmy >= r.y && fmy < r.y+r.h
-	}
-
 	// Update draft split when mouse is pressed/dragged in the slot bar.
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
-		if inRect(g.focusSlotsRect) || g.focusDragging {
-			if inRect(g.focusSlotsRect) {
+		if g.focusSlotsRect.contains(fmx, fmy) || g.focusDragging {
+			if g.focusSlotsRect.contains(fmx, fmy) {
 				g.focusDragging = true
 			}
 			if g.focusDragging && g.focusSlotsRect.w > 0 {
@@ -1794,21 +1776,15 @@ func (g *Game) handleFocusControlInput() {
 		return
 	}
 
-	if inRect(g.focusConfirmRect) {
+	if g.focusConfirmRect.contains(fmx, fmy) {
 		nWater := g.focusDraftWater
 		nWood := total - nWater
-		g.world.LaborFocus = map[ResourceKind]int{
-			KindWater: nWater,
-			KindWood:  nWood,
-		}
-		g.world.SavedLaborRatio = map[ResourceKind]int{
-			KindWater: nWater,
-			KindWood:  nWood,
-		}
+		g.world.LaborFocus = laborFocusMap(nWood, nWater)
+		g.world.SavedLaborRatio = laborFocusMap(nWood, nWater)
 		g.showFocusControl = false
 		return
 	}
-	if inRect(g.focusCancelRect) || !inRect(g.focusCtrlRect) {
+	if g.focusCancelRect.contains(fmx, fmy) || !g.focusCtrlRect.contains(fmx, fmy) {
 		g.showFocusControl = false
 		return
 	}

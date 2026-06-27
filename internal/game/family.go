@@ -8,6 +8,7 @@ type resourceFamily struct {
 	Resource                ResourceKind
 	Potential               PotentialKind
 	CirclePacket            float64
+	InjectCostPulse         int
 	Stockpile               func(*Economy) *float64
 	LocalStockpile          func(*PlanetState) *float64
 	AbstractRate            func(*SystemPlanet) *float64
@@ -16,16 +17,19 @@ type resourceFamily struct {
 	Research                func(*SystemEconomy) *float64
 	AllocPotential          func(*SystemEconomy) *float64
 	Estimate                func(*World) float64
+	PotentialColor          color.RGBA
+	PotentialLabelColor     color.RGBA
 	RateLabelColor          color.RGBA
 	ProjectedRateLabelColor color.RGBA
 }
 
 var resourceFamilies = []resourceFamily{
 	{
-		Resource:     KindWood,
-		Potential:    PotentialForest,
-		CirclePacket: circlePacketWood,
-		Stockpile:    func(e *Economy) *float64 { return &e.Wood },
+		Resource:        KindWood,
+		Potential:       PotentialForest,
+		CirclePacket:    circlePacketWood,
+		InjectCostPulse: costPulseForestCircle,
+		Stockpile:       func(e *Economy) *float64 { return &e.Wood },
 		LocalStockpile: func(ps *PlanetState) *float64 {
 			return &ps.LocalWood
 		},
@@ -35,14 +39,17 @@ var resourceFamilies = []resourceFamily{
 		Research:                func(se *SystemEconomy) *float64 { return &se.WoodResearch },
 		AllocPotential:          func(se *SystemEconomy) *float64 { return &se.WoodAllocPotential },
 		Estimate:                EstimateRate,
+		PotentialColor:          colForestPotential,
+		PotentialLabelColor:     colForestPotentialLabel,
 		RateLabelColor:          colWoodLabel,
 		ProjectedRateLabelColor: color.RGBA{R: colWoodLabel.R, G: colWoodLabel.G, B: colWoodLabel.B, A: colWoodLabel.A / 2},
 	},
 	{
-		Resource:     KindWater,
-		Potential:    PotentialWater,
-		CirclePacket: circlePacketWater,
-		Stockpile:    func(e *Economy) *float64 { return &e.Water },
+		Resource:        KindWater,
+		Potential:       PotentialWater,
+		CirclePacket:    circlePacketWater,
+		InjectCostPulse: costPulseWaterCircle,
+		Stockpile:       func(e *Economy) *float64 { return &e.Water },
 		LocalStockpile: func(ps *PlanetState) *float64 {
 			return &ps.LocalWater
 		},
@@ -52,6 +59,8 @@ var resourceFamilies = []resourceFamily{
 		Research:                func(se *SystemEconomy) *float64 { return &se.WaterResearch },
 		AllocPotential:          func(se *SystemEconomy) *float64 { return &se.WaterAllocPotential },
 		Estimate:                EstimateWaterRate,
+		PotentialColor:          colWaterPotential,
+		PotentialLabelColor:     colWaterPotentialLabel,
 		RateLabelColor:          color.RGBA{R: 100, G: 200, B: 255, A: 220},
 		ProjectedRateLabelColor: color.RGBA{R: 100, G: 200, B: 255, A: 110},
 	},
@@ -101,4 +110,17 @@ func workerFamilyForResource(kind ResourceKind) *workerFamily {
 		}
 	}
 	return nil
+}
+
+func laborFocusMap(wood, water int) map[ResourceKind]int {
+	focus := make(map[ResourceKind]int, len(resourceFamilies))
+	for i := range resourceFamilies {
+		fam := &resourceFamilies[i]
+		if fam.Resource == KindWater {
+			focus[fam.Resource] = water
+			continue
+		}
+		focus[fam.Resource] = wood
+	}
+	return focus
 }

@@ -362,10 +362,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		if p.LaborFocusWater != nil {
 			water = *p.LaborFocusWater
 		}
-		w.LaborFocus = map[ResourceKind]int{
-			KindWood:  wood,
-			KindWater: water,
-		}
+		w.LaborFocus = laborFocusMap(wood, water)
 	}
 
 	return w, nil

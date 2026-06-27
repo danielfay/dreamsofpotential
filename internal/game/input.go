@@ -18,49 +18,40 @@ func (g *Game) handleSystemInput() {
 	}
 
 	mx, my := ebiten.CursorPosition()
+	fmx, fmy := float32(mx), float32(my)
 
 	// Allocation pip strips: left-click increments, right-click decrements by one step.
 	if g.world.System.Unlocked {
-		stepAlloc := func(r sysRect, get func() float64, set func(float64), delta int) bool {
-			if r.w <= 0 {
+		stepAlloc := func(fam *resourceFamily, delta int) bool {
+			if fam == nil {
 				return false
 			}
-			if float32(mx) < r.x || float32(mx) >= r.x+r.w ||
-				float32(my) < r.y || float32(my) >= r.y+r.h {
+			r := g.sysAllocRect[fam.Potential]
+			if !r.contains(fmx, fmy) {
 				return false
 			}
-			cur := int(math.Round(get() * 4))
+			cur := int(math.Round(*fam.AllocPotential(&g.world.SystemEconomy) * 4))
 			next := cur + delta
 			if next < 0 {
 				next = 0
 			} else if next > 4 {
 				next = 4
 			}
-			set(float64(next) / 4)
+			*fam.AllocPotential(&g.world.SystemEconomy) = float64(next) / 4
 			return true
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			if stepAlloc(g.sysAllocWoodRect,
-				func() float64 { return g.world.SystemEconomy.WoodAllocPotential },
-				func(v float64) { g.world.SystemEconomy.WoodAllocPotential = v }, +1) {
-				return
-			}
-			if stepAlloc(g.sysAllocWaterRect,
-				func() float64 { return g.world.SystemEconomy.WaterAllocPotential },
-				func(v float64) { g.world.SystemEconomy.WaterAllocPotential = v }, +1) {
-				return
+			for i := range resourceFamilies {
+				if stepAlloc(&resourceFamilies[i], +1) {
+					return
+				}
 			}
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-			if stepAlloc(g.sysAllocWoodRect,
-				func() float64 { return g.world.SystemEconomy.WoodAllocPotential },
-				func(v float64) { g.world.SystemEconomy.WoodAllocPotential = v }, -1) {
-				return
-			}
-			if stepAlloc(g.sysAllocWaterRect,
-				func() float64 { return g.world.SystemEconomy.WaterAllocPotential },
-				func(v float64) { g.world.SystemEconomy.WaterAllocPotential = v }, -1) {
-				return
+			for i := range resourceFamilies {
+				if stepAlloc(&resourceFamilies[i], -1) {
+					return
+				}
 			}
 		}
 	}
@@ -75,45 +66,31 @@ func (g *Game) handleSystemInput() {
 	}
 
 	// Check awaken-echo tray button.
-	if g.sysAwakenRect.w > 0 {
-		if float32(mx) >= g.sysAwakenRect.x && float32(mx) < g.sysAwakenRect.x+g.sysAwakenRect.w &&
-			float32(my) >= g.sysAwakenRect.y && float32(my) < g.sysAwakenRect.y+g.sysAwakenRect.h {
-			awakenPlanet(g.world, g.world.System.Selected)
-			return
-		}
+	if g.sysAwakenRect.contains(fmx, fmy) {
+		awakenPlanet(g.world, g.world.System.Selected)
+		return
 	}
 
 	// Check enter-planet tray button (sysEnterRect set in drawOverlay previous frame).
-	if g.sysEnterRect.w > 0 {
-		if float32(mx) >= g.sysEnterRect.x && float32(mx) < g.sysEnterRect.x+g.sysEnterRect.w &&
-			float32(my) >= g.sysEnterRect.y && float32(my) < g.sysEnterRect.y+g.sysEnterRect.h {
-			idx := g.world.System.Selected
-			switchToPlanet(g.world, idx)
-			enterPlanetView(g.world)
-			clearTransientUI(g)
-			return
-		}
+	if g.sysEnterRect.contains(fmx, fmy) {
+		idx := g.world.System.Selected
+		switchToPlanet(g.world, idx)
+		enterPlanetView(g.world)
+		clearTransientUI(g)
+		return
 	}
 
 	// Circle inject buttons in the top HUD.
 	if g.world.System.Unlocked && g.world.System.Selected >= 0 {
-		if r := g.sysInjectWoodRect; r.w > 0 &&
-			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
-			float32(my) >= r.y && float32(my) < r.y+r.h {
-			if injectCirclePacket(g.world, PotentialForest) {
-				g.spawnInjectDots(PotentialForest)
-			} else {
-				g.flashCostTargets(costPulseForestCircle)
+		for i := range resourceFamilies {
+			fam := &resourceFamilies[i]
+			if !g.sysInjectRect[fam.Potential].contains(fmx, fmy) {
+				continue
 			}
-			return
-		}
-		if r := g.sysInjectWaterRect; r.w > 0 &&
-			float32(mx) >= r.x && float32(mx) < r.x+r.w &&
-			float32(my) >= r.y && float32(my) < r.y+r.h {
-			if injectCirclePacket(g.world, PotentialWater) {
-				g.spawnInjectDots(PotentialWater)
+			if injectCirclePacket(g.world, fam.Potential) {
+				g.spawnInjectDots(fam.Potential)
 			} else {
-				g.flashCostTargets(costPulseWaterCircle)
+				g.flashCostTargets(fam.InjectCostPulse)
 			}
 			return
 		}
@@ -169,8 +146,7 @@ func (g *Game) handlePlanetViewSystemReturn() {
 	// Return button click (sysReturnRect set in drawOverlay previous frame).
 	if g.sysReturnRect.w > 0 && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
-		if float32(mx) >= g.sysReturnRect.x && float32(mx) < g.sysReturnRect.x+g.sysReturnRect.w &&
-			float32(my) >= g.sysReturnRect.y && float32(my) < g.sysReturnRect.y+g.sysReturnRect.h {
+		if g.sysReturnRect.contains(float32(mx), float32(my)) {
 			returnToSystem()
 		}
 	}
@@ -226,41 +202,30 @@ func (g *Game) handleInput() {
 		return
 	}
 	mx, my := ebiten.CursorPosition()
+	fmx, fmy := float32(mx), float32(my)
 
 	// TH tray: any click inside is consumed. The tray stays open so capacity can
 	// be bought repeatedly while resources allow.
-	if g.thTrayRect.w > 0 {
-		tr := g.thTrayRect
-		if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
-			float32(my) >= tr.y && float32(my) < tr.y+tr.h {
-			rx := g.thCapacityRect
-			if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
-				float32(my) >= rx.y && float32(my) < rx.y+rx.h {
-				if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
-					g.flashCostTargets(missingCostTargets(g.world, townCapacityCost(g.world), 0))
-				}
+	if g.thTrayRect.contains(fmx, fmy) {
+		if g.thCapacityRect.contains(fmx, fmy) {
+			if !buildTownCapacity(g.world) && g.world.Economy.Wood < townCapacityCost(g.world) {
+				g.flashCostTargets(missingCostTargets(g.world, townCapacityCost(g.world), 0))
 			}
-			return
 		}
+		return
 	}
 
 	// Dock tray: any click inside is consumed. The tray stays open so future
 	// multi-level upgrades can be bought repeatedly while resources allow.
-	if g.dockTrayRect.w > 0 {
-		tr := g.dockTrayRect
-		if float32(mx) >= tr.x && float32(mx) < tr.x+tr.w &&
-			float32(my) >= tr.y && float32(my) < tr.y+tr.h {
-			rx := g.dockUpgradeRect
-			if rx.w > 0 && float32(mx) >= rx.x && float32(mx) < rx.x+rx.w &&
-				float32(my) >= rx.y && float32(my) < rx.y+rx.h {
-				if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
-					if !upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID]) {
-						g.flashCostTargets(missingCostTargets(g.world, dockL2WoodCost, dockL2WaterCost))
-					}
+	if g.dockTrayRect.contains(fmx, fmy) {
+		if g.dockUpgradeRect.contains(fmx, fmy) {
+			if g.selectedBuildingID >= 0 && g.selectedBuildingID < len(g.world.Buildings) {
+				if !upgradeDock(g.world, g.world.Buildings[g.selectedBuildingID]) {
+					g.flashCostTargets(missingCostTargets(g.world, dockL2WoodCost, dockL2WaterCost))
 				}
 			}
-			return
 		}
+		return
 	}
 
 	// HUD clicks are consumed by EbitenUI.

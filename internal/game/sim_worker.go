@@ -1016,13 +1016,5 @@ func setAutoProofSplit(w *World) {
 	if wood < 0 {
 		wood = 0
 	}
-	w.LaborFocus = make(map[ResourceKind]int, len(resourceFamilies))
-	for i := range resourceFamilies {
-		fam := &resourceFamilies[i]
-		if fam.Resource == KindWater {
-			w.LaborFocus[fam.Resource] = 1
-			continue
-		}
-		w.LaborFocus[fam.Resource] = wood
-	}
+	w.LaborFocus = laborFocusMap(wood, 1)
 }
