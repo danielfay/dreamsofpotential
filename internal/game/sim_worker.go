@@ -666,6 +666,11 @@ func reserveDelayedRebalance(w *World) {
 		if node == nil {
 			continue
 		}
+		// Don't rebalance away from a max-size node — it yields the most wood
+		// and should only be abandoned when the labor ratio changes (reconcileLaborFocus).
+		if node.Size >= nodeMaxSize {
+			continue
+		}
 		if r := routeLen(w, node); r > worstRoute {
 			worstRoute = r
 			worst = wk

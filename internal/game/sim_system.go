@@ -53,8 +53,8 @@ func waterPlanetComplete(w *World) bool {
 }
 
 // updateActiveAbstractRate samples each resource estimator into its own rolling
-// bucket-min window and ratchets the planet's abstract rate upward (raise-only)
-// when the sustained floor exceeds the stored value. Windows reset on planet
+// bucket-min window and updates the planet's abstract rate to the sustained floor.
+// Rates can rise or fall, reflecting worker-ratio changes. Windows reset on planet
 // change so pre-filled samples can't carry across enter/exit cycles (anti-fishing).
 // Call only from the post-unlock planet-view branch of Tick.
 func updateActiveAbstractRate(w *World, dt float64) {
@@ -111,10 +111,7 @@ func updateActiveAbstractRate(w *World, dt float64) {
 			}
 		}
 
-		field := fam.AbstractRate(p)
-		if windowMin > *field {
-			*field = windowMin
-		}
+		*fam.AbstractRate(p) = windowMin
 	}
 }
 

@@ -44,6 +44,7 @@ const (
 	nurtureTreesPerPress = 5    // trees spawned directly per Nurture button press
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
+	nodeMaxSize          = 2.0 // maximum size any resource node can reach
 	thFlankingNodeSize   = 2.0 // size of the two trees that flank the Town Hall at founding
 
 	// ── Tight Grove (echoB, layoutID 1) ─────────────────────────────────────

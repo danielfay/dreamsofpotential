@@ -479,7 +479,7 @@ func spawnNodeNear(w *World, f *ResourceField, intended float64) growthResult {
 		candidate.Angle = angle
 		candidate.Pos = w.Planet.RimPoint(angle)
 		if f.Kind == KindWood && waterInfluenced(w, angle) {
-			candidate.Size = math.Min(candidate.Size+waterForestSpawnSizeBonus, 2.0)
+			candidate.Size = math.Min(candidate.Size+waterForestSpawnSizeBonus, nodeMaxSize)
 			result.WaterInfluenced = true
 		}
 		w.Nodes = append(w.Nodes, candidate)
@@ -713,8 +713,8 @@ func upgradeNearestFieldNode(w *World, f *ResourceField, intended float64) *Reso
 		inc += waterForestUpgradeSizeBonus
 	}
 	best.Size += inc
-	if best.Size > 2.0 {
-		best.Size = 2.0
+	if best.Size > nodeMaxSize {
+		best.Size = nodeMaxSize
 	}
 	activatePulse(w, &best.Pulse)
 	return best
@@ -1042,8 +1042,8 @@ func upgradeNearestSparkle(w *World, f *ResourceField) *ResourceNode {
 		return nil
 	}
 	best.Size += 0.15
-	if best.Size > 2.0 {
-		best.Size = 2.0
+	if best.Size > nodeMaxSize {
+		best.Size = nodeMaxSize
 	}
 	activatePulse(w, &best.Pulse)
 	return best
