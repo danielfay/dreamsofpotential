@@ -172,24 +172,6 @@ func drawWaterFieldFill(scene *ebiten.Image, cx, cy, radius float32, startAngle,
 	})
 }
 
-// drawWaterRippleFlecks adds deterministic shimmer dots inside the water field,
-// mirroring the forest canopy fleck approach but in blue tones.
-func drawWaterRippleFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
-	drawBiomeFlecks(scene, cx, cy, radius, startAngle, endAngle, biomeFleckCfg{
-		count:      52,
-		angleMul:   0.38196601125,
-		angleAdd:   0.23,
-		radiusMul:  0.75487766625,
-		radiusAdd:  0.31,
-		innerFrac:  0.12,
-		spanFrac:   0.78,
-		baseCol:    color.RGBA{R: 55, G: 130, B: 215, A: 44},
-		altCol:     color.RGBA{R: 8, G: 40, B: 118, A: 44},
-		altEvery:   3,
-		largeEvery: 9,
-	})
-}
-
 // drawFieldSector fills either a full circular field or a partial wedge.
 func drawFieldSector(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64, col color.RGBA) {
 	if math.Abs(endAngle-startAngle-math.Pi*2) < 1e-9 {
@@ -221,23 +203,6 @@ func drawFieldSectorBand(scene *ebiten.Image, cx, cy, radius, width float32, sta
 	drawOp := &vector.DrawPathOptions{}
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.StrokePath(scene, &path, sop, drawOp)
-}
-
-// drawForestCanopyFlecks adds deterministic low-res texture inside the field.
-func drawForestCanopyFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64) {
-	drawBiomeFlecks(scene, cx, cy, radius, startAngle, endAngle, biomeFleckCfg{
-		count:      58,
-		angleMul:   0.38196601125,
-		angleAdd:   0.17,
-		radiusMul:  0.75487766625,
-		radiusAdd:  0.11,
-		innerFrac:  0.15,
-		spanFrac:   0.78,
-		baseCol:    color.RGBA{R: 18, G: 82, B: 38, A: 46},
-		altCol:     color.RGBA{R: 4, G: 34, B: 22, A: 46},
-		altEvery:   3,
-		largeEvery: 11,
-	})
 }
 
 func drawBiomeFlecks(scene *ebiten.Image, cx, cy, radius float32, startAngle, endAngle float64, cfg biomeFleckCfg) {

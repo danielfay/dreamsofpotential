@@ -148,7 +148,6 @@ func New() (*Game, error) {
 		sysAllocRect:                 make(map[PotentialKind]sysRect, len(resourceFamilies)),
 		selectedBuildingID:           -1,
 	}
-	g.ensureTransientMaps()
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
 		return nil, err

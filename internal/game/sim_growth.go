@@ -64,7 +64,7 @@ func pickGrowthRegion(w *World, kind ResourceKind) *ResourceField {
 		if f.Kind != kind || !f.Known {
 			continue
 		}
-		if !fieldCanSpawn(w, f) && kind == KindWater && !waterSparkleSpawningUnlocked(w) {
+		if kind == KindWater && !waterSparkleSpawningUnlocked(w) {
 			continue
 		}
 		if fallback == nil {

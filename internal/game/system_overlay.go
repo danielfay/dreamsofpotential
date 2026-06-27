@@ -169,15 +169,14 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 					}
 					_, th := text.Measure(circleStr, face, 0)
 					drawSysText(screen, circleStr, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
-					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
+					if g.world.System.Unlocked {
 						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
 						g.sysInjectRect[col.potKind] = r
 						mx, my := ebiten.CursorPosition()
 						if r.contains(float32(mx), float32(my)) {
 							vector.StrokeCircle(screen, circleCX, circleY, circleR+1.5, 1.5, colInjectHover, false)
 						}
-					}
-					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
+
 						var allocVal float64
 						if fam := familyForPotential(col.potKind); fam != nil {
 							allocVal = *fam.AllocPotential(&g.world.SystemEconomy)
@@ -199,8 +198,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 							}
 							vector.FillRect(screen, px, allocY, allocPipSz, allocPipSz, pipCol, false)
 						}
-						r := sysRect{x: allocX, y: allocY, w: allocW, h: allocPipSz}
-						g.sysAllocRect[col.potKind] = r
+						g.sysAllocRect[col.potKind] = sysRect{x: allocX, y: allocY, w: allocW, h: allocPipSz}
 					}
 				}
 				cx += col.width
