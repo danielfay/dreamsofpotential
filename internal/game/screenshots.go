@@ -88,6 +88,9 @@ func screenshotScenarios() []screenshotScenario {
 		workerRatioUIOpenScenario(),              // 38
 		workerRatioHUDScenario(),                 // 39
 		waterPlanetCompletedSystemViewScenario(), // 40
+		m5SystemViewRateAllocationScenario(),     // 41
+		m5PlanetViewFractionalCirclesScenario(),  // 42
+		m5AwakenBootstrapScenario(),              // 43
 	}
 }
 
@@ -821,6 +824,52 @@ func waterPlanetCompletedSystemViewScenario() screenshotScenario {
 	w.System.Planets[3].AbstractRate = 1.4
 	w.System.Planets[3].AbstractWaterRate = 0.6
 	return screenshotScenario{name: "40-water-planet-completed-system-view", world: w, fullHUD: true}
+}
+
+// m5SystemViewRateAllocationScenario shows the system view after one echo is
+// completed, with a fractional WoodAllocPotential so both Potential and Research
+// pips are visible alongside the wood rate display.
+func m5SystemViewRateAllocationScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		SelectPlanet:   intPtr(1),
+		Wood:           &wood,
+	})
+	w.SystemEconomy.WoodAllocPotential = 0.75
+	return screenshotScenario{name: "41-m5-system-view-rate-allocation", world: w, fullHUD: true}
+}
+
+// m5PlanetViewFractionalCirclesScenario shows an echo in planet view with a
+// fractional Forest Potential balance so the HUD displays partial circle pips.
+func m5PlanetViewFractionalCirclesScenario() screenshotScenario {
+	wood := 50.0
+	enter := 1
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes:      []int{1},
+		EnterPlanet:       &enter,
+		EchoPlaceTownHall: true,
+		Wood:              &wood,
+	})
+	w.Economy.Potential[PotentialForest] = 2.7
+	return screenshotScenario{name: "42-m5-planet-view-fractional-circles", world: w, fullHUD: true}
+}
+
+// m5AwakenBootstrapScenario shows a freshly awakened echo entered before any Town
+// Hall is placed. Expected: baseline wood (~550) visible in HUD; empty planet rim.
+func m5AwakenBootstrapScenario() screenshotScenario {
+	enter := 1
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
+		SaturateWoodField: true, Reveal: true,
+		AwakenEchoes: []int{1},
+		EnterPlanet:  &enter,
+	})
+	return screenshotScenario{name: "43-m5-awaken-bootstrap", world: w, fullHUD: true}
 }
 
 func intPtr(v int) *int { return &v }

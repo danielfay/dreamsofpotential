@@ -3571,6 +3571,86 @@ func TestRevealKindFields_ParkedPlanet(t *testing.T) {
 	}
 }
 
+// ── M5 economy split tests ────────────────────────────────────────────────────
+
+// TestCampPurchaseIsolatesLocalStockpile verifies that spending wood on a logging
+// camp on echo 1 does not reduce planet 0's parked local stockpile.
+func TestCampPurchaseIsolatesLocalStockpile(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Wood = 500
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1)
+	// switchToPlanet parks planet 0 with Wood=500 into PlanetStates[0].LocalWood.
+	switchToPlanet(w, 1)
+	enterPlanetView(w)
+	// Place Town Hall (free) so the next call places a logging camp.
+	thAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, thAngle) {
+		t.Fatal("cannot place Town Hall on echo 1")
+	}
+	// Fund the camp and buy it — deducts from echo 1's Economy.Wood.
+	campCost := CampCost(w)
+	w.Economy.Wood = campCost * 3
+	campAngle, ok := findValidBuildingAngle(w)
+	if !ok || !placeBuilding(w, campAngle) {
+		t.Fatal("cannot place logging camp on echo 1")
+	}
+	if w.Economy.Wood >= campCost*3 {
+		t.Error("setup: camp purchase should have reduced Economy.Wood on echo 1")
+	}
+	// Return to planet 0 — its parked stockpile must be intact.
+	switchToPlanet(w, 0)
+	if w.Economy.Wood != 500 {
+		t.Errorf("planet 0 Economy.Wood: want 500, got %.2f (echo 1 purchase leaked)", w.Economy.Wood)
+	}
+}
+
+// TestAwakenBootstrap_LocalWoodSufficientForCamp verifies that the bootstrap wood
+// granted on awakening an echo is enough to place at least one logging camp.
+func TestAwakenBootstrap_LocalWoodSufficientForCamp(t *testing.T) {
+	w := newRevealedWorld()
+	w.Economy.Potential[PotentialForest] = 1
+	awakenPlanet(w, 1)
+	switchToPlanet(w, 1)
+	enterPlanetView(w)
+	wantWood := awakenBaselineWood + circlePacketWood
+	if w.Economy.Wood != wantWood {
+		t.Errorf("bootstrap wood: got %.2f, want %.2f (awakenBaselineWood+circlePacketWood)",
+			w.Economy.Wood, wantWood)
+	}
+	if w.Economy.Wood < CampCost(w) {
+		t.Errorf("bootstrap wood %.2f < first camp cost %.2f — player cannot afford first camp on entry",
+			w.Economy.Wood, CampCost(w))
+	}
+}
+
+// TestFractionalPotentialAccumulation verifies that tickSystemEconomy distributes
+// the wood rate between Potential and Research in proportion to WoodAllocPotential
+// when the allocation is fractional (not the default 1.0).
+func TestFractionalPotentialAccumulation(t *testing.T) {
+	w := newRevealedWorld()
+	woodRate := w.System.Planets[0].AbstractRate
+	if woodRate <= 0 {
+		t.Skip("starting planet AbstractRate is 0; cannot test fractional accumulation")
+	}
+	const allocFrac = 0.6
+	w.SystemEconomy.WoodAllocPotential = allocFrac
+	before := w.Economy.Potential[PotentialForest]
+
+	tickSystemEconomy(w, 1.0)
+
+	wantPotential := before + woodRate*allocFrac*1.0
+	if math.Abs(w.Economy.Potential[PotentialForest]-wantPotential) > 1e-9 {
+		t.Errorf("Potential[Forest] after 1s at alloc=0.6: got %f, want %f",
+			w.Economy.Potential[PotentialForest], wantPotential)
+	}
+	wantResearch := woodRate * (1 - allocFrac) * 1.0
+	if math.Abs(w.SystemEconomy.WoodResearch-wantResearch) > 1e-9 {
+		t.Errorf("WoodResearch after 1s at alloc=0.6: got %f, want %f",
+			w.SystemEconomy.WoodResearch, wantResearch)
+	}
+}
+
 func TestRevealKindFields_WaterDeliveryTrigger(t *testing.T) {
 	// Verify that completing a water unload reveals unknown water fields.
 	w := newWaterHarvestFixture(t)

@@ -1,0 +1,11 @@
+{
+  "name": "local-bootstrap",
+  "description": "Freshly awakened echo (planet 1) entered without bypasses. Expected: ~550 local wood visible in HUD before any Town Hall is placed; resource discovery inactive.",
+  "seed": 11,
+  "placeTownHall": true,
+  "fillTownCapacity": true,
+  "saturateWoodField": true,
+  "reveal": true,
+  "awakenEchoes": [1],
+  "enterPlanet": 1
+}
