@@ -742,6 +742,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			showCircle    bool
 			circleCount   float64
 			circleCol     color.RGBA
+			circleTextCol color.RGBA
 			potKind       PotentialKind
 			width         float32
 		}
@@ -751,7 +752,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		textGap := systemTopHUD(bottomHUDTextGapBase)
 		columnGap := systemTopHUD(systemTopHUDColumnGapBase)
 
-		mkColumn := func(showSquare bool, squareText string, squareCol, squareTextCol color.RGBA, potKind PotentialKind, circleCol color.RGBA) systemResourceColumn {
+		mkColumn := func(showSquare bool, squareText string, squareCol, squareTextCol color.RGBA, potKind PotentialKind, circleCol, circleTextCol color.RGBA) systemResourceColumn {
 			count, earned := g.world.Economy.Potential[potKind]
 			col := systemResourceColumn{
 				showSquare:    showSquare,
@@ -761,24 +762,18 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				showCircle:    earned,
 				circleCount:   count,
 				circleCol:     circleCol,
+				circleTextCol: circleTextCol,
 				potKind:       potKind,
 			}
-			circleGap := systemTopHUD(1)
 			if showSquare {
 				tw, _ := text.Measure(squareText, face, 0)
 				col.width = squareSize + textGap + float32(tw)
 			}
 			if earned {
 				whole := int(math.Floor(count))
-				hasFrac := count-float64(whole) > 0.01
-				numPips := whole
-				if hasFrac {
-					numPips++
-				}
-				if numPips < 1 {
-					numPips = 1
-				}
-				w := float32(numPips)*circleR*2 + float32(numPips-1)*circleGap
+				circleStr := fmt.Sprintf("%d", whole)
+				tw, _ := text.Measure(circleStr, face, 0)
+				w := circleR*2 + textGap + float32(tw)
 				if w > col.width {
 					col.width = w
 				}
@@ -809,13 +804,13 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				g.world.ResourceDiscovered || g.world.System.Unlocked,
 				woodText,
 				colWoodResource, colWoodLabel,
-				PotentialForest, colForestPotential,
+				PotentialForest, colForestPotential, colForestPotentialLabel,
 			),
 			mkColumn(
 				g.world.Economy.WaterDiscovered,
 				waterText,
 				colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220},
-				PotentialWater, colWaterPotential,
+				PotentialWater, colWaterPotential, colWaterPotentialLabel,
 			),
 		}
 
@@ -863,37 +858,25 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 					}
 				}
 				if col.showCircle {
-					circleGap := systemTopHUD(1)
 					count := col.circleCount
 					whole := int(math.Floor(count))
 					frac := count - float64(whole)
-					hasFrac := frac > 0.01
-					numPips := whole
-					if hasFrac {
-						numPips++
-					}
-					if numPips < 1 {
-						numPips = 1
-					}
-					rowW := float32(numPips)*circleR*2 + float32(numPips-1)*circleGap
+					circleStr := fmt.Sprintf("%d", whole)
+					tw, _ := text.Measure(circleStr, face, 0)
+					rowW := circleR*2 + textGap + float32(tw)
 					rowX := cx + (col.width-rowW)/2
 					circleY := bottomY + circleR
-					for i := 0; i < whole; i++ {
-						pipCX := rowX + float32(i)*(circleR*2+circleGap) + circleR
-						drawPotentialCircle(screen, pipCX, circleY, circleR, col.circleCol)
+					circleCX := rowX + circleR
+					if frac > 0.01 {
+						bgCol := col.circleCol
+						bgCol.A = 50
+						drawPotentialCircle(screen, circleCX, circleY, circleR, bgCol)
+						drawFractionalCircle(screen, circleCX, circleY, circleR, frac, col.circleCol)
+					} else {
+						drawPotentialCircle(screen, circleCX, circleY, circleR, col.circleCol)
 					}
-					if hasFrac {
-						pipCX := rowX + float32(whole)*(circleR*2+circleGap) + circleR
-						partialCol := col.circleCol
-						partialCol.A = uint8(float32(col.circleCol.A) * float32(frac))
-						if partialCol.A > 0 {
-							drawPotentialCircle(screen, pipCX, circleY, circleR, partialCol)
-						}
-					} else if whole == 0 {
-						dimCol := col.circleCol
-						dimCol.A = 40
-						vector.StrokeCircle(screen, rowX+circleR, circleY, circleR, 1, dimCol, false)
-					}
+					_, th := text.Measure(circleStr, face, 0)
+					drawSysText(screen, circleStr, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
 					// Inject hit-test rect and hover rim.
 					if g.world.System.View == ViewSystem && g.world.System.Unlocked {
 						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
@@ -906,10 +889,7 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 						mx, my := ebiten.CursorPosition()
 						if float32(mx) >= r.x && float32(mx) < r.x+r.w &&
 							float32(my) >= r.y && float32(my) < r.y+r.h {
-							for i := 0; i < numPips; i++ {
-								pipCX := rowX + float32(i)*(circleR*2+circleGap) + circleR
-								vector.StrokeCircle(screen, pipCX, circleY, circleR+1.5, 1.5, colInjectHover, false)
-							}
+							vector.StrokeCircle(screen, circleCX, circleY, circleR+1.5, 1.5, colInjectHover, false)
 						}
 					}
 					// Allocation pip row: 4 square pips split between Potential and Research.
@@ -1198,6 +1178,27 @@ func (g *Game) spawnInjectDots(kind PotentialKind) {
 // drawPotentialCircle draws a single Potential token circle centered at (cx, cy).
 func drawPotentialCircle(dst *ebiten.Image, cx, cy, r float32, col color.RGBA) {
 	vector.FillCircle(dst, cx, cy, r, col, false)
+}
+
+// drawFractionalCircle fills a pie sector covering frac (0–1) of a circle at
+// (cx,cy) with radius r, sweeping clockwise from 12 o'clock.
+func drawFractionalCircle(dst *ebiten.Image, cx, cy, r float32, frac float64, col color.RGBA) {
+	if frac <= 0 {
+		return
+	}
+	if frac >= 1 {
+		vector.FillCircle(dst, cx, cy, r, col, false)
+		return
+	}
+	startAngle := float32(-math.Pi / 2)
+	endAngle := startAngle + float32(2*math.Pi*frac)
+	var p vector.Path
+	p.MoveTo(cx, cy)
+	p.Arc(cx, cy, r, startAngle, endAngle, vector.Clockwise)
+	p.Close()
+	op := &vector.DrawPathOptions{}
+	op.ColorScale.ScaleWithColor(col)
+	vector.FillPath(dst, &p, nil, op)
 }
 
 func drawSystemTrayPlanetSwatch(screen *ebiten.Image, p SystemPlanet, x, y, size float32) {
