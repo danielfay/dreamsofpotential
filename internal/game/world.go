@@ -813,9 +813,9 @@ func waterFieldCanSpawnSparkle(w *World, f *ResourceField) bool {
 	return waterFieldCanSpawnSparkleRaw(w, f)
 }
 
-func waterFieldCanSpawnSparkleRaw(w *World, f *ResourceField) bool {
-	if f == nil {
-		return false
+func forEachSparkleGridPos(w *World, f *ResourceField, fn func(pos Vec) bool) {
+	if w == nil || f == nil || fn == nil {
+		return
 	}
 	innerR := w.Planet.Radius * sparkleInnerFrac
 	outerR := w.Planet.Radius * sparkleOuterFrac
@@ -829,12 +829,26 @@ func waterFieldCanSpawnSparkleRaw(w *World, f *ResourceField) bool {
 				X: w.Planet.Center.X + r*math.Cos(angle),
 				Y: w.Planet.Center.Y + r*math.Sin(angle),
 			}
-			if sparkleSpawnPosValid(w, f, pos) {
-				return true
+			if !fn(pos) {
+				return
 			}
 		}
 	}
-	return false
+}
+
+func waterFieldCanSpawnSparkleRaw(w *World, f *ResourceField) bool {
+	if f == nil {
+		return false
+	}
+	canSpawn := false
+	forEachSparkleGridPos(w, f, func(pos Vec) bool {
+		if sparkleSpawnPosValid(w, f, pos) {
+			canSpawn = true
+			return false
+		}
+		return true
+	})
+	return canSpawn
 }
 
 func waterSparkleSpawningUnlocked(w *World) bool {
@@ -886,23 +900,19 @@ func spawnSparkle(w *World, f *ResourceField) growthResult {
 	// Golden-angle attempts all blocked — try the same 16×4 grid positions that
 	// waterFieldCanSpawnSparkle uses, so organic placement can always reach any
 	// valid slot that the gate check considers available.
-	for ai := range 16 {
-		angle := normAngle(f.CenterAngle - f.HalfArc + 2*f.HalfArc*float64(ai)/15.0)
-		for ri := range 4 {
-			r := innerR + (outerR-innerR)*float64(ri)/3.0
-			pos := Vec{
-				X: w.Planet.Center.X + r*math.Cos(angle),
-				Y: w.Planet.Center.Y + r*math.Sin(angle),
-			}
-			if sparkleSpawnPosValid(w, f, pos) {
-				n := newSparkle(w, pos)
-				w.Nodes = append(w.Nodes, n)
-				activatePulse(w, &n.Pulse)
-				result.Outcome = growthOutcomeSpawnedNode
-				result.NodeID = n.ID
-				return result
-			}
+	forEachSparkleGridPos(w, f, func(pos Vec) bool {
+		if sparkleSpawnPosValid(w, f, pos) {
+			n := newSparkle(w, pos)
+			w.Nodes = append(w.Nodes, n)
+			activatePulse(w, &n.Pulse)
+			result.Outcome = growthOutcomeSpawnedNode
+			result.NodeID = n.ID
+			return false
 		}
+		return true
+	})
+	if result.Outcome == growthOutcomeSpawnedNode {
+		return result
 	}
 	// Field truly saturated; upgrade nearest sparkle instead.
 	if upgraded := upgradeNearestSparkle(w, f); upgraded != nil {
