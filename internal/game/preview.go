@@ -216,14 +216,8 @@ func dockPreview(w *World, angle float64, freePlacement bool,
 	extension := false
 	var affordable bool
 
-	if isShore(w, angle, half) {
-		// Shore dock: footprint straddles water/land boundary.
-		affordable = freePlacement || w.Economy.Wood >= dockShoreCost
-	} else {
-		// Open-water dock: anywhere in a water field; costs Wood + Water.
-		extension = true
-		affordable = freePlacement || (w.Economy.Wood >= dockExtWoodCost && w.Economy.Water >= dockExtWaterCost)
-	}
+	extension = !isShore(w, angle, half)
+	affordable = freePlacement || (w.Economy.Wood >= dockExtWoodCost && w.Economy.Water >= dockExtWaterCost)
 
 	valid := affordable && len(blockedBuildings) == 0
 	return placementPreview{

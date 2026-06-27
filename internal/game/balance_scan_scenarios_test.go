@@ -68,3 +68,15 @@ func TestSimTraceBalanceScanTightGrove(t *testing.T) {
 	}
 	runForestBalanceScan(t, "tight-grove", []int{1, 3, 6}, echoPreSetup(2))
 }
+
+// TestSimTraceBalanceScanWaterFrontier scans the Water Frontier (PlanetUnknown, idx 3)
+// under camp×dock cap variants: 0 or 1 camps, 1/3/6 docks.
+// Writes logs/balance-scan-water-frontier.txt.
+//
+//	go test -v -run TestSimTraceBalanceScanWaterFrontier ./internal/game/
+func TestSimTraceBalanceScanWaterFrontier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("balance scan: skipped in short mode")
+	}
+	runWaterBalanceScan(t, "water-frontier", []int{0, 1}, []int{1, 3, 6}, echoPreSetup(3))
+}

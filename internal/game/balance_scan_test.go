@@ -71,6 +71,8 @@ type metricsSnapshot struct {
 	label        string
 	campCap      int
 	campsPlaced  int
+	dockCap      int
+	docksPlaced  int
 	spaceBlocked bool
 	holdPeriods  int
 	blocks       []blockPeriod
@@ -80,6 +82,8 @@ type metricsSnapshot struct {
 
 	firstCampSeen bool
 	firstCampTime float64
+	firstDockSeen bool
+	firstDockTime float64
 
 	workerEvents [][2]float64
 	endSimTime   float64
@@ -88,7 +92,9 @@ type metricsSnapshot struct {
 	popMaxTime    float64
 	treesAtPopMax int
 	woodAtPopMax  float64
+	waterAtPopMax float64
 	endWood       float64
+	endWater      float64
 
 	stallDetected bool
 	stallTime     float64
@@ -254,6 +260,17 @@ type balanceScanRunner struct {
 	// end-of-run snapshot (updated every tick so printMetrics can read it)
 	endWood    float64
 	endSimTime float64
+
+	// first dock
+	firstDockSeen bool
+	firstDockTime float64
+
+	// water economy
+	waterAtPopMax float64
+	endWater      float64
+
+	// maxScanTime caps the run if pop-max is never reached (0 = no cap).
+	maxScanTime float64
 }
 
 func newBalanceScanRunner(bot BotAI) *balanceScanRunner {
@@ -329,6 +346,16 @@ func (r *balanceScanRunner) Events(w *World) []string {
 		}
 	}
 
+	if !r.firstDockSeen {
+		for _, b := range w.Buildings {
+			if b.Kind == KindDock {
+				r.firstDockTime = w.SimTime
+				r.firstDockSeen = true
+				break
+			}
+		}
+	}
+
 	if cur := len(w.Workers); cur != r.prevWorkers {
 		events = append(events, fmt.Sprintf("+worker→%d (growth=%.0f/%.0f)",
 			cur, w.Economy.TownGrowth, w.Economy.TownGrowthCap))
@@ -340,6 +367,7 @@ func (r *balanceScanRunner) Events(w *World) []string {
 		r.popMaxed = true
 		r.popMaxTime = w.SimTime
 		r.woodAtPopMax = w.Economy.Wood
+		r.waterAtPopMax = w.Economy.Water
 		r.treesAtPopMax = woodTreeCount(w)
 		r.lastWoodUpdate = w.SimTime
 		r.prevTickWood = w.Economy.Wood
@@ -358,13 +386,16 @@ func (r *balanceScanRunner) Events(w *World) []string {
 	}
 
 	r.endWood = w.Economy.Wood
+	r.endWater = w.Economy.Water
 	r.endSimTime = w.SimTime
 
 	return events
 }
 
 func (r *balanceScanRunner) Complete(w *World) bool {
-	// Run 120s past pop-max to capture steady-state rate.
+	if r.maxScanTime > 0 && w.SimTime >= r.maxScanTime {
+		return true
+	}
 	return r.popMaxed && w.SimTime >= r.popMaxTime+120
 }
 
@@ -448,13 +479,17 @@ func (r *balanceScanRunner) snapshot(label string) metricsSnapshot {
 		startingWater: r.startingWater,
 		firstCampSeen: r.firstCampSeen,
 		firstCampTime: r.firstCampTime,
+		firstDockSeen: r.firstDockSeen,
+		firstDockTime: r.firstDockTime,
 		workerEvents:  r.workerEvents,
 		endSimTime:    r.endSimTime,
 		popMaxed:      r.popMaxed,
 		popMaxTime:    r.popMaxTime,
 		treesAtPopMax: r.treesAtPopMax,
 		woodAtPopMax:  r.woodAtPopMax,
+		waterAtPopMax: r.waterAtPopMax,
 		endWood:       r.endWood,
+		endWater:      r.endWater,
 		stallDetected: r.stallDetected,
 		stallTime:     r.stallTime,
 	}
@@ -464,6 +499,15 @@ func (r *balanceScanRunner) snapshot(label string) metricsSnapshot {
 		s.spaceBlocked = db.SpaceBlocked
 		s.holdPeriods = db.HoldPeriods
 		s.blocks = append([]blockPeriod{}, db.Blocks...)
+	}
+	if wfb, ok := r.bot.(*WaterFrontierBot); ok {
+		s.campCap = wfb.CampCap
+		s.dockCap = wfb.DockCap
+		s.campsPlaced = wfb.CampsPlaced
+		s.docksPlaced = wfb.DocksPlaced
+		s.spaceBlocked = wfb.SpaceBlocked
+		s.holdPeriods = wfb.HoldPeriods
+		s.blocks = append([]blockPeriod{}, wfb.Blocks...)
 	}
 	return s
 }
@@ -598,4 +642,335 @@ func runForestBalanceScan(t *testing.T, scenario string, campCaps []int, preSetu
 	} else {
 		t.Logf("balance scan: metrics written to logs/balance-scan-%s.txt", scenario)
 	}
+}
+
+// ── WaterFrontierBot ──────────────────────────────────────────────────────────
+
+// WaterFrontierBot is the player AI for the water-frontier planet.
+//
+// Priority each tick:
+//  1. Buy a house immediately when affordable and at worker cap.
+//  2. Hold (save wood) when supply-blocked on a house AND growth bar > 50%.
+//  3. Buy docks (coverage-first) until DockCap.
+//  4. Buy a logging camp until CampCap.
+//  5. Nurture whenever the attention condition fires.
+type WaterFrontierBot struct {
+	CampCap int
+	DockCap int
+
+	CampsPlaced  int
+	DocksPlaced  int
+	SpaceBlocked bool
+	Blocks       []blockPeriod
+	HoldPeriods  int
+
+	field      *ResourceField
+	inBlock    bool
+	blockStart float64
+	inHold     bool
+}
+
+func (b *WaterFrontierBot) Act(w *World) []string {
+	if b.field == nil {
+		b.field = fieldForKind(w, KindWood)
+	}
+
+	var events []string
+
+	atCap := len(w.Workers) >= w.Economy.WorkerCapacity
+	popFull := townFieldFull(w)
+	canAffordHouse := !popFull && w.Economy.Wood >= townCapacityCost(w)
+
+	growthFrac := 0.0
+	if w.Economy.TownGrowthCap > 0 {
+		growthFrac = w.Economy.TownGrowth / w.Economy.TownGrowthCap
+	}
+
+	if atCap && canAffordHouse {
+		b.endBlock(w.SimTime)
+		buildTownCapacity(w)
+		events = append(events, fmt.Sprintf("+house→cap%d (wood=%.0f)", w.Economy.WorkerCapacity, w.Economy.Wood))
+		return events
+	}
+
+	supplyBlocked := atCap && !popFull && !canAffordHouse
+	if supplyBlocked && !b.inBlock {
+		b.inBlock = true
+		b.blockStart = w.SimTime
+	} else if !supplyBlocked {
+		b.endBlock(w.SimTime)
+	}
+
+	holdForHouse := supplyBlocked && growthFrac > 0.5
+	if holdForHouse && !b.inHold {
+		b.HoldPeriods++
+		b.inHold = true
+	} else if !holdForHouse {
+		b.inHold = false
+	}
+
+	if !holdForHouse {
+		if b.DocksPlaced < b.DockCap {
+			if a, ok := b.bestDockAngle(w); ok {
+				if placeBuilding(w, a) {
+					b.DocksPlaced++
+					events = append(events, fmt.Sprintf("+dock%d@%.2frad (wood=%.0f water=%.0f)", b.DocksPlaced, a, w.Economy.Wood, w.Economy.Water))
+				}
+			}
+		}
+
+		if b.CampsPlaced < b.CampCap && !b.SpaceBlocked {
+			if w.Economy.Wood >= CampCost(w) {
+				a, ok := b.bestCampAngle(w)
+				if !ok {
+					b.SpaceBlocked = true
+					events = append(events, fmt.Sprintf("space-blocked after %d camps", b.CampsPlaced))
+				} else if placeBuilding(w, a) {
+					b.CampsPlaced++
+					events = append(events, fmt.Sprintf("+camp%d@%.2frad (wood=%.0f)", b.CampsPlaced, a, w.Economy.Wood))
+				}
+			}
+		}
+	}
+
+	if nurtureAttentionActive(w) {
+		nurtureField(w)
+	}
+
+	return events
+}
+
+func (b *WaterFrontierBot) endBlock(simTime float64) {
+	if b.inBlock {
+		b.Blocks = append(b.Blocks, blockPeriod{b.blockStart, simTime - b.blockStart})
+		b.inBlock = false
+	}
+}
+
+// bestDockAngle returns the best valid angle for a dock: first dock goes near the
+// shore boundary; subsequent docks maximise coverage (max min-distance to existing docks).
+func (b *WaterFrontierBot) bestDockAngle(w *World) (float64, bool) {
+	const steps = 360
+	hasDocks := false
+	for _, bld := range w.Buildings {
+		if bld.Kind == KindDock {
+			hasDocks = true
+			break
+		}
+	}
+
+	bestAngle := 0.0
+	bestScore := -math.MaxFloat64
+	found := false
+
+	for i := 0; i < steps; i++ {
+		a := float64(i) * 2 * math.Pi / float64(steps)
+		pv := buildPreview(w, a)
+		if pv.Kind != KindDock || !pv.Valid {
+			continue
+		}
+
+		var score float64
+		if !hasDocks {
+			boundary := normAngle(waterFrontierShoreAngle + waterFrontierShoreArc)
+			score = -angularDistance(a, boundary)
+		} else {
+			score = math.Pi
+			for _, bld := range w.Buildings {
+				if bld.Kind != KindDock {
+					continue
+				}
+				if d := angularDistance(a, bld.Angle); d < score {
+					score = d
+				}
+			}
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestAngle = a
+			found = true
+		}
+	}
+	return bestAngle, found
+}
+
+func (b *WaterFrontierBot) bestCampAngle(w *World) (float64, bool) {
+	const steps = 360
+	hasCamps := false
+	for _, bld := range w.Buildings {
+		if bld.Kind == KindLoggingCamp {
+			hasCamps = true
+			break
+		}
+	}
+
+	bestAngle := 0.0
+	bestScore := -math.MaxFloat64
+	found := false
+
+	for i := 0; i < steps; i++ {
+		a := float64(i) * 2 * math.Pi / float64(steps)
+		pv := buildPreview(w, a)
+		if pv.Kind != KindLoggingCamp || !pv.Valid {
+			continue
+		}
+
+		var score float64
+		if !hasCamps {
+			score = -angularDistance(a, b.field.CenterAngle)
+		} else {
+			score = math.Pi
+			for _, bld := range w.Buildings {
+				if bld.Kind != KindLoggingCamp {
+					continue
+				}
+				if d := angularDistance(a, bld.Angle); d < score {
+					score = d
+				}
+			}
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestAngle = a
+			found = true
+		}
+	}
+	return bestAngle, found
+}
+
+// ── Water scan runner ─────────────────────────────────────────────────────────
+
+// runWaterBalanceScan runs all campCap×dockCap combinations through the balance
+// scan and writes a comparison table to logs/balance-scan-<scenario>.txt.
+// Runs cap out at 600 s so camp=0 scenarios (which never pop-max) still terminate.
+func runWaterBalanceScan(t *testing.T, scenario string, campCaps, dockCaps []int, preSetup func(w *World)) {
+	t.Helper()
+	var snaps []metricsSnapshot
+	for _, campCap := range campCaps {
+		for _, dockCap := range dockCaps {
+			campCap, dockCap := campCap, dockCap
+			label := fmt.Sprintf("c=%d,d=%d", campCap, dockCap)
+			t.Run(label, func(t *testing.T) {
+				bot := &WaterFrontierBot{CampCap: campCap, DockCap: dockCap}
+				runner := newBalanceScanRunner(bot)
+				runner.preSetup = preSetup
+				runner.maxScanTime = 600.0
+				runSimTrace(t, fmt.Sprintf("%s — %s", scenario, label), 25, runner)
+				runner.printMetrics(t)
+				snaps = append(snaps, runner.snapshot(label))
+			})
+		}
+	}
+	if err := writeWaterBalanceScanLog(scenario, snaps); err != nil {
+		t.Logf("balance scan: failed to write log: %v", err)
+	} else {
+		t.Logf("balance scan: metrics written to logs/balance-scan-%s.txt", scenario)
+	}
+}
+
+// writeWaterBalanceScanLog writes a water-planet comparison table with dock and
+// water-rate columns to logs/balance-scan-<scenario>.txt.
+func writeWaterBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
+	logsDir := "../../logs"
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return err
+	}
+	slug := strings.NewReplacer(" ", "-", "/", "-", "—", "-").Replace(scenario)
+	path := fmt.Sprintf("%s/balance-scan-%s.txt", logsDir, slug)
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "balance scan — %s — %s\n", scenario, time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintln(&b, strings.Repeat("═", 72))
+	fmt.Fprintln(&b)
+
+	if len(snaps) > 0 {
+		s0 := snaps[0]
+		fmt.Fprintf(&b, "starting resources: wood=%.0f  water=%.0f\n\n", s0.startingWood, s0.startingWater)
+	}
+
+	const hdr = "%-9s  %-10s  %-10s  %-8s  %-9s  %-8s  %-9s  %-8s  %-8s  %-16s  %s"
+	fmt.Fprintf(&b, hdr+"\n", "build", "first-dock", "first-camp", "pop-max", "trees@max", "wood@max", "water@end", "wood/s", "water/s", "supply-blocks", "holds")
+	fmt.Fprintln(&b, strings.Repeat("─", 118))
+
+	for _, s := range snaps {
+		firstDock := "–"
+		if s.firstDockSeen {
+			firstDock = fmt.Sprintf("t=%.0fs", s.firstDockTime)
+		}
+		firstCamp := "–"
+		if s.firstCampSeen {
+			firstCamp = fmt.Sprintf("t=%.0fs", s.firstCampTime)
+		}
+		popMax, treesStr, woodMaxStr, woodRateStr, waterRateStr := "–", "–", "–", "–", "–"
+		if s.popMaxed {
+			popMax = fmt.Sprintf("t=%.0fs", s.popMaxTime)
+			treesStr = fmt.Sprintf("%d", s.treesAtPopMax)
+			woodMaxStr = fmt.Sprintf("%.0f", s.woodAtPopMax)
+			if elapsed := s.endSimTime - s.popMaxTime; elapsed > 0 {
+				woodRateStr = fmt.Sprintf("%.2f/s", (s.endWood-s.woodAtPopMax)/elapsed)
+				waterRateStr = fmt.Sprintf("%.2f/s", (s.endWater-s.waterAtPopMax)/elapsed)
+			}
+		}
+		waterEndStr := fmt.Sprintf("%.0f", s.endWater)
+
+		blocksStr := "none"
+		if len(s.blocks) > 0 {
+			total := 0.0
+			for _, blk := range s.blocks {
+				total += blk.duration
+			}
+			lbl := ""
+			if s.spaceBlocked {
+				lbl = " space-blocked"
+			}
+			blocksStr = fmt.Sprintf("%d (%.0fs total)%s", len(s.blocks), total, lbl)
+		}
+
+		fmt.Fprintf(&b, "%-9s  %-10s  %-10s  %-8s  %-9s  %-8s  %-9s  %-8s  %-8s  %-16s  %d\n",
+			s.label, firstDock, firstCamp, popMax, treesStr, woodMaxStr, waterEndStr, woodRateStr, waterRateStr, blocksStr, s.holdPeriods)
+	}
+	fmt.Fprintln(&b)
+
+	if len(snaps) > 0 {
+		maxCols := 0
+		for _, s := range snaps {
+			if n := len(s.workerEvents); n > maxCols {
+				maxCols = n
+			}
+		}
+		fmt.Fprintln(&b, "worker timeline (seconds at each count):")
+		fmt.Fprintf(&b, "%-9s", "count")
+		for i := 0; i < maxCols; i++ {
+			wc := 0
+			for _, s := range snaps {
+				if i < len(s.workerEvents) {
+					wc = int(s.workerEvents[i][1])
+					break
+				}
+			}
+			fmt.Fprintf(&b, " %4d", wc)
+		}
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, strings.Repeat("─", 9+maxCols*5))
+		for _, s := range snaps {
+			fmt.Fprintf(&b, "%-9s", s.label)
+			for i, ev := range s.workerEvents {
+				end := s.endSimTime
+				if i+1 < len(s.workerEvents) {
+					end = s.workerEvents[i+1][0]
+				}
+				dur := end - ev[0]
+				if dur < 0 {
+					dur = 0
+				}
+				fmt.Fprintf(&b, " %4.0f", dur)
+			}
+			fmt.Fprintln(&b)
+		}
+	}
+
+	return os.WriteFile(path, []byte(b.String()), 0644)
 }

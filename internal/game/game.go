@@ -221,10 +221,7 @@ func missingCostTargets(w *World, woodCost, waterCost float64) int {
 func missingPlacementCostTargets(w *World, pv *placementPreview) int {
 	switch pv.Kind {
 	case KindDock:
-		if pv.Extension {
-			return missingCostTargets(w, dockExtWoodCost, dockExtWaterCost)
-		}
-		return missingCostTargets(w, dockShoreCost, 0)
+		return missingCostTargets(w, dockExtWoodCost, dockExtWaterCost)
 	case KindLoggingCamp:
 		return missingCostTargets(w, CampCost(w), 0)
 	}

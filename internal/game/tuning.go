@@ -106,10 +106,10 @@ const (
 	initialDockSparkles     = 3    // first dock seeds this many sparkles per known water field
 
 	// ── Dock buildings ───────────────────────────────────────────────────────────
-	// Shore dock cost (wood only) and extension dock costs (wood + water).
-	dockShoreCost    = 200.0 // wood cost to place a shore dock
-	dockExtWoodCost  = 100.0 // wood cost for an extension dock
-	dockExtWaterCost = 30.0  // water cost for an extension dock
+	// All L1 docks cost wood + water (no special shore-only case).
+	// Water is provided via the awakening packet, so shore docks are affordable immediately.
+	dockExtWoodCost  = 100.0 // wood cost per L1 dock placement (shore and open-water alike)
+	dockExtWaterCost = 30.0  // water cost per L1 dock placement
 
 	// Dock upgrade costs: Level 1→2 spends both wood and water.
 	dockL2WoodCost  = 150.0 // wood cost for L1→L2 dock upgrade

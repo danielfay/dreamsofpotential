@@ -316,12 +316,8 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 	if pv.Kind == KindDock {
 		firstDock := !dockExists(w)
 		if !freePlacement {
-			if pv.Extension {
-				w.Economy.Wood -= dockExtWoodCost
-				w.Economy.Water -= dockExtWaterCost
-			} else {
-				w.Economy.Wood -= dockShoreCost
-			}
+			w.Economy.Wood -= dockExtWoodCost
+			w.Economy.Water -= dockExtWaterCost
 		}
 		w.Buildings = append(w.Buildings, &Building{
 			ID:        id,
