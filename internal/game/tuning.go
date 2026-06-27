@@ -140,9 +140,8 @@ const (
 	abstractRateBuckets   = 12   // sub-buckets (each spans abstractRateWindowSec/abstractRateBuckets s)
 
 	// ── Circle packet injection ───────────────────────────────────────────────────
-	// Local resources granted per Potential circle spent; also used as the per-circle
-	// component of the awakening bootstrap. Values are TBD — tune during QA.
-	awakenBaselineWood = 350.0 // baseline wood granted to every newly awakened planet
-	circlePacketWood   = 200.0 // local wood granted per PotentialForest circle spent
-	circlePacketWater  = 100.0 // local water granted per PotentialWater circle spent
+	// Local resources granted per Potential circle spent — both on awakening and
+	// during active play. Values are TBD — tune during QA.
+	circlePacketWood  = 200.0 // local wood granted per PotentialForest circle spent
+	circlePacketWater = 100.0 // local water granted per PotentialWater circle spent
 )
