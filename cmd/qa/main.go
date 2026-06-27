@@ -20,12 +20,13 @@ var presetFS embed.FS
 func main() {
 	preset := flag.String("preset", "", "preset name or file path")
 	list := flag.Bool("list", false, "list available presets")
+	verbose := flag.Bool("v", false, "show full descriptions with -list")
 	run := flag.Bool("run", false, "launch the game after writing the save")
 	out := flag.String("out", "", "write save to this path instead of the default location")
 	flag.Parse()
 
 	if *list {
-		if err := listPresets(); err != nil {
+		if err := listPresets(*verbose); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -83,7 +84,7 @@ func loadPresetData(nameOrPath string) ([]byte, error) {
 	return os.ReadFile(nameOrPath)
 }
 
-func listPresets() error {
+func listPresets(verbose bool) error {
 	return fs.WalkDir(presetFS, "presets", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".json") {
 			return err
@@ -96,7 +97,14 @@ func listPresets() error {
 		if err := json.Unmarshal(data, &p); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		fmt.Printf("%-20s %s\n", p.Name, p.Description)
+		desc := p.Description
+		if !verbose {
+			const maxDesc = 60
+			if len(desc) > maxDesc {
+				desc = desc[:maxDesc] + "…"
+			}
+		}
+		fmt.Printf("%-36s  %s\n", p.Name, desc)
 		return nil
 	})
 }
