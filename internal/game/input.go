@@ -272,7 +272,6 @@ func (g *Game) handleInput() {
 		return
 	}
 	if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
-		g.closeBuildingTray()
 		if isTownHall || !g.debug {
 			g.freePlacing = false
 		}
