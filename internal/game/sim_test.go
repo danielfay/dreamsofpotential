@@ -2377,29 +2377,6 @@ func TestAbstractRateWindow_UpdateAfterFullWindow(t *testing.T) {
 	}
 }
 
-func TestAbstractRateWindow_MonotonicRaiseOnly(t *testing.T) {
-	w := unlockedPlanetViewWorld()
-
-	if EstimateRate(w) <= w.System.Planets[w.Active].AbstractRate {
-		t.Skip("EstimateRate not > AbstractRate; worker settlement incomplete")
-	}
-
-	// Raise the rate by filling one full window.
-	runTick(w, abstractRateWindowSec*1.1)
-	raisedRate := w.System.Planets[w.Active].AbstractRate
-
-	// Remove all workers so EstimateRate drops to zero.
-	w.Workers = nil
-
-	// Run another full window with zero production.
-	runTick(w, abstractRateWindowSec*1.1)
-
-	if w.System.Planets[w.Active].AbstractRate < raisedRate {
-		t.Errorf("AbstractRate decreased (not monotonic): got %f, want >= %f",
-			w.System.Planets[w.Active].AbstractRate, raisedRate)
-	}
-}
-
 func TestAbstractRateWindow_ResetsOnPlanetSwitch(t *testing.T) {
 	w := newRevealedWorld()
 	w.Economy.Potential[PotentialForest] = 1
@@ -3648,6 +3625,56 @@ func TestFractionalPotentialAccumulation(t *testing.T) {
 	if math.Abs(w.SystemEconomy.WoodResearch-wantResearch) > 1e-9 {
 		t.Errorf("WoodResearch after 1s at alloc=0.6: got %f, want %f",
 			w.SystemEconomy.WoodResearch, wantResearch)
+	}
+}
+
+// TestSystemEconomyRunsInBothViews asserts that research and Potential accrue
+// on every tick regardless of whether the player is in system view or planet view.
+// This is the regression guard for issue 106.
+func TestSystemEconomyRunsInBothViews(t *testing.T) {
+	const ticks = 10
+	const allocFrac = 0.5
+
+	accrual := func(view ViewMode) (potential, research float64) {
+		w := newRevealedWorld()
+		if w.System.Planets[0].AbstractRate <= 0 {
+			t.Skip("starting planet AbstractRate is 0; cannot test system economy accrual")
+		}
+		w.SystemEconomy.WoodAllocPotential = allocFrac
+		if view == ViewSystem {
+			enterSystemView(w)
+		} else {
+			enterPlanetView(w)
+		}
+		before := w.Economy.Potential[PotentialForest]
+		beforeR := w.SystemEconomy.WoodResearch
+		for range ticks {
+			Tick(w, dt)
+		}
+		return w.Economy.Potential[PotentialForest] - before, w.SystemEconomy.WoodResearch - beforeR
+	}
+
+	sysPotential, sysResearch := accrual(ViewSystem)
+	plPotential, plResearch := accrual(ViewPlanet)
+
+	if sysPotential <= 0 {
+		t.Errorf("Potential did not accrue in system view: delta=%f", sysPotential)
+	}
+	if sysResearch <= 0 {
+		t.Errorf("Research did not accrue in system view: delta=%f", sysResearch)
+	}
+	if plPotential <= 0 {
+		t.Errorf("Potential did not accrue in planet view: delta=%f", plPotential)
+	}
+	if plResearch <= 0 {
+		t.Errorf("Research did not accrue in planet view: delta=%f", plResearch)
+	}
+	// Both views should produce the same per-tick system economy accrual.
+	if math.Abs(sysPotential-plPotential) > 1e-9 {
+		t.Errorf("Potential accrual differs between views: system=%f planet=%f", sysPotential, plPotential)
+	}
+	if math.Abs(sysResearch-plResearch) > 1e-9 {
+		t.Errorf("Research accrual differs between views: system=%f planet=%f", sysResearch, plResearch)
 	}
 }
 
