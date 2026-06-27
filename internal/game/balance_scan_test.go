@@ -3,12 +3,17 @@ package game
 // Balance scan: headless scenario runner for tuning questions.
 //
 // Architecture:
-//   - BotAI interface  — player decision logic (swappable)
-//   - DefaultBot       — the standard player AI
-//   - balanceScanRunner — SimTraceRunner that wraps any BotAI + collects metrics
+//   - BotAI interface        — player decision logic (swappable)
+//   - DefaultBot             — the standard player AI
+//   - balanceScanRunner      — SimTraceRunner that wraps any BotAI + collects metrics
+//   - runForestBalanceScan   — shared helper: runs camp-cap variants and writes log
 //
-// Run with:
+// Scenarios live in balance_scan_scenarios_test.go.
+//
+// Run all scenarios:
 //   go test -v -run TestSimTraceBalanceScan ./internal/game/
+// Run a specific scenario:
+//   go test -v -run TestSimTraceBalanceScanTightGrove ./internal/game/
 
 import (
 	"fmt"
@@ -214,8 +219,9 @@ func (b *DefaultBot) bestCampAngle(w *World) (float64, bool) {
 // durations, time at each worker count, and steady-state wood rate after
 // population maxes.
 type balanceScanRunner struct {
-	bot   BotAI
-	field *ResourceField
+	bot      BotAI
+	field    *ResourceField
+	preSetup func(w *World) // called in Setup before world detection; use for planet switching
 
 	prevWorkers int
 
@@ -248,12 +254,23 @@ func newBalanceScanRunner(bot BotAI) *balanceScanRunner {
 }
 
 func (r *balanceScanRunner) Setup(w *World) {
+	if r.preSetup != nil {
+		r.preSetup(w)
+	}
 	r.field = fieldForKind(w, KindWood)
 	if r.field == nil {
 		panic("balanceScanRunner: no wood field")
 	}
-	// Town Hall 90° from forest centre — realistic ~6s trip times.
+	// Prefer TH 90° from forest centre; fall back to first valid angle for
+	// planets where that position is blocked (lake arc, terrain, etc.).
 	thAngle := normAngle(r.field.CenterAngle + math.Pi/2)
+	if !buildPreview(w, thAngle).Valid {
+		var ok bool
+		thAngle, ok = findValidBuildingAngle(w)
+		if !ok {
+			panic("balanceScanRunner: no valid TH angle")
+		}
+	}
 	if !placeBuilding(w, thAngle) {
 		panic("balanceScanRunner: could not place Town Hall")
 	}
@@ -539,33 +556,29 @@ func writeBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
-// ── Test ──────────────────────────────────────────────────────────────────────
+// ── Shared runner ─────────────────────────────────────────────────────────────
 
-// TestSimTraceBalanceScan runs the starting planet under different camp-cap
-// targets using DefaultBot and prints comparative balance metrics. Useful for
-// answering questions like "does a 3-camp vs 6-camp build order produce better
-// worker throughput and steady-state rate?"
-//
-//	go test -v -run TestSimTraceBalanceScan ./internal/game/
-func TestSimTraceBalanceScan(t *testing.T) {
-	if testing.Short() {
-		t.Skip("balance scan: skipped in short mode")
-	}
+// runForestBalanceScan runs campCaps variants through the balance scan and
+// writes a comparison table to logs/balance-scan-<scenario>.txt.
+// preSetup, if non-nil, is stored on each runner and called in Setup() before
+// world detection — use it to bootstrap prerequisites and switch planets.
+func runForestBalanceScan(t *testing.T, scenario string, campCaps []int, preSetup func(w *World)) {
+	t.Helper()
 	var snaps []metricsSnapshot
-	for _, campCap := range []int{1, 3, 6} {
+	for _, campCap := range campCaps {
 		campCap := campCap
 		t.Run(fmt.Sprintf("camps=%d", campCap), func(t *testing.T) {
 			bot := &DefaultBot{CampCap: campCap}
 			runner := newBalanceScanRunner(bot)
-			label := fmt.Sprintf("camps=%d", campCap)
-			runSimTrace(t, fmt.Sprintf("starting planet — %d-camp cap", campCap), 25, runner)
+			runner.preSetup = preSetup
+			runSimTrace(t, fmt.Sprintf("%s — %d-camp cap", scenario, campCap), 25, runner)
 			runner.printMetrics(t)
-			snaps = append(snaps, runner.snapshot(label))
+			snaps = append(snaps, runner.snapshot(fmt.Sprintf("camps=%d", campCap)))
 		})
 	}
-	if err := writeBalanceScanLog("starting-planet", snaps); err != nil {
+	if err := writeBalanceScanLog(scenario, snaps); err != nil {
 		t.Logf("balance scan: failed to write log: %v", err)
 	} else {
-		t.Logf("balance scan: metrics written to logs/balance-scan-starting-planet.txt")
+		t.Logf("balance scan: metrics written to logs/balance-scan-%s.txt", scenario)
 	}
 }
