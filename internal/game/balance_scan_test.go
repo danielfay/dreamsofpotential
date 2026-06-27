@@ -75,6 +75,9 @@ type metricsSnapshot struct {
 	holdPeriods  int
 	blocks       []blockPeriod
 
+	startingWood  float64
+	startingWater float64
+
 	firstCampSeen bool
 	firstCampTime float64
 
@@ -244,6 +247,10 @@ type balanceScanRunner struct {
 	stallTime      float64
 	stallDetected  bool
 
+	// starting resources (captured at end of Setup, before any ticks)
+	startingWood  float64
+	startingWater float64
+
 	// end-of-run snapshot (updated every tick so printMetrics can read it)
 	endWood    float64
 	endSimTime float64
@@ -275,6 +282,8 @@ func (r *balanceScanRunner) Setup(w *World) {
 		panic("balanceScanRunner: could not place Town Hall")
 	}
 	w.ResourceDiscovered = true
+	r.startingWood = w.Economy.Wood
+	r.startingWater = w.Economy.Water
 	r.prevWorkers = len(w.Workers)
 	r.workerEvents = [][2]float64{{0, float64(len(w.Workers))}}
 }
@@ -371,6 +380,7 @@ func (r *balanceScanRunner) Summary(w *World) string {
 func (r *balanceScanRunner) printMetrics(t *testing.T) {
 	t.Helper()
 	t.Log("─── metrics ────────────────────────────────────────────────")
+	t.Logf("starting:      wood=%.0f  water=%.0f", r.startingWood, r.startingWater)
 
 	if r.firstCampSeen {
 		t.Logf("first camp:    t=%.0fs", r.firstCampTime)
@@ -434,6 +444,8 @@ func (r *balanceScanRunner) printMetrics(t *testing.T) {
 func (r *balanceScanRunner) snapshot(label string) metricsSnapshot {
 	s := metricsSnapshot{
 		label:         label,
+		startingWood:  r.startingWood,
+		startingWater: r.startingWater,
 		firstCampSeen: r.firstCampSeen,
 		firstCampTime: r.firstCampTime,
 		workerEvents:  r.workerEvents,
@@ -472,6 +484,11 @@ func writeBalanceScanLog(scenario string, snaps []metricsSnapshot) error {
 	fmt.Fprintf(&b, "balance scan — %s — %s\n", scenario, time.Now().Format("2006-01-02 15:04:05"))
 	fmt.Fprintln(&b, strings.Repeat("═", 72))
 	fmt.Fprintln(&b)
+
+	if len(snaps) > 0 {
+		s0 := snaps[0]
+		fmt.Fprintf(&b, "starting resources: wood=%.0f  water=%.0f\n\n", s0.startingWood, s0.startingWater)
+	}
 
 	// ── summary table ────────────────────────────────────────────────────────
 	const hdr = "%-5s  %-10s  %-8s  %-9s  %-8s  %-11s  %-12s  %-16s  %s"
