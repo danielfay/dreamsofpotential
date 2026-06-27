@@ -702,18 +702,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 // ── System-view overlay (native screen space) ─────────────────────────────────
 
-// sysTrayRateSpec describes one resource row in the system planet tray.
-// Add an entry here to display any new resource — the tray loop handles the rest.
-type sysTrayRateSpec struct {
-	getRate func(SystemPlanet) float64
-	textCol color.RGBA
-}
-
-var sysTrayRateSpecs = []sysTrayRateSpec{
-	{func(p SystemPlanet) float64 { return p.AbstractRate }, colWoodLabel},
-	{func(p SystemPlanet) float64 { return p.AbstractWaterRate }, color.RGBA{R: 100, G: 200, B: 255, A: 220}},
-}
-
 // drawSystemOverlay draws the system HUD and selected-planet tray.
 func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
@@ -963,32 +951,27 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	}
 	var rateItems []rateItem
 	if p.Completed {
-		for _, spec := range sysTrayRateSpecs {
-			rate := spec.getRate(p)
+		for i := range resourceFamilies {
+			fam := &resourceFamilies[i]
+			rate := *fam.AbstractRate(&p)
 			if rate <= 0 {
 				continue
 			}
 			rateStr := fmt.Sprintf("%.1f/s", rate)
 			rw, _ := text.Measure(rateStr, face, 0)
-			rateItems = append(rateItems, rateItem{label: rateStr, textCol: spec.textCol, width: float32(rw)})
+			rateItems = append(rateItems, rateItem{label: rateStr, textCol: fam.RateLabelColor, width: float32(rw)})
 		}
 	} else {
 		// Dormant or incomplete: show projected rates in dimmed colour.
-		type projSpec struct {
-			rate    float64
-			textCol color.RGBA
-		}
-		projSpecs := []projSpec{
-			{p.ProjectedRate, color.RGBA{R: colWoodLabel.R, G: colWoodLabel.G, B: colWoodLabel.B, A: colWoodLabel.A / 2}},
-			{p.ProjectedWaterRate, color.RGBA{R: 100, G: 200, B: 255, A: 110}},
-		}
-		for _, ps := range projSpecs {
-			if ps.rate <= 0 {
+		for i := range resourceFamilies {
+			fam := &resourceFamilies[i]
+			rate := *fam.ProjectedRate(&p)
+			if rate <= 0 {
 				continue
 			}
-			rateStr := fmt.Sprintf("%.1f/s", ps.rate)
+			rateStr := fmt.Sprintf("%.1f/s", rate)
 			rw, _ := text.Measure(rateStr, face, 0)
-			rateItems = append(rateItems, rateItem{label: rateStr, textCol: ps.textCol, width: float32(rw)})
+			rateItems = append(rateItems, rateItem{label: rateStr, textCol: fam.ProjectedRateLabelColor, width: float32(rw)})
 		}
 	}
 	if len(rateItems) == 0 {
