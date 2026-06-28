@@ -211,6 +211,15 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// planet: rim ring then dark body on top
 	const rimWidth = float32(4)
 	vector.FillCircle(scene, cx, cy, r, pal.edge, false)
+	// Paint field-specific rim colors over the base rim; the body circle below
+	// will cover the field sector interiors, leaving only the rim band visible.
+	for _, f := range w.Planet.Fields {
+		if rimCol, ok := fieldRimColor(f.Kind); ok {
+			start := f.CenterAngle - f.HalfArc
+			end := f.CenterAngle + f.HalfArc
+			drawFieldSector(scene, cx, cy, r, start, end, rimCol)
+		}
+	}
 	vector.FillCircle(scene, cx, cy, r-rimWidth, pal.body, false)
 
 	// Resource field interior fill: stable composition, not node-spawn progress.

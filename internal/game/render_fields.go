@@ -33,6 +33,16 @@ type biomeFillCfg struct {
 	flecks   biomeFleckCfg
 }
 
+// fieldRimColor returns the rim band color for a resource field kind.
+// Returns false if the field should not override the planet's base rim color.
+func fieldRimColor(kind ResourceKind) (color.RGBA, bool) {
+	switch kind {
+	case KindWater:
+		return color.RGBA{R: 30, G: 65, B: 150, A: 255}, true
+	}
+	return color.RGBA{}, false
+}
+
 // drawResourceFieldFill paints a full resource field as terrain composition.
 // Node-spawn progress is shown in the HUD, so this stays visually stable.
 func drawResourceFieldFill(scene *ebiten.Image, planet Planet, f *ResourceField, radius float32) {
