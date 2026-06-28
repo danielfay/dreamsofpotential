@@ -14,8 +14,7 @@ const (
 	townHallBldHalfW = float32(8)   // half-width along rim tangent (16px wide — fort shape)
 	townHallBldHalfH = float32(4.5) // half-height along inward normal (9px tall)
 	townHallBldInset = float32(5)   // px inward from rim for town hall art center
-	workerBldHalf    = float32(1)   // half of 3×3 worker square
-	workerBldSize    = float32(3)
+	workerBldSize    = float32(3)   // idle slot spacing near Town Hall
 )
 
 func workerUsesIdleHome(wk *Worker) bool {

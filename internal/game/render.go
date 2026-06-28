@@ -332,13 +332,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		if workerUsesIdleHome(wk) && th != nil {
 			sp := slots[slotIdx]
 			slotIdx++
-			vector.FillRect(scene,
-				float32(sp.X)-workerBldHalf, float32(sp.Y)-workerBldHalf,
-				workerBldSize, workerBldSize, colWorkerLaden, false)
+			drawWorker(scene, sp.X, sp.Y, th.Angle, colWorkerLaden)
 		} else {
-			vector.FillRect(scene,
-				float32(wk.Pos.X)-workerBldHalf, float32(wk.Pos.Y)-workerBldHalf,
-				workerBldSize, workerBldSize, workerColor(w, wk), false)
+			drawWorker(scene, wk.Pos.X, wk.Pos.Y, wk.Angle, workerColor(w, wk))
 		}
 	}
 }
