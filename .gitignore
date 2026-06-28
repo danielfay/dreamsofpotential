@@ -41,3 +41,6 @@ logs/
 
 # Serena MCP server data
 .serena/
+
+# Aseprite spritesheet JSON metadata (export artifact, not used by game)
+assets/sprites/*.json
