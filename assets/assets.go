@@ -7,3 +7,6 @@ var WorkerPNG []byte
 
 //go:embed sprites/tree.png
 var TreePNG []byte
+
+//go:embed sprites/camp.png
+var CampPNG []byte

@@ -18,6 +18,9 @@ var (
 
 	treeSpriteOnce sync.Once
 	treeSpriteImg  *ebiten.Image
+
+	campSpriteOnce sync.Once
+	campSpriteImg  *ebiten.Image
 )
 
 func workerSprite() *ebiten.Image {
@@ -56,6 +59,35 @@ func drawTreeSprite(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visual
 	op.GeoM.Scale(s, s)
 	op.GeoM.Rotate(n.Angle + math.Pi/2)
 	op.GeoM.Translate(n.Pos.X, n.Pos.Y)
+	op.ColorScale.Scale(
+		float32(col.R)/255,
+		float32(col.G)/255,
+		float32(col.B)/255,
+		float32(col.A)/255,
+	)
+	scene.DrawImage(img, op)
+}
+
+func campSprite() *ebiten.Image {
+	campSpriteOnce.Do(func() {
+		img, _, err := image.Decode(bytes.NewReader(assets.CampPNG))
+		if err != nil {
+			panic(err)
+		}
+		campSpriteImg = ebiten.NewImageFromImage(img)
+	})
+	return campSpriteImg
+}
+
+// drawCampSprite draws the logging camp sprite with base at the rim point,
+// roof extending outward. pos is the rim point, angle is the outward normal.
+func drawCampSprite(scene *ebiten.Image, pos Vec, angle float64, col color.RGBA) {
+	img := campSprite()
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(w)/2, -float64(h))
+	op.GeoM.Rotate(angle + math.Pi/2)
+	op.GeoM.Translate(pos.X, pos.Y)
 	op.ColorScale.Scale(
 		float32(col.R)/255,
 		float32(col.G)/255,

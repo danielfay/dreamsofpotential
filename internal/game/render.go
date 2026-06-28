@@ -312,9 +312,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 			if pulseActive(w, b.Pulse) {
 				col = brighten(col, 40)
 			}
-			vector.FillRect(scene,
-				float32(b.Pos.X)-campBldHalf, float32(b.Pos.Y)-campBldHalf,
-				campBldSize, campBldSize, col, false)
+			drawCampSprite(scene, b.Pos, b.Angle, col)
 		}
 	}
 

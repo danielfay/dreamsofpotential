@@ -9,8 +9,6 @@ import (
 
 // Building / worker render sizes.
 const (
-	campBldHalf      = float32(3.5) // half of 7×7 camp square
-	campBldSize      = float32(7)
 	townHallBldHalfW = float32(8)   // half-width along rim tangent (16px wide — fort shape)
 	townHallBldHalfH = float32(4.5) // half-height along inward normal (9px tall)
 	townHallBldInset = float32(5)   // px inward from rim for town hall art center

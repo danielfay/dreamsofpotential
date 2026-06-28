@@ -84,9 +84,7 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 			pv.Angle-dockWedgeHalfArc, pv.Angle+dockWedgeHalfArc)
 		drawDockArt(scene, planet, pv.Angle, col, 1) // preview always shows L1 visual
 	default: // KindLoggingCamp
-		vector.FillRect(scene,
-			float32(pv.Pos.X)-campBldHalf, float32(pv.Pos.Y)-campBldHalf,
-			campBldSize, campBldSize, col, false)
+		drawCampSprite(scene, pv.Pos, pv.Angle, col)
 	}
 
 	// Debug: range boundary ticks at ±previewArc.
