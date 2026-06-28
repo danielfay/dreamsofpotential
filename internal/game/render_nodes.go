@@ -76,7 +76,7 @@ func drawPreview(scene *ebiten.Image, planet Planet, pv *placementPreview, debug
 	drawRimArc(scene, planet, float32(pv.Angle-footprintHalf), float32(pv.Angle+footprintHalf), footprintWidth, footprintCol)
 	switch pv.Kind {
 	case KindTownHall:
-		drawTownHallArt(scene, planet, pv.Angle, col)
+		drawTownHallGhost(scene, planet, pv.Angle, col)
 	case KindDock:
 		// Dive-reach wedge: L1 annular sector anchored at the rim, reaching 1/3 inward.
 		cx, cy := float32(planet.Center.X), float32(planet.Center.Y)

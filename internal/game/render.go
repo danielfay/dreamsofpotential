@@ -295,11 +295,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	for _, b := range w.Buildings {
 		switch b.Kind {
 		case KindTownHall:
-			col := colTownHall
-			if pulseActive(w, b.Pulse) {
-				col = brighten(col, 40)
-			}
-			drawTownHallArt(scene, w.Planet, b.Angle, col)
+			drawTownHallSprite(scene, w.Planet, b.Angle, pulseActive(w, b.Pulse), w.SimTime)
 			drawTownGrowthGauge(scene, w.Planet, b, w.Economy.TownGrowth, w.Economy.TownGrowthCap)
 		case KindDock:
 			col := colDock
