@@ -283,7 +283,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 			col = blendColor(col, colWaterGrowthTint, alpha)
 			alpha = 0
 		}
-		drawPineTree(scene, n, col, growthNodeVisualScale(w, n), alpha)
+		drawTreeSprite(scene, n, col, growthNodeVisualScale(w, n), alpha)
 	}
 
 	// placement preview — route lines and ghost, drawn above nodes/below buildings

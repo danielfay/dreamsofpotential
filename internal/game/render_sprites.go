@@ -15,6 +15,9 @@ import (
 var (
 	workerSpriteOnce sync.Once
 	workerSpriteImg  *ebiten.Image
+
+	treeSpriteOnce sync.Once
+	treeSpriteImg  *ebiten.Image
 )
 
 func workerSprite() *ebiten.Image {
@@ -26,6 +29,40 @@ func workerSprite() *ebiten.Image {
 		workerSpriteImg = ebiten.NewImageFromImage(img)
 	})
 	return workerSpriteImg
+}
+
+func treeSprite() *ebiten.Image {
+	treeSpriteOnce.Do(func() {
+		img, _, err := image.Decode(bytes.NewReader(assets.TreePNG))
+		if err != nil {
+			panic(err)
+		}
+		treeSpriteImg = ebiten.NewImageFromImage(img)
+	})
+	return treeSpriteImg
+}
+
+// drawTreeSprite draws the tree sprite anchored at the rim point (n.Pos),
+// extending outward. Drop-in replacement for drawPineTree.
+func drawTreeSprite(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visualScale float32, alphaBoost uint8) {
+	if alphaBoost > 0 {
+		col = brighten(col, alphaBoost)
+	}
+	s := float64(n.Size) * float64(visualScale)
+	img := treeSprite()
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(w)/2, -float64(h))
+	op.GeoM.Scale(s, s)
+	op.GeoM.Rotate(n.Angle + math.Pi/2)
+	op.GeoM.Translate(n.Pos.X, n.Pos.Y)
+	op.ColorScale.Scale(
+		float32(col.R)/255,
+		float32(col.G)/255,
+		float32(col.B)/255,
+		float32(col.A)/255,
+	)
+	scene.DrawImage(img, op)
 }
 
 // drawWorker draws the worker sprite centered at (x, y), rotated so the
