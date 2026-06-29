@@ -91,6 +91,21 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			}
 		}
 
+		if len(g.world.Workers) > 0 && g.world.Economy.TownGrowthCap > 0 && g.hud.workerHUD != nil {
+			popFrac := float32(g.world.Economy.TownGrowth / g.world.Economy.TownGrowthCap)
+			if popFrac > 1 {
+				popFrac = 1
+			}
+			pr := g.hud.workerHUD.GetWidget().Rect
+			px := float32(pr.Min.X)
+			py := float32(pr.Max.Y) + 2
+			pw := float32(pr.Max.X - pr.Min.X)
+			vector.StrokeRect(screen, px, py, pw, h, 1, colTownGrowthGaugeFrame, false)
+			if popFrac > 0 {
+				vector.FillRect(screen, px, py, pw*popFrac, h, colTownGrowthGaugeFill, false)
+			}
+		}
+
 		sr := g.hud.resourceSquare.GetWidget().Rect
 		srx := float32(sr.Min.X)
 		sry := float32(sr.Min.Y)
