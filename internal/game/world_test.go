@@ -159,10 +159,14 @@ func TestPlaceBuildingRefusesNodeFootprintOverlap(t *testing.T) {
 		t.Fatal("Town Hall placement overlapping a node should fail")
 	}
 
+	// Logging camp placement succeeds and clears the overlapping node.
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
 	w.Economy.Wood = CampCost(w)
-	if placeBuilding(w, 0) {
-		t.Fatal("logging camp placement overlapping a node should fail")
+	if !placeBuilding(w, 0) {
+		t.Fatal("logging camp placement overlapping a node should succeed (node is cleared)")
+	}
+	if len(w.Nodes) != 0 {
+		t.Fatalf("overlapping node should be removed after camp placement, got %d nodes", len(w.Nodes))
 	}
 }
 
@@ -214,7 +218,7 @@ func TestFreePlacementIgnoresCampCost(t *testing.T) {
 	}
 }
 
-func TestFreePlacementStillRespectsFootprints(t *testing.T) {
+func TestFreePlacementClearsOverlappingNodes(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -224,8 +228,11 @@ func TestFreePlacementStillRespectsFootprints(t *testing.T) {
 	n.Size = 1
 	w.Nodes = []*ResourceNode{n}
 
-	if placeBuildingWithFreePlacement(w, 0, true) {
-		t.Fatal("free camp placement should still fail when overlapping a node")
+	if !placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("free camp placement overlapping a node should succeed (node is cleared)")
+	}
+	if len(w.Nodes) != 0 {
+		t.Fatalf("overlapping node should be removed, got %d nodes", len(w.Nodes))
 	}
 }
 

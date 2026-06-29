@@ -47,6 +47,7 @@ type placementPreview struct {
 	Blocked          []*ResourceNode // nodes whose physical footprint blocks placement
 	BlockedBuildings []*Building     // buildings whose physical footprint blocks placement
 	Reject           float64         // transient invalid-confirm feedback intensity [0,1]
+	Locked           bool            // true while waiting for second click to confirm a destructive placement
 }
 
 // routeDist returns the effective arc distance between two angles.
@@ -158,11 +159,12 @@ func buildPreviewWithFreePlacement(w *World, angle float64, freePlacement bool) 
 		return dockPreview(w, angle, freePlacement, free, freeTotal, claimed, claimedTotal, reserved, reservedTotal)
 	}
 
-	// Land / forest → logging camp.
+	// Land / forest → logging camp. Tree nodes in the footprint are highlighted
+	// red and cleared on placement; only building collisions block validity.
 	affordable := freePlacement || w.Economy.Wood >= CampCost(w)
 	blocked := placementBlockedNodes(w, KindLoggingCamp, angle)
 	blockedBuildings := placementBlockedBuildings(w, KindLoggingCamp, angle)
-	valid := affordable && len(blocked) == 0 && len(blockedBuildings) == 0
+	valid := affordable && len(blockedBuildings) == 0
 	return placementPreview{
 		Kind:             KindLoggingCamp,
 		Angle:            angle,

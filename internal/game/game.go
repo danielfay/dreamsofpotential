@@ -30,37 +30,40 @@ const (
 
 // Game is the root ebiten game object.
 type Game struct {
-	world                        *World
-	scene                        *ebiten.Image // low-res 320×240 canvas; scaled up to the window
-	ui                           *ebitenui.UI
-	hud                          *HUD
-	placing                      bool              // true while waiting for player to click a camp location
-	freePlacing                  bool              // debug-only: next placement ignores camp cost
-	preview                      *placementPreview // current frame's placement preview; nil when not placing
-	showMenu                     bool              // true when the settings overlay is open
-	debug                        bool              // F3 — verbose debug panel; session-only, not persisted
-	debugSection                 int               // selected debug panel section; session-only
-	pulseTime                    float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget                  int               // costPulse* bitmask for unaffordable-cost flash targets
-	rejectTime                   float64           // seconds remaining on invalid placement feedback
-	screenW                      int               // current screen dimensions, updated each Draw()
-	screenH                      int
-	hudScale                     int         // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits                    int         // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer                    float64     // counts down to next autosave
-	nurtureToggleActive          bool        // true while the nurture auto-cycle is running
-	nurtureConfirmLeft           float64     // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown     float64     // counts down to next Nurture attention pulse
-	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
-	workerRatioAttentionCooldown float64     // counts down to next worker-ratio attention pulse
-	workerRatioAttentionLeft     float64     // seconds remaining on the worker-ratio attention flash
-	workerRatioAttentionReady    bool        // previous-frame state for first-available worker-ratio attention
-	dockUpgradeAttentionCooldown float64     // counts down to next dock-upgrade attention pulse
-	holdAction                   int         // current held purchase action (holdNone, holdNurture, …)
-	holdTimer                    float64     // counts down to next repeat fire
-	holdDuration                 float64     // total seconds the current hold has been active
-	importCh                     chan *World // receives a validated world from an import goroutine
-	dialogOpen                   atomic.Bool // true while a file dialog is open; blocks UI input
+	world                         *World
+	scene                         *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	ui                            *ebitenui.UI
+	hud                           *HUD
+	placing                       bool              // true while waiting for player to click a camp location
+	freePlacing                   bool              // debug-only: next placement ignores camp cost
+	pendingDestructive            bool              // true while waiting for second click to confirm a destructive camp
+	pendingPreview                placementPreview  // locked ghost for the pending destructive placement
+	pendingDestructiveFreePlacing bool              // freePlacing state at the time of the first click
+	preview                       *placementPreview // current frame's placement preview; nil when not placing
+	showMenu                      bool              // true when the settings overlay is open
+	debug                         bool              // F3 — verbose debug panel; session-only, not persisted
+	debugSection                  int               // selected debug panel section; session-only
+	pulseTime                     float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget                   int               // costPulse* bitmask for unaffordable-cost flash targets
+	rejectTime                    float64           // seconds remaining on invalid placement feedback
+	screenW                       int               // current screen dimensions, updated each Draw()
+	screenH                       int
+	hudScale                      int         // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits                     int         // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer                     float64     // counts down to next autosave
+	nurtureToggleActive           bool        // true while the nurture auto-cycle is running
+	nurtureConfirmLeft            float64     // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown      float64     // counts down to next Nurture attention pulse
+	nurtureAttentionPulseLeft     float64     // seconds remaining on the Nurture attention flash
+	workerRatioAttentionCooldown  float64     // counts down to next worker-ratio attention pulse
+	workerRatioAttentionLeft      float64     // seconds remaining on the worker-ratio attention flash
+	workerRatioAttentionReady     bool        // previous-frame state for first-available worker-ratio attention
+	dockUpgradeAttentionCooldown  float64     // counts down to next dock-upgrade attention pulse
+	holdAction                    int         // current held purchase action (holdNone, holdNurture, …)
+	holdTimer                     float64     // counts down to next repeat fire
+	holdDuration                  float64     // total seconds the current hold has been active
+	importCh                      chan *World // receives a validated world from an import goroutine
+	dialogOpen                    atomic.Bool // true while a file dialog is open; blocks UI input
 
 	// reveal state (transient — not saved)
 	revealActive  bool

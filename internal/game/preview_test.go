@@ -194,7 +194,7 @@ func TestBuildPreviewUnknownWaterInfluenceDoesNotHideForest(t *testing.T) {
 	}
 }
 
-func TestBuildPreviewLoggingCampBlockedByNodeFootprint(t *testing.T) {
+func TestBuildPreviewLoggingCampNodeFootprintClearedOnPlace(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -205,15 +205,23 @@ func TestBuildPreviewLoggingCampBlockedByNodeFootprint(t *testing.T) {
 	n.Size = 1
 	w.Nodes = []*ResourceNode{n}
 
+	// Overlapping a node is now valid — the node is highlighted and cleared on place.
 	pv := buildPreview(w, 0)
-	if pv.Valid {
-		t.Error("logging camp preview overlapping a node footprint should be invalid")
+	if !pv.Valid {
+		t.Error("logging camp preview overlapping a node footprint should be valid (node will be cleared)")
+	}
+	if len(pv.Blocked) == 0 {
+		t.Error("logging camp preview overlapping a node should report it in Blocked")
 	}
 
+	// Just outside the combined footprints: valid, nothing blocked.
 	clearAngle := buildingHardHalfArc(KindLoggingCamp, w.Planet.Radius) + nodeBuildingBlockHalfArc(n, w.Planet.Radius) + 0.001
 	pv = buildPreview(w, clearAngle)
 	if !pv.Valid {
 		t.Error("logging camp preview just outside combined footprints should be valid")
+	}
+	if len(pv.Blocked) != 0 {
+		t.Error("logging camp preview outside node footprint should have empty Blocked")
 	}
 }
 
@@ -340,12 +348,13 @@ func TestZeroValidPlacementPositions(t *testing.T) {
 		t.Fatal("empty surface should have valid placement positions")
 	}
 
-	for i := 0; i < 180; i++ {
-		n := newNode(w, KindWood, -math.Pi+float64(i)*2*math.Pi/180)
-		n.Size = 2
-		w.Nodes = append(w.Nodes, n)
+	// Pack the rim with camps — buildings (not nodes) are the true blocking factor.
+	campHalf := buildingHardHalfArc(KindLoggingCamp, w.Planet.Radius)
+	step := campHalf * 2
+	for a := -math.Pi; a < math.Pi; a += step {
+		w.Buildings = append(w.Buildings, &Building{Kind: KindLoggingCamp, Angle: a, Pos: w.Planet.RimPoint(a)})
 	}
 	if !zeroValidPlacementPositions(w) {
-		t.Fatal("densely occupied rim should report no valid placement positions")
+		t.Fatal("building-packed rim should report no valid placement positions")
 	}
 }

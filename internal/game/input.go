@@ -187,8 +187,12 @@ func (g *Game) handleInput() {
 	}
 	g.handlePlanetViewSystemReturn()
 
-	// Right-click: deselect any selected building; in debug mode also cancel placement.
+	// Right-click: cancel pending destructive placement, deselect building, or (debug) cancel placing.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+		if g.pendingDestructive {
+			g.pendingDestructive = false
+			return
+		}
 		if g.debug && g.placing {
 			g.placing = false
 			g.freePlacing = false
@@ -235,6 +239,27 @@ func (g *Game) handleInput() {
 		}
 	}
 
+	// Pending destructive placement: second click confirms if near the ghost, cancels otherwise.
+	if g.pendingDestructive {
+		confirmed := false
+		wp := g.screenToWorld(mx, my)
+		dist := wp.Dist(g.world.Planet.Center)
+		if dist >= g.world.Planet.Radius-rimSnapBand && dist <= g.world.Planet.Radius+rimSnapBand {
+			angle := g.world.Planet.AngleOf(wp)
+			half := buildingHardHalfArc(KindLoggingCamp, g.world.Planet.Radius)
+			if math.Abs(normAngle(angle-g.pendingPreview.Angle)) <= half*2 {
+				placeBuildingWithFreePlacement(g.world, g.pendingPreview.Angle, g.pendingDestructiveFreePlacing)
+				if !g.debug {
+					g.freePlacing = false
+				}
+				confirmed = true
+			}
+		}
+		g.pendingDestructive = false
+		_ = confirmed
+		return
+	}
+
 	// In debug mode, placement requires g.placing to be explicitly enabled.
 	if g.debug && !g.placing {
 		g.closeBuildingTray()
@@ -258,6 +283,14 @@ func (g *Game) handleInput() {
 	}
 	if !pv.Valid {
 		g.rejectTime = microPulseTime
+		return
+	}
+	if len(pv.Blocked) > 0 {
+		// Destructive: trees in the footprint — require a second confirming click.
+		pv.Locked = true
+		g.pendingPreview = *pv
+		g.pendingDestructiveFreePlacing = g.freePlacing
+		g.pendingDestructive = true
 		return
 	}
 	if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
@@ -336,13 +369,37 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		Angle: angle,
 		Pos:   w.Planet.RimPoint(angle),
 	})
+	clearOverlappingNodes(w, pv.Blocked)
 	return true
+}
+
+// clearOverlappingNodes removes nodes whose footprint overlapped a newly placed
+// camp. Workers whose NodeID referenced a cleared node will get nil from
+// findNode on their next tick and safely return home.
+func clearOverlappingNodes(w *World, blocked []*ResourceNode) {
+	if len(blocked) == 0 {
+		return
+	}
+	ids := make(map[int]bool, len(blocked))
+	for _, n := range blocked {
+		ids[n.ID] = true
+	}
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if !ids[n.ID] {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
 }
 
 // curPlacementPreview returns the placement preview for the current cursor
 // position, or nil when placement is inactive, locked, or the cursor is over
 // a selectable building or too far from the rim.
 func (g *Game) curPlacementPreview() *placementPreview {
+	if g.pendingDestructive {
+		return &g.pendingPreview
+	}
 	if !g.placing {
 		return nil
 	}
