@@ -41,3 +41,6 @@ logs/
 
 # Serena MCP server data
 .serena/
+
+# Graphify knowledge graph outputs (regenerable from source)
+graphify-out/

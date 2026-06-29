@@ -135,15 +135,6 @@ const (
 	selectedHUDContentGapBase  = 10
 	selectedHUDIdentityGapBase = 5
 
-	// sparkleBaseDrawRadius is the visual radius (px) of a size-1 interior water sparkle.
-	sparkleBaseDrawRadius = float32(3.0)
-	// sparkleArmWidthRatio controls arm thickness relative to arm half-length.
-	sparkleArmWidthRatio = float32(0.32)
-	// sparkleAnimFreq is the pulse frequency in radians/sec for water sparkle nodes.
-	sparkleAnimFreq = 2.2
-	// sparkleAnimAmp is the fractional amplitude of the size pulse (0.15 = ±15%).
-	sparkleAnimAmp = 0.15
-
 	// pulseDuration is how long (seconds) the unaffordable-cost flash lasts.
 	pulseDuration    = 0.4
 	microPulseTime   = 0.30 // seconds for worker/node/building activity pulse

@@ -211,6 +211,15 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// planet: rim ring then dark body on top
 	const rimWidth = float32(4)
 	vector.FillCircle(scene, cx, cy, r, pal.edge, false)
+	// Paint field-specific rim colors over the base rim; the body circle below
+	// will cover the field sector interiors, leaving only the rim band visible.
+	for _, f := range w.Planet.Fields {
+		if rimCol, ok := fieldRimColor(f.Kind); ok {
+			start := f.CenterAngle - f.HalfArc
+			end := f.CenterAngle + f.HalfArc
+			drawFieldSector(scene, cx, cy, r, start, end, rimCol)
+		}
+	}
 	vector.FillCircle(scene, cx, cy, r-rimWidth, pal.body, false)
 
 	// Resource field interior fill: stable composition, not node-spawn progress.
@@ -247,14 +256,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// resource nodes — interior sparkles as blue + shapes; rim nodes as pine trees
 	for _, n := range w.Nodes {
 		if n.Interior {
-			col := colSparkle
-			if n.OwnerID != -1 {
-				col = colSparkleClaimed
-			}
-			if pulseActive(w, n.Pulse) {
-				col = brighten(col, 45)
-			}
-			drawSparkle(scene, n, col, growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n), w.SimTime)
+			drawSparkle(scene, n, n.OwnerID != -1, pulseActive(w, n.Pulse), growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n), w.SimTime)
 			continue
 		}
 		col := colNodeFree
@@ -274,7 +276,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 			col = blendColor(col, colWaterGrowthTint, alpha)
 			alpha = 0
 		}
-		drawPineTree(scene, n, col, growthNodeVisualScale(w, n), alpha)
+		drawTreeSprite(scene, n, col, growthNodeVisualScale(w, n), alpha)
 	}
 
 	// placement preview — route lines and ghost, drawn above nodes/below buildings
@@ -286,11 +288,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	for _, b := range w.Buildings {
 		switch b.Kind {
 		case KindTownHall:
-			col := colTownHall
-			if pulseActive(w, b.Pulse) {
-				col = brighten(col, 40)
-			}
-			drawTownHallArt(scene, w.Planet, b.Angle, col)
+			drawTownHallSprite(scene, w.Planet, b.Angle, pulseActive(w, b.Pulse), w.SimTime)
 			drawTownGrowthGauge(scene, w.Planet, b, w.Economy.TownGrowth, w.Economy.TownGrowthCap)
 		case KindDock:
 			col := colDock
@@ -303,9 +301,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 			if pulseActive(w, b.Pulse) {
 				col = brighten(col, 40)
 			}
-			vector.FillRect(scene,
-				float32(b.Pos.X)-campBldHalf, float32(b.Pos.Y)-campBldHalf,
-				campBldSize, campBldSize, col, false)
+			drawCampSprite(scene, b.Pos, b.Angle, col)
 		}
 	}
 
@@ -323,13 +319,9 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 		if workerUsesIdleHome(wk) && th != nil {
 			sp := slots[slotIdx]
 			slotIdx++
-			vector.FillRect(scene,
-				float32(sp.X)-workerBldHalf, float32(sp.Y)-workerBldHalf,
-				workerBldSize, workerBldSize, colWorkerLaden, false)
+			drawWorker(scene, sp.X, sp.Y, th.Angle, colWorkerLaden)
 		} else {
-			vector.FillRect(scene,
-				float32(wk.Pos.X)-workerBldHalf, float32(wk.Pos.Y)-workerBldHalf,
-				workerBldSize, workerBldSize, workerColor(w, wk), false)
+			drawWorker(scene, wk.Pos.X, wk.Pos.Y, wk.Angle, workerColor(w, wk))
 		}
 	}
 }

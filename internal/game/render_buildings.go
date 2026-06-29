@@ -9,13 +9,10 @@ import (
 
 // Building / worker render sizes.
 const (
-	campBldHalf      = float32(3.5) // half of 7×7 camp square
-	campBldSize      = float32(7)
 	townHallBldHalfW = float32(8)   // half-width along rim tangent (16px wide — fort shape)
 	townHallBldHalfH = float32(4.5) // half-height along inward normal (9px tall)
 	townHallBldInset = float32(5)   // px inward from rim for town hall art center
-	workerBldHalf    = float32(1)   // half of 3×3 worker square
-	workerBldSize    = float32(3)
+	workerBldSize    = float32(3)   // idle slot spacing near Town Hall
 )
 
 func workerUsesIdleHome(wk *Worker) bool {
@@ -62,35 +59,6 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 	ty := float32(math.Cos(angle))
 	drawOrientedRect(scene, float32(ip.X), float32(ip.Y), tx, ty, ix, iy,
 		townHallBldHalfW, townHallBldHalfH, col)
-}
-
-// drawDockArt draws a dock on the rim. Level 1 (or 0): a flat deck with end
-// posts (|_| shape). Level 2: adds a railing bar connecting the post tops (|=| shape).
-func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA, level int) {
-	pos := p.RimPoint(angle)
-	ox := float32(math.Cos(angle))
-	oy := float32(math.Sin(angle))
-	tx := float32(-math.Sin(angle))
-	ty := float32(math.Cos(angle))
-	cx, cy := float32(pos.X), float32(pos.Y)
-	// Deck along the rim tangent, offset inward so its outward edge is flush with the rim.
-	dcx := cx - ox*dockDeckHalfH
-	dcy := cy - oy*dockDeckHalfH
-	drawOrientedRect(scene, dcx, dcy, tx, ty, ox, oy, dockDeckHalfLen, dockDeckHalfH, col)
-	// Posts at each end, offset outward so they extend above the rim.
-	for _, s := range [...]float32{-1, 1} {
-		px := cx + tx*(s*dockDeckHalfLen) + ox*dockPostHalfH
-		py := cy + ty*(s*dockDeckHalfLen) + oy*dockPostHalfH
-		drawOrientedRect(scene, px, py, tx, ty, ox, oy, dockPostHalfW, dockPostHalfH, col)
-	}
-	// Level 2: top railing connecting post tops.
-	if level >= 2 {
-		const dockRailHalfH = float32(0.7)
-		railOffset := dockPostHalfH*2 + dockRailHalfH
-		railCx := cx + ox*railOffset
-		railCy := cy + oy*railOffset
-		drawOrientedRect(scene, railCx, railCy, tx, ty, ox, oy, dockDeckHalfLen, dockRailHalfH, col)
-	}
 }
 
 // drawTownGrowthGauge draws a small progress bar below the Town Hall art,
