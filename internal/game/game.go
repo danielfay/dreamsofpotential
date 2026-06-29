@@ -48,6 +48,7 @@ type Game struct {
 	hudScale                     int         // integer view scale at last HUD build; triggers rebuild on change
 	hudDigits                    int         // digit count of wood at last HUD build; triggers rebuild on grow
 	saveTimer                    float64     // counts down to next autosave
+	nurtureToggleActive          bool        // true while the nurture auto-cycle is running
 	nurtureConfirmLeft           float64     // seconds remaining on the nurture success flash
 	nurtureAttentionCooldown     float64     // counts down to next Nurture attention pulse
 	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
@@ -295,6 +296,14 @@ func (g *Game) Update() error {
 				}
 			}
 		}
+
+		if g.nurtureToggleActive {
+			if nurtureField(g.world) {
+				g.nurtureConfirmLeft = nurtureConfirmDuration
+			} else if !g.world.ResourceDiscovered || !anyFieldCanSpawn(g.world) {
+				g.nurtureToggleActive = false
+			}
+		}
 	}
 
 	// Advance inject-dot animations.
@@ -461,6 +470,7 @@ func clearTransientUI(g *Game) {
 	g.freePlacing = false
 	g.holdAction = holdNone
 	g.holdDuration = 0
+	g.nurtureToggleActive = false
 	g.showMenu = false
 	g.showFocusControl = false
 	g.closeBuildingTray()

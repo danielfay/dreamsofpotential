@@ -3091,23 +3091,25 @@ func TestNurtureFieldWaterSpawnsSparkle(t *testing.T) {
 	}
 
 	before := len(w.Nodes)
-	ok := nurtureField(w)
-	if !ok {
-		t.Fatal("nurtureField returned false on empty water field")
-	}
-	if len(w.Nodes) <= before {
-		t.Error("nurtureField should have added at least one sparkle into the water field")
-	}
-	// Planet-wide nurture may also spawn wood rim nodes; just verify at least one water sparkle appeared.
+	// With nurtureTreesPerPress=1 each call spawns only one node, so loop until
+	// the water field is picked (up to 20 attempts with cues cleared between calls).
 	gotWater := false
-	for _, n := range w.Nodes[before:] {
-		if n.Interior && n.Kind == KindWater {
-			gotWater = true
-			break
+	for i := 0; i < 20 && !gotWater; i++ {
+		w.growthCue = growthCueState{}
+		w.pendingGrowthCues = nil
+		ok := nurtureField(w)
+		if !ok {
+			t.Fatalf("nurtureField returned false on attempt %d", i+1)
+		}
+		for _, n := range w.Nodes[before:] {
+			if n.Interior && n.Kind == KindWater {
+				gotWater = true
+				break
+			}
 		}
 	}
 	if !gotWater {
-		t.Error("nurtureField should have spawned at least one water sparkle")
+		t.Error("nurtureField never spawned a water sparkle in 20 attempts")
 	}
 }
 

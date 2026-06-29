@@ -39,7 +39,7 @@ const (
 	// once the geometric step would exceed this, growth becomes
 	// additive — keeping late-game trees naturally reachable
 	woodFieldReturnRatio = 0.27 // share of gross delivered load that becomes field EXP
-	nurtureTreesPerPress = 5    // trees spawned directly per Nurture button press
+	nurtureTreesPerPress = 1    // trees spawned per Nurture toggle cycle
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
 	nodeMaxSize          = 2.0 // maximum size any resource node can reach

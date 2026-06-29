@@ -115,6 +115,11 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			drawAttentionRipple(screen, srx+srw/2, sry+srh/2, srw, srh,
 				g.nurtureAttentionPulseLeft, nurtureAttentionPulseDur, colNurtureAttention, 0)
 		}
+		if g.nurtureToggleActive {
+			col := colNurtureConfirm
+			col.A = 40
+			vector.FillRect(screen, srx, sry, srw, srh, col, false)
+		}
 		if g.nurtureConfirmLeft > 0 {
 			t := float32(g.nurtureConfirmLeft / nurtureConfirmDuration)
 			col := colNurtureConfirm
