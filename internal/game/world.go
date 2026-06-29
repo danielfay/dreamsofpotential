@@ -92,6 +92,7 @@ type ResourceNode struct {
 	Angle              float64
 	OwnerID            int
 	ReservedByWorkerID int
+	WorkCapacity       bool
 	Size               float64
 	Pulse              PulseState
 	Interior           bool
@@ -181,8 +182,6 @@ type PlanetState struct {
 	NextBuildingID      int
 	ResourceDiscovered  bool
 	SimTime             float64
-	WorkerCapacity      int
-	CapacityBought      int
 	CampsBought         int
 	TownGrowth          float64
 	TownGrowthCap       float64
@@ -211,6 +210,7 @@ type Building struct {
 	Kind          BuildingKind
 	Pos           Vec
 	Angle         float64
+	WorkCapacity  bool
 	Level         int
 	Extension     bool
 	DeliveredWood float64
@@ -268,12 +268,13 @@ type growthCueState struct {
 
 // Planet is the disc the player operates on.
 type Planet struct {
-	Center        Vec
-	Radius        float64
-	Composition   map[ResourceKind]float64
-	Fields        []*ResourceField
-	FieldProgress map[ResourceKind]*KindProgress // planet-level EXP/Cap per kind; shared across all regions of that kind
-	StartingNodes int                            // override for foundStartingNodes count; 0 means use the global default
+	Center           Vec
+	Radius           float64
+	Composition      map[ResourceKind]float64
+	Fields           []*ResourceField
+	FieldProgress    map[ResourceKind]*KindProgress // planet-level EXP/Cap per kind; shared across all regions of that kind
+	StartingNodes    int                            // override for foundStartingNodes count; 0 means use the global default
+	MinCompletionPop int
 }
 
 // RimPoint returns the world point on the planet's rim at the given angle.
@@ -299,8 +300,6 @@ type Economy struct {
 	Wood                float64
 	Water               float64 // harvested blue water material; revealed on first dock delivery
 	WaterDiscovered     bool    // true after the first water delivery (controls HUD visibility)
-	WorkerCapacity      int     // total worker slots unlocked (founding slot + paid capacity)
-	CapacityBought      int     // paid capacity purchases; drives the cost curve
 	CampsBought         int
 	TownGrowth          float64                   // accumulates gross delivery amount; clamped at TownGrowthCap
 	TownGrowthCap       float64                   // spawns a worker when TownGrowth reaches this; grows each arrival
@@ -325,7 +324,7 @@ type SystemEconomy struct {
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 20
+const SaveVersion = 21
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -437,6 +436,7 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 		Pos:                w.Planet.RimPoint(angle),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
+		WorkCapacity:       true,
 		Size:               0.6 + w.rng.Float64()*0.8,
 	}
 }
@@ -457,6 +457,7 @@ func newSparkle(w *World, pos Vec) *ResourceNode {
 		Angle:              w.Planet.AngleOf(pos),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
+		WorkCapacity:       true,
 		Size:               sparkleMinSize + w.rng.Float64()*sparkleSizeRange,
 		Interior:           true,
 		ServicingDockID:    -1,
@@ -756,17 +757,20 @@ func newWorldWithSeed(seed int64) *World {
 		// Index 3: unknown frontier silhouette — non-interactive, no rate
 		{Kind: PlanetUnknown, Pos: Vec{X: 242, Y: 162}, Radius: 10},
 	}
-	return &World{
-		Version: SaveVersion,
-		Planet: Planet{
-			Center:      center,
-			Radius:      radius,
-			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields:      []*ResourceField{field},
-			FieldProgress: map[ResourceKind]*KindProgress{
-				KindWood: {Cap: woodFieldBaseEXP},
-			},
+	planet := Planet{
+		Center:      center,
+		Radius:      radius,
+		Composition: map[ResourceKind]float64{KindWood: 1.0},
+		Fields:      []*ResourceField{field},
+		FieldProgress: map[ResourceKind]*KindProgress{
+			KindWood: {Cap: woodFieldBaseEXP},
 		},
+	}
+	planet.MinCompletionPop = planetMinCompletionPop(planet)
+
+	return &World{
+		Version:       SaveVersion,
+		Planet:        planet,
 		Economy:       Economy{TownGrowthCap: townGrowthBaseCap, Potential: make(map[PotentialKind]float64)},
 		SystemEconomy: SystemEconomy{WoodAllocPotential: 1.0, WaterAllocPotential: 1.0},
 		Active:        0,
@@ -1061,8 +1065,6 @@ func writePlanetStateFromWorld(ps *PlanetState, w *World) {
 	ps.NextBuildingID = w.NextBuildingID
 	ps.ResourceDiscovered = w.ResourceDiscovered
 	ps.SimTime = w.SimTime
-	ps.WorkerCapacity = w.Economy.WorkerCapacity
-	ps.CapacityBought = w.Economy.CapacityBought
 	ps.CampsBought = w.Economy.CampsBought
 	ps.TownGrowth = w.Economy.TownGrowth
 	ps.TownGrowthCap = w.Economy.TownGrowthCap
@@ -1089,8 +1091,6 @@ func loadWorldFromPlanetState(w *World, ps *PlanetState) {
 	w.SavedLaborRatio = ps.SavedLaborRatio
 	w.Economy.Wood = ps.LocalWood
 	w.Economy.Water = ps.LocalWater
-	w.Economy.WorkerCapacity = ps.WorkerCapacity
-	w.Economy.CapacityBought = ps.CapacityBought
 	w.Economy.CampsBought = ps.CampsBought
 	w.Economy.TownGrowth = ps.TownGrowth
 	w.Economy.TownGrowthCap = ps.TownGrowthCap

@@ -324,15 +324,12 @@ func TestDockUpgradeAttention(t *testing.T) {
 		t.Fatal("could not place shore dock")
 	}
 
-	// Town not full: attention should be nil.
+	// Minimum population not reached: attention should be nil.
 	if dock := dockUpgradeAttentionDock(w); dock != nil {
-		t.Error("dockUpgradeAttentionDock should return nil when town not full")
+		t.Error("dockUpgradeAttentionDock should return nil when minimum population is not reached")
 	}
 
-	// Fill town capacity.
-	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = max
-	}
+	spawnWorkersToMinCompletion(w)
 
 	// Fields not saturated yet: still nil.
 	if dock := dockUpgradeAttentionDock(w); dock != nil {

@@ -17,22 +17,24 @@ func newEchoPlanetState(layoutID int) *PlanetState {
 // newTightGroveState builds echoB: a compact full-forest planet where TH
 // placement immediately spawns many trees, leaving only 1-2 valid camp spots.
 func newTightGroveState(center Vec) *PlanetState {
-	return &PlanetState{
-		Planet: Planet{
-			Center:      center,
-			Radius:      tightGroveRadius,
-			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields: []*ResourceField{{
-				Kind:        KindWood,
-				CenterAngle: 0,
-				HalfArc:     forestHalfArc, // full circle
-				Known:       true,
-			}},
-			FieldProgress: map[ResourceKind]*KindProgress{
-				KindWood: {Cap: woodFieldBaseEXP},
-			},
-			StartingNodes: tightGroveStartNodes,
+	planet := Planet{
+		Center:      center,
+		Radius:      tightGroveRadius,
+		Composition: map[ResourceKind]float64{KindWood: 1.0},
+		Fields: []*ResourceField{{
+			Kind:        KindWood,
+			CenterAngle: 0,
+			HalfArc:     forestHalfArc, // full circle
+			Known:       true,
+		}},
+		FieldProgress: map[ResourceKind]*KindProgress{
+			KindWood: {Cap: woodFieldBaseEXP},
 		},
+		StartingNodes: tightGroveStartNodes,
+	}
+	planet.MinCompletionPop = planetMinCompletionPop(planet)
+	return &PlanetState{
+		Planet:        planet,
 		TownGrowthCap: townGrowthBaseCap,
 	}
 }
@@ -80,16 +82,18 @@ func newLakewoodState(center Vec) *PlanetState {
 		HalfArc:     lakewoodSmallLakeArc + waterInfluenceArcPadding,
 		Known:       false,
 	}
-	return &PlanetState{
-		Planet: Planet{
-			Center:      center,
-			Radius:      lakewoodRadius,
-			Composition: map[ResourceKind]float64{KindWood: 1.0},
-			Fields:      []*ResourceField{mainForest, islandForest, largeLake, smallLake, largeLakeInfluence, smallLakeInfluence},
-			FieldProgress: map[ResourceKind]*KindProgress{
-				KindWood: {Cap: woodFieldBaseEXP},
-			},
+	planet := Planet{
+		Center:      center,
+		Radius:      lakewoodRadius,
+		Composition: map[ResourceKind]float64{KindWood: 1.0},
+		Fields:      []*ResourceField{mainForest, islandForest, largeLake, smallLake, largeLakeInfluence, smallLakeInfluence},
+		FieldProgress: map[ResourceKind]*KindProgress{
+			KindWood: {Cap: woodFieldBaseEXP},
 		},
+	}
+	planet.MinCompletionPop = planetMinCompletionPop(planet)
+	return &PlanetState{
+		Planet:        planet,
 		TownGrowthCap: townGrowthBaseCap,
 	}
 }
@@ -100,31 +104,33 @@ func newLakewoodState(center Vec) *PlanetState {
 // StartingNodes is kept small so founding fills only the shore.
 func newWaterFrontierState() *PlanetState {
 	center := Vec{X: 160, Y: 120}
-	return &PlanetState{
-		Planet: Planet{
-			Center:      center,
-			Radius:      waterFrontierRadius,
-			Composition: map[ResourceKind]float64{KindWood: 0.4, KindWater: 0.6},
-			Fields: []*ResourceField{
-				{
-					Kind:        KindWood,
-					CenterAngle: waterFrontierShoreAngle,
-					HalfArc:     waterFrontierShoreArc,
-					Known:       true,
-				},
-				{
-					Kind:        KindWater,
-					CenterAngle: waterFrontierLakeAngle,
-					HalfArc:     waterFrontierLakeArc,
-					Known:       true,
-				},
+	planet := Planet{
+		Center:      center,
+		Radius:      waterFrontierRadius,
+		Composition: map[ResourceKind]float64{KindWood: 0.4, KindWater: 0.6},
+		Fields: []*ResourceField{
+			{
+				Kind:        KindWood,
+				CenterAngle: waterFrontierShoreAngle,
+				HalfArc:     waterFrontierShoreArc,
+				Known:       true,
 			},
-			FieldProgress: map[ResourceKind]*KindProgress{
-				KindWood:  {Cap: woodFieldBaseEXP},
-				KindWater: {Cap: waterFieldBaseEXP},
+			{
+				Kind:        KindWater,
+				CenterAngle: waterFrontierLakeAngle,
+				HalfArc:     waterFrontierLakeArc,
+				Known:       true,
 			},
-			StartingNodes: waterFrontierStartNodes,
 		},
+		FieldProgress: map[ResourceKind]*KindProgress{
+			KindWood:  {Cap: woodFieldBaseEXP},
+			KindWater: {Cap: waterFieldBaseEXP},
+		},
+		StartingNodes: waterFrontierStartNodes,
+	}
+	planet.MinCompletionPop = planetMinCompletionPop(planet)
+	return &PlanetState{
+		Planet:        planet,
 		TownGrowthCap: townGrowthBaseCap,
 	}
 }

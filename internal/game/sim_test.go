@@ -18,7 +18,6 @@ func newDeliveryWorld() (*World, *ResourceNode) {
 	node := newNode(w, KindWood, campAngle)
 	node.Size = 1.0
 	w.Nodes = []*ResourceNode{node}
-	w.Economy.WorkerCapacity = 99 // pre-set high so capacity is never the bottleneck
 	return w, node
 }
 
@@ -48,6 +47,7 @@ func TestWorkerArrivalOnDelivery(t *testing.T) {
 	// Use a cap in the normal-play range so the geometric ramp applies.
 	w.Economy.TownGrowthCap = townGrowthBaseCap
 	w.Economy.TownGrowth = townGrowthBaseCap // already full
+	w.Nodes = append(w.Nodes, newNode(w, KindWood, 0.25))
 
 	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
 		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
@@ -79,6 +79,7 @@ func TestWorkerArrivalInitialCapTransition(t *testing.T) {
 	// Simulate the first fill: cap is in the initial (scripted) range.
 	w.Economy.TownGrowthCap = townGrowthInitialCap
 	w.Economy.TownGrowth = townGrowthInitialCap // already full
+	w.Nodes = append(w.Nodes, newNode(w, KindWood, 0.25))
 
 	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
 		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
@@ -102,9 +103,6 @@ func TestGrowthCappedWithoutCapacity(t *testing.T) {
 	gross := baseLoadAmount * node.Size
 	w.Economy.TownGrowthCap = gross * 0.5
 	w.Economy.TownGrowth = 0
-	// Fill capacity: 1 slot, 1 worker already occupying it.
-	w.Economy.WorkerCapacity = 1
-
 	wk := &Worker{ID: 0, Carried: gross, NodeID: node.ID,
 		Angle: 0, Pos: w.Planet.RimPoint(0), TargetNodeID: -1, PendingNodeID: -1}
 	node.OwnerID = wk.ID
@@ -120,47 +118,13 @@ func TestGrowthCappedWithoutCapacity(t *testing.T) {
 	}
 }
 
-func TestWorkerArrivalOnCapacityBuild(t *testing.T) {
-	w, _ := newDeliveryWorld()
-	w.Economy.TownGrowthCap = 5.0
-	w.Economy.TownGrowth = w.Economy.TownGrowthCap // growth already at cap
-	w.Economy.WorkerCapacity = 1
-	// One worker occupies the slot.
-	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
-	w.Economy.Wood = townCapacityCost(w) + 1
-
-	if !buildTownCapacity(w) {
-		t.Fatal("buildTownCapacity should succeed")
-	}
-
-	if len(w.Workers) != 2 {
-		t.Errorf("expected 1 existing + 1 spawned worker; got %d", len(w.Workers))
-	}
-	if w.Economy.TownGrowth != 0 {
-		t.Errorf("TownGrowth should reset to 0 after spawn; got %.4f", w.Economy.TownGrowth)
-	}
-}
-
-func TestNoWorkerArrivalBeyondMaxSlots(t *testing.T) {
+func TestNoWorkerArrivalBeyondClaimableWork(t *testing.T) {
 	w, node := newDeliveryWorld()
 	gross := baseLoadAmount * node.Size
 	w.Economy.TownGrowthCap = gross * 0.5
 	w.Economy.TownGrowth = 0
 
-	// Fill exactly to the geometry max.
-	max := maxTownSlots(w)
-	w.Economy.WorkerCapacity = max
-	for i := 0; i < max-1; i++ {
-		w.Workers = append(w.Workers, &Worker{
-			ID:            w.NextWorkerID,
-			State:         StateIdleWaiting,
-			NodeID:        -1,
-			TargetNodeID:  -1,
-			PendingNodeID: -1,
-		})
-		w.NextWorkerID++
-	}
-	// The delivery worker occupies the last slot.
+	// The delivery worker occupies the only claimable node.
 	wk := &Worker{
 		ID:            w.NextWorkerID,
 		Carried:       gross,
@@ -176,8 +140,8 @@ func TestNoWorkerArrivalBeyondMaxSlots(t *testing.T) {
 
 	completeUnload(w, wk, node)
 
-	if len(w.Workers) != max {
-		t.Errorf("no worker should spawn beyond max slots; got %d workers, want %d", len(w.Workers), max)
+	if len(w.Workers) != 1 {
+		t.Errorf("no worker should spawn beyond claimable work; got %d workers", len(w.Workers))
 	}
 	if w.Economy.TownGrowth != w.Economy.TownGrowthCap {
 		t.Errorf("TownGrowth should clamp to cap %.4f; got %.4f", w.Economy.TownGrowthCap, w.Economy.TownGrowth)
@@ -1334,24 +1298,21 @@ func TestNurtureSpawnsUpToCapacity(t *testing.T) {
 	}
 }
 
-func TestNurtureAttentionRequiresTownFull(t *testing.T) {
+func TestNurtureAttentionRequiresMinCompletionPop(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
 
-	// Town not full yet — attention should be inactive.
+	// Minimum completion population not reached yet — attention should be inactive.
 	if nurtureAttentionActive(w) {
-		t.Error("attention should be inactive before town capacity is maxed")
+		t.Error("attention should be inactive before minimum completion population")
 	}
 
-	// Force town to max capacity with physical workers present.
-	slots := maxTownSlots(w)
-	w.Economy.WorkerCapacity = slots
-	for i := range slots {
+	for i := range w.Planet.MinCompletionPop {
 		w.Workers = append(w.Workers, &Worker{ID: i + 1})
 	}
 	if !nurtureAttentionActive(w) {
-		t.Error("attention should be active once town capacity is maxed")
+		t.Error("attention should be active once minimum completion population is reached")
 	}
 }
 
@@ -1361,7 +1322,6 @@ func TestNurtureAttentionInactiveWhenFieldSaturated(t *testing.T) {
 	w.NextNodeID = 0
 	w.ResourceDiscovered = true
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
 	field := &ResourceField{Kind: KindWood, CenterAngle: 0, HalfArc: 0.01, Known: true}
 	w.Planet.Fields = []*ResourceField{field}
 	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
@@ -1379,15 +1339,13 @@ func TestNurtureAttentionSuppressedWhenCuePending(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = true
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
-	slots := maxTownSlots(w)
-	w.Economy.WorkerCapacity = slots
-	for i := range slots {
+	for i := range w.Planet.MinCompletionPop {
 		w.Workers = append(w.Workers, &Worker{ID: i + 1})
 	}
 
-	// Town full and field has room — attention should be active.
+	// Minimum population reached and field has room — attention should be active.
 	if !nurtureAttentionActive(w) {
-		t.Error("setup: expected attention active with town full")
+		t.Error("setup: expected attention active with minimum population")
 	}
 
 	// After a Nurture press a cue is active — attention must be suppressed.
@@ -1401,7 +1359,6 @@ func TestNurtureAttentionInactiveWhenNotDiscovered(t *testing.T) {
 	w := NewWorld()
 	w.ResourceDiscovered = false
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)}}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
 
 	if nurtureAttentionActive(w) {
 		t.Error("attention should be inactive when resource is not yet discovered")
@@ -1411,14 +1368,12 @@ func TestNurtureAttentionInactiveWhenNotDiscovered(t *testing.T) {
 // ── System unlock tests ───────────────────────────────────────────────────────
 
 // newMasteredWorld returns a world that satisfies both completion gates:
-// town capacity maxed and wood field fully saturated.
+// minimum completion population reached and wood field fully saturated.
 func newMasteredWorld() *World {
 	w := NewWorld()
-	// Place Town Hall so townFieldFull logic works.
 	f := fieldForKind(w, KindWood)
 	_ = placeBuilding(w, f.CenterAngle)
-	// Max out town capacity.
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 	// Saturate the wood field.
 	for fieldCanSpawnNode(w, f) {
 		spawnNode(w, f)
@@ -1441,11 +1396,11 @@ func TestStartingPlanetComplete_RequiresBothGates(t *testing.T) {
 		t.Error("expected forestPlanetComplete false when wood field not saturated")
 	}
 
-	// Only field: reset town capacity.
+	// Only field: reset workers.
 	w3 := newMasteredWorld()
-	w3.Economy.WorkerCapacity = 0
+	w3.Workers = nil
 	if forestPlanetComplete(w3) {
-		t.Error("expected forestPlanetComplete false when town capacity not maxed")
+		t.Error("expected forestPlanetComplete false when minimum population is not reached")
 	}
 }
 
@@ -1453,7 +1408,6 @@ func TestTickTriggersUnlockExactlyOnce(t *testing.T) {
 	w := newMasteredWorld()
 	w.ResourceDiscovered = true
 	// Add a worker so EstimateRate can snapshot a non-zero value.
-	w.Economy.WorkerCapacity = maxTownSlots(w)
 	addWorker(w)
 	runSim(w, 2) // settle worker into loop
 
@@ -1739,9 +1693,7 @@ func TestEchoCompletion_AmplifiedRate(t *testing.T) {
 	if !ok || !placeBuilding(w, thAngle) {
 		t.Fatal("setup: cannot place echo TH")
 	}
-	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = max
-	}
+	spawnWorkersToMinCompletion(w)
 	fillWoodFieldNodes(w, false)
 
 	// Estimate what the rate should be before completion fires.
@@ -1880,9 +1832,7 @@ func TestEchoCompletion_AwardsForestPotential(t *testing.T) {
 	if !ok || !placeBuilding(w, thAngle) {
 		t.Fatal("setup: cannot place echo TH")
 	}
-	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = max
-	}
+	spawnWorkersToMinCompletion(w)
 	fillWoodFieldNodes(w, false)
 
 	if got := w.Economy.Potential[PotentialForest]; got != 0 {
@@ -1910,9 +1860,7 @@ func setupEchoForCompletion(t *testing.T, w *World, echoIdx int) {
 	if !ok || !placeBuilding(w, thAngle) {
 		t.Fatalf("setup: cannot place Town Hall on echo %d", echoIdx)
 	}
-	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = max
-	}
+	spawnWorkersToMinCompletion(w)
 	fillWoodFieldNodes(w, false)
 }
 
@@ -1969,9 +1917,6 @@ func TestLakewood_RequiresIslandSaturation(t *testing.T) {
 	thAngle, ok := findValidBuildingAngle(w)
 	if !ok || !placeBuilding(w, thAngle) {
 		t.Fatal("setup: cannot place Town Hall on Lakewood")
-	}
-	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = max
 	}
 	// Fill only the main (first) wood field, leave island unsaturated.
 	var mainField *ResourceField
@@ -2049,9 +1994,7 @@ func newWaterFrontierForCompletion(t *testing.T) *World {
 	if !ok || !placeBuilding(w, thAngle) {
 		t.Fatal("setup: cannot place frontier TH")
 	}
-	if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = max
-	}
+	spawnWorkersToMinCompletion(w)
 	fillWoodFieldNodes(w, false)
 	if !placeBuildingWithFreePlacement(w, waterFrontierLakeAngle, true) {
 		t.Fatal("setup: cannot place frontier dock")
@@ -2080,17 +2023,16 @@ func TestWaterPlanetComplete_AllThreeGates(t *testing.T) {
 	}
 }
 
-func TestWaterPlanetComplete_GateTownCapacity(t *testing.T) {
+func TestWaterPlanetComplete_GateMinCompletionPop(t *testing.T) {
 	w := newWaterFrontierForCompletion(t)
 	for _, b := range w.Buildings {
 		if b.Kind == KindDock {
 			b.Level = 2
 		}
 	}
-	// Remove town capacity.
-	w.Economy.WorkerCapacity = 0
+	w.Workers = nil
 	if waterPlanetComplete(w) {
-		t.Error("waterPlanetComplete should be false when town capacity is not maxed")
+		t.Error("waterPlanetComplete should be false when minimum population is not reached")
 	}
 }
 
@@ -2166,7 +2108,6 @@ func TestWaterFrontierCompletion_DualPotential(t *testing.T) {
 func TestWaterFrontierCompletion_DualAbstractRate(t *testing.T) {
 	w := newWaterFrontierForCompletion(t)
 	// Add a worker so EstimateRate / EstimateWaterRate return non-zero.
-	w.Economy.WorkerCapacity++
 	addWorker(w)
 	runSim(w, 5)
 
@@ -2485,7 +2426,7 @@ func TestMultiRegion_GrowthDistributesAcrossEligibleRegions(t *testing.T) {
 func TestMultiRegion_CompletionRequiresAllKnownRegionsSaturated(t *testing.T) {
 	w := newTwoRegionWorld()
 	_ = placeBuilding(w, math.Pi/2) // Town Hall off to the side
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 
 	// Saturate only region A.
 	regionA := w.Planet.Fields[0]
@@ -2519,7 +2460,7 @@ func TestMultiRegion_UnknownRegionDoesNotGateCompletion(t *testing.T) {
 	w.Planet.Fields = []*ResourceField{known, unknown}
 	w.Planet.FieldProgress = map[ResourceKind]*KindProgress{KindWood: {Cap: woodFieldBaseEXP}}
 	_ = placeBuilding(w, math.Pi/2)
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 
 	for fieldCanSpawnNode(w, known) {
 		spawnNode(w, known)
@@ -2907,9 +2848,8 @@ func newWaterSparkleTestWorld() *World {
 		Version: SaveVersion,
 		Planet:  ps.Planet,
 		Economy: Economy{
-			TownGrowthCap:  ps.TownGrowthCap,
-			WorkerCapacity: 5,
-			Potential:      make(map[PotentialKind]float64),
+			TownGrowthCap: ps.TownGrowthCap,
+			Potential:     make(map[PotentialKind]float64),
 		},
 		PlanetStates: make([]*PlanetState, 4),
 		System:       System{Planets: []SystemPlanet{{}, {}, {}, {}}},

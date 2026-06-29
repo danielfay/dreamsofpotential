@@ -204,17 +204,6 @@ func (g *Game) handleInput() {
 	mx, my := ebiten.CursorPosition()
 	fmx, fmy := float32(mx), float32(my)
 
-	// TH tray: any click inside is consumed. The tray stays open so capacity can
-	// be bought repeatedly while resources allow.
-	if g.thTrayRect.contains(fmx, fmy) {
-		if g.thCapacityRect.contains(fmx, fmy) {
-			if !buildTownCapacity(g.world) && !townCapacityAffordable(g.world) {
-				g.flashCostTargets(townCapacityCostTargets(g.world))
-			}
-		}
-		return
-	}
-
 	// Dock tray: any click inside is consumed. The tray stays open so future
 	// multi-level upgrades can be bought repeatedly while resources allow.
 	if g.dockTrayRect.contains(fmx, fmy) {
@@ -233,11 +222,11 @@ func (g *Game) handleInput() {
 		return
 	}
 
-	// Hit-test selectable buildings (dock, town hall). Building selection takes
+	// Hit-test selectable buildings. Building selection takes
 	// priority over placement so clicking on a building opens its tray.
 	wp := g.screenToWorld(mx, my)
 	for i, b := range g.world.Buildings {
-		if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+		if b.Kind == KindDock && wp.Dist(b.Pos) <= 8.0 {
 			if g.selectedBuildingID != i {
 				g.closeBuildingTray()
 			}
@@ -303,8 +292,7 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			Angle: angle,
 			Pos:   w.Planet.RimPoint(angle),
 		})
-		// Grant the founding capacity slot and spawn the first worker immediately.
-		w.Economy.WorkerCapacity = 1
+		// Spawn the founding worker immediately.
 		w.Economy.TownGrowthCap = townGrowthInitialCap
 		spawnWorkerAtTownHall(w)
 		// Awaken all known fields: distribute starting nodes across them.
@@ -319,12 +307,13 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			w.Economy.Water -= dockExtWaterCost
 		}
 		w.Buildings = append(w.Buildings, &Building{
-			ID:        id,
-			Kind:      KindDock,
-			Level:     1,
-			Angle:     angle,
-			Pos:       w.Planet.RimPoint(angle),
-			Extension: pv.Extension,
+			ID:           id,
+			Kind:         KindDock,
+			Level:        1,
+			Angle:        angle,
+			Pos:          w.Planet.RimPoint(angle),
+			WorkCapacity: true,
+			Extension:    pv.Extension,
 		})
 		if firstDock {
 			seedInitialDockSparkles(w, w.Buildings[len(w.Buildings)-1])
@@ -366,7 +355,7 @@ func (g *Game) curPlacementPreview() *placementPreview {
 	if !g.hud.pointInHUD(mx, my, g.debug) {
 		wp := g.screenToWorld(mx, my)
 		for _, b := range g.world.Buildings {
-			if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+			if b.Kind == KindDock && wp.Dist(b.Pos) <= 8.0 {
 				return nil
 			}
 		}

@@ -125,7 +125,7 @@ func TestSimTrace(t *testing.T) {
 	w := runSimTrace(t, "starting planet (wood)", 20, runner)
 	fp := w.Planet.FieldProgress[KindWood]
 	t.Logf("max town slots: %d  |  field cap at end: %.0f  |  trees: %d",
-		maxTownSlots(w), fp.Cap, woodTreeCount(w))
+		w.Planet.MinCompletionPop, fp.Cap, woodTreeCount(w))
 }
 
 // startingPlanetRunner implements SimTraceRunner for the single-resource
@@ -186,9 +186,6 @@ func (r *startingPlanetRunner) PlayerAI(w *World) []string {
 	var events []string
 
 	// Buy capacity the moment it becomes affordable.
-	if !townFieldFull(w) && townCapacityAffordable(w) {
-		buildTownCapacity(w)
-	}
 
 	// Place the next camp once the worker threshold and wood cost are met.
 	campCount := len(w.Buildings) - 1 // excludes Town Hall
@@ -242,19 +239,12 @@ func (r *startingPlanetRunner) Events(w *World) []string {
 		r.prevTrees = cur
 	}
 
-	// First-lesson milestones: log the moment each button first lights up.
-	if !r.houseAffordableLogged && !townFieldFull(w) && townCapacityAffordable(w) {
-		payKind := townCapacityPaymentKind(w)
-		events = append(events, fmt.Sprintf("-- house affordable (%s %.0f, growth %.0f/%.0f)",
-			kindName(payKind), townCapacityPaymentAmount(w), w.Economy.TownGrowth, w.Economy.TownGrowthCap))
-		r.houseAffordableLogged = true
-	}
 	if !r.campAffordableLogged && w.Economy.Wood >= CampCost(w) {
 		events = append(events, fmt.Sprintf("-- camp affordable (wood %.0f)", w.Economy.Wood))
 		r.campAffordableLogged = true
 	}
 
-	if townFieldFull(w) && r.nurturePressed == 0 && !r.townFullLogged {
+	if planetPopComplete(w) && r.nurturePressed == 0 && !r.townFullLogged {
 		events = append(events, "*** town full — Nurture unlocked ***")
 		r.townFullLogged = true
 	}
@@ -307,7 +297,7 @@ func (r *echoCompletionRunner) Setup(w *World) {
 	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
 		panic("echoCompletionRunner: cannot place starting TH")
 	}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 	addWorker(w)
 	fillWoodFieldNodes(w, false)
 	w.ResourceDiscovered = true
@@ -354,9 +344,6 @@ func (r *echoCompletionRunner) ColRow(w *World) string {
 
 func (r *echoCompletionRunner) PlayerAI(w *World) []string {
 	var events []string
-	if !townFieldFull(w) && townCapacityAffordable(w) {
-		buildTownCapacity(w)
-	}
 	campCount := len(w.Buildings) - 1
 	if campCount < len(r.campTargets) &&
 		len(w.Workers) >= campCount*2+3 &&
@@ -401,7 +388,7 @@ func (r *echoCompletionRunner) Events(w *World) []string {
 		events = append(events, fmt.Sprintf("+tree → %d", cur))
 		r.prevTrees = cur
 	}
-	if townFieldFull(w) && !r.townFullLogged {
+	if planetPopComplete(w) && !r.townFullLogged {
 		events = append(events, "*** town full ***")
 		r.townFullLogged = true
 	}
@@ -534,7 +521,7 @@ func (r *waterFrontierRunner) Setup(w *World) {
 	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
 		panic("waterFrontierRunner: cannot place starting TH")
 	}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 	addWorker(w)
 	fillWoodFieldNodes(w, false)
 	w.ResourceDiscovered = true
@@ -594,9 +581,6 @@ func (r *waterFrontierRunner) ColRow(w *World) string {
 
 func (r *waterFrontierRunner) PlayerAI(w *World) []string {
 	var events []string
-	if !townFieldFull(w) && townCapacityAffordable(w) {
-		buildTownCapacity(w)
-	}
 	// Nurture whenever possible so nodes/sparkles keep growing.
 	if r.dockPlaced {
 		nurtureField(w)
@@ -665,7 +649,7 @@ func (r *waterPlanetCompletionRunner) Setup(w *World) {
 	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
 		panic("waterPlanetCompletionRunner: cannot place starting TH")
 	}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 	addWorker(w)
 	fillWoodFieldNodes(w, false)
 	w.ResourceDiscovered = true
@@ -682,7 +666,7 @@ func (r *waterPlanetCompletionRunner) Setup(w *World) {
 	if !placeBuilding(w, waterFrontierShoreAngle) {
 		panic("waterPlanetCompletionRunner: cannot place frontier TH")
 	}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 10000
 	// Start water at 0 so the trace shows accumulation and first delivery.
@@ -733,9 +717,6 @@ func (r *waterPlanetCompletionRunner) ColRow(w *World) string {
 func (r *waterPlanetCompletionRunner) PlayerAI(w *World) []string {
 	var events []string
 	// Fill town capacity.
-	if !townFieldFull(w) && townCapacityAffordable(w) {
-		buildTownCapacity(w)
-	}
 	// Saturate fields via Nurture.
 	nurtureField(w)
 	// Upgrade the dock to L2 as soon as we can afford it.

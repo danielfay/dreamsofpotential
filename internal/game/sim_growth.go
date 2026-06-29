@@ -233,7 +233,7 @@ func nurtureField(w *World) bool {
 
 // nurtureAttentionActive reports whether the Nurture button should show its
 // attention pulse. Fires when:
-//   - town is full + all worker slots filled + any known field can still spawn, or
+//   - planet has reached its minimum completion population + any known field can still spawn, or
 //   - at least one dock exists but no reachable sparkle work exists.
 func nurtureAttentionActive(w *World) bool {
 	if !w.ResourceDiscovered || nurtureGrowthCuePending(w) {
@@ -245,9 +245,8 @@ func nurtureAttentionActive(w *World) bool {
 	if dockExists(w) && !dockHasServiceableSparkles(w) {
 		return true
 	}
-	// Standard rule: town is full + any field can still spawn.
-	slots := maxTownSlots(w)
-	if slots <= 0 || !townFieldFull(w) || len(w.Workers) < slots {
+	// Standard rule: minimum completion population reached + any field can still spawn.
+	if !planetPopComplete(w) {
 		return false
 	}
 	for _, f := range w.Planet.Fields {
@@ -311,10 +310,10 @@ func canUpgradeDock(w *World, dock *Building) bool {
 }
 
 // dockUpgradeAttentionDock returns the first Level-1 dock to pulse when the
-// upgrade attention cue should fire: town is capacity-full, all known fields are
+// upgrade attention cue should fire: minimum population reached, all known fields are
 // saturated, and no dock has reached Level 2 yet.
 func dockUpgradeAttentionDock(w *World) *Building {
-	if !townFieldFull(w) {
+	if !planetPopComplete(w) {
 		return nil
 	}
 	for _, f := range w.Planet.Fields {
@@ -397,15 +396,40 @@ func activeWorkerCount(w *World) int {
 	return active
 }
 
-// availableCapacity returns the number of unused worker slots (capacity minus
-// current worker count). Clamped to 0 so debug free-spawns past capacity
-// do not yield a negative value that could trigger spurious growth spawns.
+// claimableNodeCount returns the number of work targets that can support a
+// worker: harvestable resource nodes plus buildings that act as work sources.
+func claimableNodeCount(w *World) int {
+	count := 0
+	for _, n := range w.Nodes {
+		if n.WorkCapacity {
+			count++
+		}
+	}
+	for _, b := range w.Buildings {
+		if b.WorkCapacity {
+			count++
+		}
+	}
+	return count
+}
+
+func planetPopComplete(w *World) bool {
+	return w.Planet.MinCompletionPop > 0 && len(w.Workers) >= w.Planet.MinCompletionPop
+}
+
+// availableCapacity returns the number of unused worker slots implied by
+// claimable work targets. Clamped to 0 so debug free-spawns past capacity do
+// not yield a negative value that could trigger spurious growth spawns.
 func availableCapacity(w *World) int {
-	avail := w.Economy.WorkerCapacity - len(w.Workers)
+	avail := claimableNodeCount(w) - len(w.Workers)
 	if avail < 0 {
 		return 0
 	}
 	return avail
+}
+
+func planetMinCompletionPop(p Planet) int {
+	return len(townFieldSlots(p, &Building{Angle: 0}))
 }
 
 // townFieldSlots returns the world positions of every potential dwelling slot
@@ -455,145 +479,12 @@ func townFieldColumnIndex(order, cols int) int {
 	return centerLeft - step
 }
 
-// maxTownSlots returns the geometry-derived maximum worker capacity for the
-// current planet. Returns 0 if no Town Hall exists.
-func maxTownSlots(w *World) int {
-	return len(townFieldSlots(w.Planet, townHall(w)))
-}
-
-// townFieldFull reports whether the town field has no remaining dwelling slots
-// to build — capacity purchases are blocked when this returns true.
-func townFieldFull(w *World) bool {
-	return townHall(w) != nil && w.Economy.WorkerCapacity >= maxTownSlots(w)
-}
-
-// townCapacityCost returns the base cost of the next paid capacity slot.
-func townCapacityCost(w *World) float64 {
-	return townCapacityBaseCost * math.Pow(townCapacityCostGrowth, float64(w.Economy.CapacityBought))
-}
-
-func townCapacityPaymentAllowed(w *World, kind ResourceKind) bool {
-	if kind == KindWood {
-		return true
-	}
-	if fam := familyForResource(kind); fam != nil {
-		if rate := fam.SystemRate(&w.SystemEconomy); rate != nil && *rate > 0 {
-			return true
-		}
-	}
-	return townCapacityLocalProducerReady(w, kind)
-}
-
-func townCapacityLocalProducerReady(w *World, kind ResourceKind) bool {
-	switch kind {
-	case KindWater:
-		for _, b := range w.Buildings {
-			if b.Kind == KindDock {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// townCapacityPaymentKind returns which local resource the next house will
-// spend. Ties prefer wood so the opening remains stable before the water
-// economy overtakes it.
-func townCapacityPaymentKind(w *World) ResourceKind {
-	bestKind := KindWood
-	bestAmt := w.Economy.Wood
-	for i := range resourceFamilies {
-		fam := &resourceFamilies[i]
-		if fam.Resource == KindWood || !townCapacityPaymentAllowed(w, fam.Resource) {
-			continue
-		}
-		amt := *fam.Stockpile(&w.Economy)
-		if amt > bestAmt {
-			bestKind = fam.Resource
-			bestAmt = amt
-		}
-	}
-	return bestKind
-}
-
-func townCapacityAffordable(w *World) bool {
-	cost := townCapacityCost(w)
-	switch townCapacityPaymentKind(w) {
-	case KindWater:
-		return w.Economy.Water >= cost
-	default:
-		return w.Economy.Wood >= cost
-	}
-}
-
-func townCapacityPaymentAmount(w *World) float64 {
-	switch townCapacityPaymentKind(w) {
-	case KindWater:
-		return w.Economy.Water
-	default:
-		return w.Economy.Wood
-	}
-}
-
-func firstTownCapacityBuildable(w *World) bool {
-	return townHall(w) != nil &&
-		w.Economy.WorkerCapacity == 1 &&
-		!townFieldFull(w) &&
-		townCapacityAffordable(w)
-}
-
-// addFreeCapacity unlocks one worker slot without spending wood. Debug-only.
-func addFreeCapacity(w *World) bool {
-	if townHall(w) == nil {
-		return false
-	}
-	if w.Economy.WorkerCapacity >= maxTownSlots(w) {
-		return false
-	}
-	w.Economy.WorkerCapacity++
-	w.Economy.CapacityBought++
-	tryConsumeGrowth(w)
-	return true
-}
-
-// buildTownCapacity spends the currently dominant local resource to unlock one
-// worker slot. Calls
-// tryConsumeGrowth so a worker arrives immediately if growth is already full.
-func buildTownCapacity(w *World) bool {
-	if townHall(w) == nil {
-		return false
-	}
-	if w.Economy.WorkerCapacity >= maxTownSlots(w) {
-		return false
-	}
-	cost := townCapacityCost(w)
-	switch townCapacityPaymentKind(w) {
-	case KindWater:
-		if w.Economy.Water < cost {
-			return false
-		}
-		w.Economy.Water -= cost
-	default:
-		if w.Economy.Wood < cost {
-			return false
-		}
-		w.Economy.Wood -= cost
-	}
-	w.Economy.WorkerCapacity++
-	w.Economy.CapacityBought++
-	tryConsumeGrowth(w)
-	return true
-}
-
 // tryConsumeGrowth spawns at most one worker when Town Growth has reached its
 // cap and a slot is free, then resets growth and raises the cap.
 //
-// When all slots are filled but more can be purchased, excess growth is banked
-// in TownGrowthOverflow instead of discarded; draining happens in
-// tickOverflowGrowth and after each spawn.
-//
-// When capacity is permanently full (townFieldFull && no available slots),
-// growth is clamped at cap and overflow is cleared.
+// When all claimable work is filled, excess growth is banked in
+// TownGrowthOverflow. It drains when field growth or dock placement creates
+// another work target.
 //
 // A workerSpawnCooldown prevents overflow from triggering rapid-fire spawns.
 func tryConsumeGrowth(w *World) bool {
@@ -601,17 +492,10 @@ func tryConsumeGrowth(w *World) bool {
 		return false
 	}
 	if availableCapacity(w) <= 0 {
-		if townFieldFull(w) {
-			// All slots bought and all workers spawned: clear overflow, stop tracking.
-			w.Economy.TownGrowth = w.Economy.TownGrowthCap
-			w.Economy.TownGrowthOverflow = 0
-		} else {
-			// Capacity full but more houses can still be purchased: bank overflow.
-			if excess := w.Economy.TownGrowth - w.Economy.TownGrowthCap; excess > 0 {
-				w.Economy.TownGrowthOverflow += excess
-			}
-			w.Economy.TownGrowth = w.Economy.TownGrowthCap
+		if excess := w.Economy.TownGrowth - w.Economy.TownGrowthCap; excess > 0 {
+			w.Economy.TownGrowthOverflow += excess
 		}
+		w.Economy.TownGrowth = w.Economy.TownGrowthCap
 		return false
 	}
 	// Enforce minimum gap between spawns so overflow doesn't burst all at once.

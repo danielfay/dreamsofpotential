@@ -109,26 +109,17 @@ func (b *DefaultBot) Act(w *World) []string {
 
 	var events []string
 
-	atCap := len(w.Workers) >= w.Economy.WorkerCapacity
-	popFull := townFieldFull(w)
-	canAffordHouse := !popFull && townCapacityAffordable(w)
+	atCap := availableCapacity(w) == 0
+	popFull := planetPopComplete(w)
 
 	growthFrac := 0.0
 	if w.Economy.TownGrowthCap > 0 {
 		growthFrac = w.Economy.TownGrowth / w.Economy.TownGrowthCap
 	}
 
-	// Priority 1: buy house immediately if at worker cap and affordable.
-	if atCap && canAffordHouse {
-		b.endBlock(w.SimTime)
-		buildTownCapacity(w)
-		payKind := townCapacityPaymentKind(w)
-		events = append(events, fmt.Sprintf("+house→cap%d (%s=%.0f)", w.Economy.WorkerCapacity, kindName(payKind), townCapacityPaymentAmount(w)))
-		return events
-	}
-
-	// Track supply-block: at cap, pop not maxed, can't yet afford house.
-	supplyBlocked := atCap && !popFull && !canAffordHouse
+	// Track supply-block: all current work is claimed, but minimum completion
+	// population is not reached yet. More field growth or docks can reopen it.
+	supplyBlocked := atCap && !popFull
 	if supplyBlocked && !b.inBlock {
 		b.inBlock = true
 		b.blockStart = w.SimTime
@@ -366,7 +357,7 @@ func (r *balanceScanRunner) Events(w *World) []string {
 		r.prevWorkers = cur
 	}
 
-	if !r.popMaxed && townFieldFull(w) {
+	if !r.popMaxed && planetPopComplete(w) {
 		r.popMaxed = true
 		r.popMaxTime = w.SimTime
 		r.woodAtPopMax = w.Economy.Wood
@@ -696,24 +687,15 @@ func (b *WaterFrontierBot) Act(w *World) []string {
 
 	var events []string
 
-	atCap := len(w.Workers) >= w.Economy.WorkerCapacity
-	popFull := townFieldFull(w)
-	canAffordHouse := !popFull && townCapacityAffordable(w)
+	atCap := availableCapacity(w) == 0
+	popFull := planetPopComplete(w)
 
 	growthFrac := 0.0
 	if w.Economy.TownGrowthCap > 0 {
 		growthFrac = w.Economy.TownGrowth / w.Economy.TownGrowthCap
 	}
 
-	if atCap && canAffordHouse {
-		b.endBlock(w.SimTime)
-		buildTownCapacity(w)
-		payKind := townCapacityPaymentKind(w)
-		events = append(events, fmt.Sprintf("+house→cap%d (%s=%.0f)", w.Economy.WorkerCapacity, kindName(payKind), townCapacityPaymentAmount(w)))
-		return events
-	}
-
-	supplyBlocked := atCap && !popFull && !canAffordHouse
+	supplyBlocked := atCap && !popFull
 	if supplyBlocked && !b.inBlock {
 		b.inBlock = true
 		b.blockStart = w.SimTime

@@ -78,15 +78,10 @@ type Game struct {
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
 
-	// planet-view selected building (dock tray or town hall tray)
-	selectedBuildingID          int     // index into w.Buildings; -1 = none
-	dockUpgradeRect             sysRect // upgrade button hit-test rect in native screen space
-	dockTrayRect                sysRect // entire dock tray background rect (clicking anywhere dismisses)
-	thCapacityRect              sysRect // capacity button in TH tray
-	thTrayRect                  sysRect // entire TH tray background rect
-	thCapacityAttentionCooldown float64 // counts down to next TH capacity attention pulse
-	thCapacityAttentionLeft     float64 // seconds remaining on the TH first-house attention ripple
-	thFirstCapacityBuildable    bool    // previous-frame state for the first house teaching pulse
+	// planet-view selected building (dock tray)
+	selectedBuildingID int     // index into w.Buildings; -1 = none
+	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
+	dockTrayRect       sysRect // entire dock tray background rect (clicking anywhere dismisses)
 
 	// labor focus control overlay
 	showFocusControl bool
@@ -141,7 +136,6 @@ func New() (*Game, error) {
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
 		workerRatioAttentionCooldown: nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
-		thCapacityAttentionCooldown:  nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
 		sysInjectRect:                make(map[PotentialKind]sysRect, len(resourceFamilies)),
@@ -226,16 +220,6 @@ func missingPlacementCostTargets(w *World, pv *placementPreview) int {
 		return missingCostTargets(w, CampCost(w), 0)
 	}
 	return 0
-}
-
-func townCapacityCostTargets(w *World) int {
-	cost := townCapacityCost(w)
-	switch townCapacityPaymentKind(w) {
-	case KindWater:
-		return missingCostTargets(w, 0, cost)
-	default:
-		return missingCostTargets(w, cost, 0)
-	}
 }
 
 func (g *Game) Update() error {
@@ -369,21 +353,6 @@ func (g *Game) Update() error {
 				activatePulse(g.world, &dock.Pulse)
 			}
 		}
-		firstCapacityBuildable := firstTownCapacityBuildable(g.world)
-		if firstCapacityBuildable && !g.thFirstCapacityBuildable {
-			g.fireTownCapacityAttention()
-		}
-		g.thFirstCapacityBuildable = firstCapacityBuildable
-		if g.thCapacityAttentionLeft > 0 {
-			g.thCapacityAttentionLeft -= dt
-		}
-		g.thCapacityAttentionCooldown -= dt
-		if g.thCapacityAttentionCooldown <= 0 {
-			g.thCapacityAttentionCooldown = nurtureAttentionInterval
-			if firstTownCapacityBuildable(g.world) {
-				g.fireTownCapacityAttention()
-			}
-		}
 		if g.rejectTime > 0 {
 			g.rejectTime -= dt
 			if g.rejectTime < 0 {
@@ -457,13 +426,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawOverlay(screen)
 }
 
-func (g *Game) fireTownCapacityAttention() {
-	if townHall(g.world) == nil {
-		return
-	}
-	g.thCapacityAttentionLeft = nurtureAttentionPulseDur
-}
-
 // intScale returns the floor'd integer view scale, clamped to at least 1.
 func (g *Game) intScale() int {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
@@ -503,14 +465,10 @@ func clearTransientUI(g *Game) {
 	g.showFocusControl = false
 	g.closeBuildingTray()
 	g.workerRatioAttentionReady = false
-	g.thCapacityAttentionLeft = 0
-	g.thFirstCapacityBuildable = false
 }
 
 func (g *Game) closeBuildingTray() {
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
 	g.dockTrayRect = sysRect{}
-	g.thCapacityRect = sysRect{}
-	g.thTrayRect = sysRect{}
 }

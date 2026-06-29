@@ -133,9 +133,7 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		}
 	}
 
-	g.drawTownHallAttention(screen)
 	g.drawDockTray(screen)
-	g.drawTownHallTray(screen)
 	g.drawWorkerHUDOverlay(screen)
 	g.drawFocusControl(screen)
 
@@ -191,23 +189,6 @@ func affordabilityFrac(wood, cost float64) float32 {
 func (g *Game) worldToScreen(v Vec) (float32, float32) {
 	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	return float32(offX + v.X*scale), float32(offY + v.Y*scale)
-}
-
-func (g *Game) drawTownHallAttention(screen *ebiten.Image) {
-	if g.thCapacityAttentionLeft <= 0 || g.world.System.View != ViewPlanet {
-		return
-	}
-	th := townHall(g.world)
-	if th == nil {
-		return
-	}
-	scale, _, _ := viewGeom(g.screenW, g.screenH)
-	center := insetPoint(g.world.Planet, th.Angle, float64(townHallBldInset))
-	cx, cy := g.worldToScreen(center)
-	baseW := float32(townHallBldHalfW*2+6) * float32(scale)
-	baseH := float32(townHallBldHalfH*2+6) * float32(scale)
-	drawAttentionRipple(screen, cx, cy, baseW, baseH,
-		g.thCapacityAttentionLeft, nurtureAttentionPulseDur, colTownHall, 0.25)
 }
 
 func drawAttentionRipple(screen *ebiten.Image, cx, cy, baseW, baseH float32, timeLeft, duration float64, baseColor color.RGBA, startScale float32) {

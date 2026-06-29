@@ -137,7 +137,7 @@ func townFieldFreshScenario() screenshotScenario {
 func townFieldFullScenario() screenshotScenario {
 	w := screenshotWorld(11)
 	mustPlace(w, w.Planet.Fields[0].CenterAngle)
-	w.Economy.WorkerCapacity = maxTownSlots(w)
+	spawnWorkersToMinCompletion(w)
 	w.Economy.Wood = 200
 	return screenshotScenario{
 		name:  "05-town-field-full",
@@ -238,8 +238,6 @@ func affordabilityButtonsScenario() screenshotScenario {
 	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 12
-	w.Economy.CapacityBought = 3
-	w.Economy.WorkerCapacity = 3
 
 	return screenshotScenario{
 		name:    "10-affordability-buttons",
@@ -253,8 +251,6 @@ func townHallSelectedScenario() screenshotScenario {
 	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 80
-	w.Economy.CapacityBought = 1
-	w.Economy.WorkerCapacity = 2
 	thIdx := 0
 	return screenshotScenario{
 		name:           "11-town-hall-selected",
@@ -269,7 +265,6 @@ func wideResourceHUDScenario() screenshotScenario {
 	mustPlace(w, w.Planet.Fields[0].CenterAngle)
 	w.ResourceDiscovered = true
 	w.Economy.Wood = 1234
-	w.Economy.WorkerCapacity = 16
 	w.Workers = nil
 	for i := 0; i < 16; i++ {
 		state := StateIdleWaiting
@@ -387,8 +382,7 @@ func fieldGrowthPlacementCueScenario() screenshotScenario {
 func buildSystemWorld() *World {
 	wood := 50.0
 	p := QAPreset{
-		Seed: 11, PlaceTownHall: true, Workers: 5, SettleSeconds: 2,
-		FillTownCapacity: true, SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, Workers: 5, SettleSeconds: 2, SaturateWoodField: true, Reveal: true,
 		Wood: &wood,
 	}
 	w, err := BuildQAWorld(p)
@@ -437,8 +431,7 @@ func mustBuildQAWorld(p QAPreset) *World {
 func systemViewEchoAwakenablePotentialScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		SelectPlanet: intPtr(1),
 		Wood:         &wood,
 	})
@@ -448,8 +441,7 @@ func systemViewEchoAwakenablePotentialScenario() screenshotScenario {
 func systemViewEchoAwakenedScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		AwakenEchoes: []int{1},
 		SelectPlanet: intPtr(1),
 		Wood:         &wood,
@@ -460,8 +452,7 @@ func systemViewEchoAwakenedScenario() screenshotScenario {
 func lakewoodFreshScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		AwakenEchoes: []int{1},
 		EnterPlanet:  intPtr(1),
 		Wood:         &wood,
@@ -472,8 +463,7 @@ func lakewoodFreshScenario() screenshotScenario {
 func systemViewOneEchoCompletedScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1},
 		SelectPlanet:   intPtr(1),
 		Wood:           &wood,
@@ -484,8 +474,7 @@ func systemViewOneEchoCompletedScenario() screenshotScenario {
 func systemViewBothEchoesCompletedScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1, 2},
 		Wood:           &wood,
 	})
@@ -495,8 +484,7 @@ func systemViewBothEchoesCompletedScenario() screenshotScenario {
 func systemViewForestPotentialScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		Wood: &wood,
 	})
 	return screenshotScenario{name: "24-system-view-forest-potential", world: w, fullHUD: true}
@@ -505,8 +493,7 @@ func systemViewForestPotentialScenario() screenshotScenario {
 func tightGroveFreshScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		AwakenEchoes:      []int{2},
 		EnterPlanet:       intPtr(2),
 		EchoPlaceTownHall: true,
@@ -518,14 +505,12 @@ func tightGroveFreshScenario() screenshotScenario {
 func lakewoodNearCompleteScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
-		AwakenEchoes:         []int{1},
-		EnterPlanet:          intPtr(1),
-		EchoPlaceTownHall:    true,
-		EchoFillTownCapacity: true,
-		EchoNearSaturate:     true,
-		Wood:                 &wood,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		AwakenEchoes:      []int{1},
+		EnterPlanet:       intPtr(1),
+		EchoPlaceTownHall: true,
+		EchoNearSaturate:  true,
+		Wood:              &wood,
 	})
 	return screenshotScenario{name: "26-lakewood-near-complete", world: w, fullHUD: true}
 }
@@ -533,8 +518,7 @@ func lakewoodNearCompleteScenario() screenshotScenario {
 func lakewoodDebugInfluenceScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		AwakenEchoes: []int{1},
 		EnterPlanet:  intPtr(1),
 		Wood:         &wood,
@@ -545,8 +529,7 @@ func lakewoodDebugInfluenceScenario() screenshotScenario {
 func systemViewLakewoodCompletedScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1},
 		Wood:           &wood,
 	})
@@ -556,8 +539,7 @@ func systemViewLakewoodCompletedScenario() screenshotScenario {
 func systemViewUnknownWaterResonanceScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1},
 		Wood:           &wood,
 	})
@@ -570,8 +552,7 @@ func systemViewFrontierPreAwakenable() screenshotScenario {
 	wood := 50.0
 	sel := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		SelectPlanet: &sel,
 		Wood:         &wood,
 	})
@@ -583,8 +564,7 @@ func systemViewFrontierAwakenableScenario() screenshotScenario {
 	forestPot := 1
 	sel := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:  []int{1},
 		ForestPotential: &forestPot,
 		SelectPlanet:    &sel,
@@ -597,8 +577,7 @@ func waterFrontierFreshScenario() screenshotScenario {
 	wood := 50.0
 	enter := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:    []int{1},
 		AwakenFrontier:    true,
 		EnterPlanet:       &enter,
@@ -611,8 +590,7 @@ func waterFrontierFreshScenario() screenshotScenario {
 func systemViewFrontierAwakenedScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1},
 		AwakenFrontier: true,
 		SelectPlanet:   intPtr(3),
@@ -625,8 +603,7 @@ func waterPlanetFirstDockScenario() screenshotScenario {
 	wood := 500.0
 	enter := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:    []int{1},
 		AwakenFrontier:    true,
 		EnterPlanet:       &enter,
@@ -648,8 +625,7 @@ func waterPlanetSparklesScenario() screenshotScenario {
 	wood := 50.0
 	enter := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:     []int{1},
 		AwakenFrontier:     true,
 		EnterPlanet:        &enter,
@@ -669,8 +645,7 @@ func waterPlanetDockUpgradeSelectedScenario() screenshotScenario {
 	water := dockL2WaterCost * 2
 	enter := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:    []int{1},
 		AwakenFrontier:    true,
 		EnterPlanet:       &enter,
@@ -696,8 +671,7 @@ func waterPlanetNearCompleteNoL2DockScenario() screenshotScenario {
 	wood := 50.0
 	enter := 3
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:     []int{1},
 		AwakenFrontier:     true,
 		EnterPlanet:        &enter,
@@ -717,8 +691,7 @@ func dockConeVisibilityScenario() screenshotScenario {
 	// waterFrontierLakeAngle = Pi/2, the bottom-center of the water arc.
 	dockAngle := waterFrontierLakeAngle
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes:    []int{1},
 		AwakenFrontier:    true,
 		EnterPlanet:       &enter,
@@ -735,12 +708,11 @@ func dockConeVisibilityScenario() screenshotScenario {
 func workerRatioUIOpenScenario() screenshotScenario {
 	frontierIdx := 3
 	p, err := BuildQAWorld(QAPreset{
-		Name:                 "water-planet-worker-ratio",
-		AwakenFrontier:       true,
-		EnterPlanet:          &frontierIdx,
-		EchoPlaceTownHall:    true,
-		EchoFillTownCapacity: true,
-		SaturateWaterField:   true,
+		Name:               "water-planet-worker-ratio",
+		AwakenFrontier:     true,
+		EnterPlanet:        &frontierIdx,
+		EchoPlaceTownHall:  true,
+		SaturateWaterField: true,
 	})
 	if err != nil {
 		// Return a fallback world so the screenshot harness doesn't crash.
@@ -749,7 +721,6 @@ func workerRatioUIOpenScenario() screenshotScenario {
 	// Ensure water is discovered and workers are present.
 	p.Economy.WaterDiscovered = true
 	p.ResourceDiscovered = true
-	p.Economy.WorkerCapacity = 10
 	for len(p.Workers) < 4 {
 		spawnWorkerAtTownHall(p)
 	}
@@ -773,19 +744,17 @@ func workerRatioUIOpenScenario() screenshotScenario {
 func workerRatioHUDScenario() screenshotScenario {
 	frontierIdx := 3
 	p, err := BuildQAWorld(QAPreset{
-		Name:                 "water-planet-worker-ratio",
-		AwakenFrontier:       true,
-		EnterPlanet:          &frontierIdx,
-		EchoPlaceTownHall:    true,
-		EchoFillTownCapacity: true,
-		SaturateWaterField:   true,
+		Name:               "water-planet-worker-ratio",
+		AwakenFrontier:     true,
+		EnterPlanet:        &frontierIdx,
+		EchoPlaceTownHall:  true,
+		SaturateWaterField: true,
 	})
 	if err != nil {
 		return screenshotScenario{name: "39-worker-ratio-hud", world: NewWorld(), fullHUD: true}
 	}
 	p.Economy.WaterDiscovered = true
 	p.ResourceDiscovered = true
-	p.Economy.WorkerCapacity = 10
 	for len(p.Workers) < 4 {
 		spawnWorkerAtTownHall(p)
 	}
@@ -805,15 +774,13 @@ func workerRatioHUDScenario() screenshotScenario {
 // visible in the system-view overlay and both Potential tokens banked.
 func waterPlanetCompletedSystemViewScenario() screenshotScenario {
 	w, err := BuildQAWorld(QAPreset{
-		Name:              "water-planet-completed",
-		Seed:              11,
-		PlaceTownHall:     true,
-		FillTownCapacity:  true,
-		SaturateWoodField: true,
-		Reveal:            true,
-		CompleteEchoes:    []int{1, 2},
-		AwakenFrontier:    true,
-		CompleteFrontier:  true,
+		Name:          "water-planet-completed",
+		Seed:          11,
+		PlaceTownHall: true, SaturateWoodField: true,
+		Reveal:           true,
+		CompleteEchoes:   []int{1, 2},
+		AwakenFrontier:   true,
+		CompleteFrontier: true,
 	})
 	if err != nil {
 		return screenshotScenario{name: "40-water-planet-completed-system-view", world: NewWorld(), fullHUD: true}
@@ -832,8 +799,7 @@ func waterPlanetCompletedSystemViewScenario() screenshotScenario {
 func m5SystemViewRateAllocationScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		CompleteEchoes: []int{1},
 		SelectPlanet:   intPtr(1),
 		Wood:           &wood,
@@ -848,8 +814,7 @@ func m5PlanetViewFractionalCirclesScenario() screenshotScenario {
 	wood := 50.0
 	enter := 1
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		AwakenEchoes:      []int{1},
 		EnterPlanet:       &enter,
 		EchoPlaceTownHall: true,
@@ -864,8 +829,7 @@ func m5PlanetViewFractionalCirclesScenario() screenshotScenario {
 func m5AwakenBootstrapScenario() screenshotScenario {
 	enter := 1
 	w := mustBuildQAWorld(QAPreset{
-		Seed: 11, PlaceTownHall: true, FillTownCapacity: true,
-		SaturateWoodField: true, Reveal: true,
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		AwakenEchoes: []int{1},
 		EnterPlanet:  &enter,
 	})
@@ -885,7 +849,6 @@ func mustPlace(w *World, angle float64) {
 }
 
 func mustBuyWorker(w *World) {
-	w.Economy.WorkerCapacity++
 	if spawnWorkerAtTownHall(w) == nil {
 		panic("screenshot setup failed to spawn worker")
 	}

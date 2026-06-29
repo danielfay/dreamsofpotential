@@ -13,8 +13,7 @@ func bootstrapStartingPlanet(w *World) {
 	if f0 == nil || !placeBuilding(w, f0.CenterAngle) {
 		panic("bootstrapStartingPlanet: cannot place starting TH")
 	}
-	w.Economy.WorkerCapacity = maxTownSlots(w)
-	addWorker(w)
+	spawnWorkersToMinCompletion(w)
 	fillWoodFieldNodes(w, false)
 	w.ResourceDiscovered = true
 	triggerUnlock(w)
