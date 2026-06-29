@@ -83,10 +83,9 @@ var (
 	colWorkerLadenWater = color.RGBA{R: 60, G: 160, B: 255, A: 255}  // carrying water (blue)
 
 	// Building / UI button colours.
-	colTownHall     = color.RGBA{R: 215, G: 120, B: 45, A: 255} // town hall — warm terracotta
-	colBuilding     = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // camp — dark brown
-	colDock         = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // dock — camp brown
-	colTownCapacity = color.RGBA{R: 205, G: 105, B: 48, A: 255} // town capacity button — lighter orange
+	colTownHall = color.RGBA{R: 215, G: 120, B: 45, A: 255} // town hall — warm terracotta
+	colBuilding = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // camp — dark brown
+	colDock     = color.RGBA{R: 100, G: 62, B: 36, A: 255}  // dock — camp brown
 )
 
 const (

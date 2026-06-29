@@ -8,8 +8,6 @@
   "reveal": true,
   "awakenEchoes": [1],
   "enterPlanet": 1,
-  "echoPlaceTownHall": true,
-  "echoFillTownCapacity": true,
-  "echoNearSaturate": true,
+  "echoPlaceTownHall": true,  "echoNearSaturate": true,
   "wood": 50
 }

@@ -50,7 +50,6 @@ func newFocusWorld(t *testing.T, numWorkers int) *World {
 	}
 
 	// Spawn workers.
-	w.Economy.WorkerCapacity = numWorkers + 10
 	for len(w.Workers) < numWorkers {
 		if spawnWorkerAtTownHall(w) == nil {
 			t.Fatalf("setup: could not spawn worker %d", len(w.Workers)+1)
@@ -274,7 +273,6 @@ func TestFocusRatioMaintained(t *testing.T) {
 	w.LaborFocus = map[ResourceKind]int{KindWood: 2, KindWater: 1}
 
 	// Spawn two additional workers: they should fill the deficit in order.
-	w.Economy.WorkerCapacity = 10
 	wk2 := spawnWorkerAtTownHall(w)
 	if wk2 == nil {
 		t.Fatal("failed to spawn second worker")
@@ -330,7 +328,6 @@ func TestAutoProofSplit(t *testing.T) {
 	}
 
 	// Spawn 3 workers (without LaborFocus set, so they start unfocused).
-	w.Economy.WorkerCapacity = 10
 	for range 3 {
 		spawnWorkerAtTownHall(w)
 	}
@@ -487,7 +484,6 @@ func TestWaterWorkerAbortsMidUnload(t *testing.T) {
 // correctly.
 func TestRatioBalancedOverflow(t *testing.T) {
 	w := newFocusWorld(t, 6)
-	w.Economy.WorkerCapacity = 20
 
 	// Simulate: player saved a 1:1 ratio (3 wood / 3 water) and workers are
 	// already assigned accordingly. FocusedKind must reflect the ratio so the
@@ -544,7 +540,6 @@ func TestRatioBalancedOverflow(t *testing.T) {
 // sends overflow workers to wood.
 func TestRatioBalancedOverflowWoodOnly(t *testing.T) {
 	w := newFocusWorld(t, 6)
-	w.Economy.WorkerCapacity = 20
 
 	w.LaborFocus = map[ResourceKind]int{KindWood: 6, KindWater: 0}
 	w.SavedLaborRatio = map[ResourceKind]int{KindWood: 6, KindWater: 0}
@@ -579,7 +574,6 @@ func TestOverflowWorkerStartsWorking(t *testing.T) {
 
 	// Focus: 5 wood / 0 water — total exactly equals current worker count.
 	w.LaborFocus = map[ResourceKind]int{KindWood: 5, KindWater: 0}
-	w.Economy.WorkerCapacity = 10
 
 	// Settle all 5 workers onto wood nodes.
 	for range 120 {
@@ -617,7 +611,6 @@ func TestOverflowWorkerStartsWorking(t *testing.T) {
 // worker is bounced between wood dispatch and reconcileLaborFocus recall.
 func TestSpawnWithIdleWaterWorkerExtendsFocus(t *testing.T) {
 	w := newFocusWorld(t, 3)
-	w.Economy.WorkerCapacity = 10
 
 	// Manually wire the state that triggers the bug:
 	// 2 wood workers active, 1 water worker idle with FocusedKind cleared

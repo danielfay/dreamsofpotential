@@ -169,9 +169,6 @@ func TestFoundingWorkerOnTownHallPlacement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildQAWorld: %v", err)
 	}
-	if w.Economy.WorkerCapacity != 1 {
-		t.Errorf("WorkerCapacity: got %d, want 1 (founding slot)", w.Economy.WorkerCapacity)
-	}
 	if len(w.Workers) != 1 {
 		t.Errorf("expected exactly 1 founding worker, got %d", len(w.Workers))
 	}
@@ -182,14 +179,13 @@ func TestFoundingWorkerOnTownHallPlacement(t *testing.T) {
 
 func TestBuildQAWorld_TownGrowthArrival(t *testing.T) {
 	p := QAPreset{
-		Seed:           11,
-		PlaceTownHall:  true,
-		Workers:        2,
-		SettleSeconds:  1,
-		WorkerCapacity: qaPtr(3),
-		TownGrowthCap:  qaPtr(10.0),
-		TownGrowth:     qaPtr(8.0),
-		Wood:           qaPtr(60.0),
+		Seed:          11,
+		PlaceTownHall: true,
+		Workers:       2,
+		SettleSeconds: 1,
+		TownGrowthCap: qaPtr(10.0),
+		TownGrowth:    qaPtr(8.0),
+		Wood:          qaPtr(60.0),
 	}
 	w, err := BuildQAWorld(p)
 	if err != nil {
@@ -200,9 +196,6 @@ func TestBuildQAWorld_TownGrowthArrival(t *testing.T) {
 	}
 	if len(w.Workers) != 2 {
 		t.Errorf("expected 2 workers, got %d", len(w.Workers))
-	}
-	if w.Economy.WorkerCapacity != 3 {
-		t.Errorf("WorkerCapacity: got %d, want 3", w.Economy.WorkerCapacity)
 	}
 	if w.Economy.TownGrowthCap != 10 {
 		t.Errorf("TownGrowthCap: got %.2f, want 10", w.Economy.TownGrowthCap)
@@ -237,26 +230,23 @@ func TestBuildQAWorld_TownGrowthCapacityBlocked(t *testing.T) {
 	}
 }
 
-func TestBuildQAWorld_FillTownCapacity(t *testing.T) {
+func TestBuildQAWorld_SpawnMinCompletionPop(t *testing.T) {
 	p := QAPreset{
-		Seed:             11,
-		PlaceTownHall:    true,
-		FillTownCapacity: true,
-		Wood:             qaPtr(200.0),
+		Seed:              11,
+		PlaceTownHall:     true,
+		SaturateWoodField: true,
+		Reveal:            true,
+		Wood:              qaPtr(200.0),
 	}
 	w, err := BuildQAWorld(p)
 	if err != nil {
 		t.Fatalf("BuildQAWorld: %v", err)
 	}
-	max := maxTownSlots(w)
-	if max == 0 {
-		t.Fatal("expected maxTownSlots > 0 after Town Hall placement")
+	if w.Planet.MinCompletionPop == 0 {
+		t.Fatal("expected MinCompletionPop > 0")
 	}
-	if w.Economy.WorkerCapacity != max {
-		t.Errorf("WorkerCapacity: got %d, want %d (geometry max)", w.Economy.WorkerCapacity, max)
-	}
-	if !townFieldFull(w) {
-		t.Error("townFieldFull should return true when WorkerCapacity == maxTownSlots")
+	if !planetPopComplete(w) {
+		t.Errorf("planetPopComplete should be true after reveal setup; workers=%d min=%d", len(w.Workers), w.Planet.MinCompletionPop)
 	}
 }
 
@@ -282,7 +272,6 @@ func TestBuildQAWorld_SystemRevealPretrigger(t *testing.T) {
 		PlaceTownHall:           true,
 		Workers:                 5,
 		SettleSeconds:           2,
-		FillTownCapacity:        true,
 		NearWoodFieldSaturation: true,
 		Wood:                    qaPtr(50.0),
 	}
@@ -300,8 +289,8 @@ func TestBuildQAWorld_SystemRevealPretrigger(t *testing.T) {
 	if !fieldCanSpawnNode(w, f) {
 		t.Error("field should still have one spawn slot remaining")
 	}
-	if !townFieldFull(w) {
-		t.Error("town should be at max capacity")
+	if planetPopComplete(w) {
+		t.Error("planet population should not be complete in this pretrigger state")
 	}
 }
 
@@ -311,7 +300,6 @@ func TestBuildQAWorld_SystemViewPostreveal(t *testing.T) {
 		PlaceTownHall:     true,
 		Workers:           5,
 		SettleSeconds:     2,
-		FillTownCapacity:  true,
 		SaturateWoodField: true,
 		Reveal:            true,
 		Wood:              qaPtr(50.0),
@@ -341,7 +329,6 @@ func TestBuildQAWorld_CompleteFrontier(t *testing.T) {
 	p := QAPreset{
 		Seed:              11,
 		PlaceTownHall:     true,
-		FillTownCapacity:  true,
 		SaturateWoodField: true,
 		Reveal:            true,
 		CompleteEchoes:    []int{1, 2},

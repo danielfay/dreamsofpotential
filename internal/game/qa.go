@@ -26,10 +26,8 @@ type QAPreset struct {
 	FieldExpAbs     *float64 `json:"fieldExpAbs"`     // EXP = abs value
 	Wood            *float64 `json:"wood"`
 	// Town Growth overrides — applied after workers, before final Wood stamp.
-	TownGrowth       *float64 `json:"townGrowth"`
-	TownGrowthCap    *float64 `json:"townGrowthCap"`
-	WorkerCapacity   *int     `json:"workerCapacity"`
-	FillTownCapacity bool     `json:"fillTownCapacity"` // set WorkerCapacity to the geometry max
+	TownGrowth    *float64 `json:"townGrowth"`
+	TownGrowthCap *float64 `json:"townGrowthCap"`
 
 	// Wood field saturation — applied after settle and field EXP overrides.
 	// NearWoodFieldSaturation fills the field leaving exactly one spawn slot.
@@ -54,7 +52,7 @@ type QAPreset struct {
 	AwakenFrontier bool `json:"awakenFrontier"`
 
 	// CompleteFrontier drives the frontier (Planets index 3) to completion:
-	// places a Town Hall, fills town capacity, saturates both wood and water fields,
+	// places a Town Hall, fills minimum completion population, saturates both wood and water fields,
 	// places and upgrades a dock to Level 2, then calls checkActivePlanetCompletion.
 	// Requires AwakenFrontier (or frontier already awakened). Leaves the world in
 	// system view on the starting planet. Applied after AwakenFrontier.
@@ -71,10 +69,9 @@ type QAPreset struct {
 	EnterPlanet *int `json:"enterPlanet"`
 
 	// Echo setup — applied to the entered planet when EnterPlanet is set.
-	EchoPlaceTownHall    bool      `json:"echoPlaceTownHall"`
-	EchoFillTownCapacity bool      `json:"echoFillTownCapacity"`
-	EchoNearSaturate     bool      `json:"echoNearSaturate"` // leave exactly one spawn slot
-	EchoDocks            []float64 `json:"echoDocks"`        // dock angles placed via free placement after EchoPlaceTownHall
+	EchoPlaceTownHall bool      `json:"echoPlaceTownHall"`
+	EchoNearSaturate  bool      `json:"echoNearSaturate"` // leave exactly one spawn slot
+	EchoDocks         []float64 `json:"echoDocks"`        // dock angles placed via free placement after EchoPlaceTownHall
 
 	// Water sparkle saturation — applied after echo setup.
 	// SaturateWaterField fills all known water fields with sparkles until no more can spawn.
@@ -126,9 +123,6 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 	// Workers — spawn without wood cost; Town Hall placement already created one
 	// founding worker, so start from the current count.
 	if p.Workers > len(w.Workers) {
-		if w.Economy.WorkerCapacity < p.Workers {
-			w.Economy.WorkerCapacity = p.Workers
-		}
 		for len(w.Workers) < p.Workers {
 			if spawnWorkerAtTownHall(w) == nil {
 				return nil, fmt.Errorf("failed to spawn worker %d of %d (no Town Hall)", len(w.Workers)+1, p.Workers)
@@ -172,15 +166,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		fillWoodFieldNodes(w, p.NearWoodFieldSaturation)
 	}
 
-	// Town Growth overrides — applied after workers so capacity is already known.
-	// Must run before Reveal so townFieldFull() sees the final WorkerCapacity.
-	if p.FillTownCapacity {
-		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-			w.Economy.WorkerCapacity = max
-		}
-	} else if p.WorkerCapacity != nil && *p.WorkerCapacity > w.Economy.WorkerCapacity {
-		w.Economy.WorkerCapacity = *p.WorkerCapacity
-	}
+	// Town Growth overrides — applied after workers.
 	if p.TownGrowthCap != nil {
 		w.Economy.TownGrowthCap = *p.TownGrowthCap
 	}
@@ -195,9 +181,10 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 
 	// System reveal — call triggerUnlock if both mastery gates are met.
 	if p.Reveal {
+		spawnWorkersToMinCompletion(w)
 		if !forestPlanetComplete(w) {
-			return nil, fmt.Errorf("Reveal: world not mastered (town full=%v, field saturated=%v)",
-				townFieldFull(w), func() bool {
+			return nil, fmt.Errorf("Reveal: world not mastered (pop complete=%v, field saturated=%v)",
+				planetPopComplete(w), func() bool {
 					f := fieldForKind(w, KindWood)
 					return f != nil && !fieldCanSpawnNode(w, f)
 				}())
@@ -241,9 +228,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		if !ok || !placeBuilding(w, thAngle) {
 			return nil, fmt.Errorf("completeEchoes: failed to place Town Hall on echo %d", idx)
 		}
-		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-			w.Economy.WorkerCapacity = max
-		}
+		spawnWorkersToMinCompletion(w)
 		fillWoodFieldNodes(w, false)
 		checkActivePlanetCompletion(w)
 		if !w.System.Planets[idx].Completed {
@@ -277,9 +262,7 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		if !ok || !placeBuilding(w, thAngle) {
 			return nil, fmt.Errorf("completeFrontier: cannot place Town Hall on frontier")
 		}
-		if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-			w.Economy.WorkerCapacity = max
-		}
+		spawnWorkersToMinCompletion(w)
 		fillWoodFieldNodes(w, false)
 		if !placeBuildingWithFreePlacement(w, waterFrontierLakeAngle, true) {
 			return nil, fmt.Errorf("completeFrontier: cannot place dock at frontier lake angle")
@@ -325,11 +308,6 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			thAngle, ok := findValidBuildingAngle(w)
 			if !ok || !placeBuilding(w, thAngle) {
 				return nil, fmt.Errorf("echoPlaceTownHall: failed to place Town Hall")
-			}
-		}
-		if p.EchoFillTownCapacity {
-			if max := maxTownSlots(w); max > w.Economy.WorkerCapacity {
-				w.Economy.WorkerCapacity = max
 			}
 		}
 		if p.EchoNearSaturate {
@@ -431,6 +409,14 @@ func fillWaterFieldSparkles(w *World) {
 			if result := spawnSparkle(w, f); result.Outcome != growthOutcomeSpawnedNode {
 				break
 			}
+		}
+	}
+}
+
+func spawnWorkersToMinCompletion(w *World) {
+	for len(w.Workers) < w.Planet.MinCompletionPop {
+		if spawnWorkerAtTownHall(w) == nil {
+			return
 		}
 	}
 }

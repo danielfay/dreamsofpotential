@@ -187,8 +187,12 @@ func (g *Game) handleInput() {
 	}
 	g.handlePlanetViewSystemReturn()
 
-	// Right-click: deselect any selected building; in debug mode also cancel placement.
+	// Right-click: cancel pending destructive placement, deselect building, or (debug) cancel placing.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+		if g.pendingDestructive {
+			g.pendingDestructive = false
+			return
+		}
 		if g.debug && g.placing {
 			g.placing = false
 			g.freePlacing = false
@@ -203,17 +207,6 @@ func (g *Game) handleInput() {
 	}
 	mx, my := ebiten.CursorPosition()
 	fmx, fmy := float32(mx), float32(my)
-
-	// TH tray: any click inside is consumed. The tray stays open so capacity can
-	// be bought repeatedly while resources allow.
-	if g.thTrayRect.contains(fmx, fmy) {
-		if g.thCapacityRect.contains(fmx, fmy) {
-			if !buildTownCapacity(g.world) && !townCapacityAffordable(g.world) {
-				g.flashCostTargets(townCapacityCostTargets(g.world))
-			}
-		}
-		return
-	}
 
 	// Dock tray: any click inside is consumed. The tray stays open so future
 	// multi-level upgrades can be bought repeatedly while resources allow.
@@ -233,17 +226,38 @@ func (g *Game) handleInput() {
 		return
 	}
 
-	// Hit-test selectable buildings (dock, town hall). Building selection takes
+	// Hit-test selectable buildings. Building selection takes
 	// priority over placement so clicking on a building opens its tray.
 	wp := g.screenToWorld(mx, my)
 	for i, b := range g.world.Buildings {
-		if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+		if b.Kind == KindDock && wp.Dist(b.Pos) <= 8.0 {
 			if g.selectedBuildingID != i {
 				g.closeBuildingTray()
 			}
 			g.selectedBuildingID = i
 			return
 		}
+	}
+
+	// Pending destructive placement: second click confirms if near the ghost, cancels otherwise.
+	if g.pendingDestructive {
+		confirmed := false
+		wp := g.screenToWorld(mx, my)
+		dist := wp.Dist(g.world.Planet.Center)
+		if dist >= g.world.Planet.Radius-rimSnapBand && dist <= g.world.Planet.Radius+rimSnapBand {
+			angle := g.world.Planet.AngleOf(wp)
+			half := buildingHardHalfArc(KindLoggingCamp, g.world.Planet.Radius)
+			if math.Abs(normAngle(angle-g.pendingPreview.Angle)) <= half*2 {
+				placeBuildingWithFreePlacement(g.world, g.pendingPreview.Angle, g.pendingDestructiveFreePlacing)
+				if !g.debug {
+					g.freePlacing = false
+				}
+				confirmed = true
+			}
+		}
+		g.pendingDestructive = false
+		_ = confirmed
+		return
 	}
 
 	// In debug mode, placement requires g.placing to be explicitly enabled.
@@ -269,6 +283,14 @@ func (g *Game) handleInput() {
 	}
 	if !pv.Valid {
 		g.rejectTime = microPulseTime
+		return
+	}
+	if len(pv.Blocked) > 0 {
+		// Destructive: trees in the footprint — require a second confirming click.
+		pv.Locked = true
+		g.pendingPreview = *pv
+		g.pendingDestructiveFreePlacing = g.freePlacing
+		g.pendingDestructive = true
 		return
 	}
 	if placeBuildingWithFreePlacement(g.world, pv.Angle, g.freePlacing) {
@@ -303,8 +325,7 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			Angle: angle,
 			Pos:   w.Planet.RimPoint(angle),
 		})
-		// Grant the founding capacity slot and spawn the first worker immediately.
-		w.Economy.WorkerCapacity = 1
+		// Spawn the founding worker immediately.
 		w.Economy.TownGrowthCap = townGrowthInitialCap
 		spawnWorkerAtTownHall(w)
 		// Awaken all known fields: distribute starting nodes across them.
@@ -319,12 +340,13 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			w.Economy.Water -= dockExtWaterCost
 		}
 		w.Buildings = append(w.Buildings, &Building{
-			ID:        id,
-			Kind:      KindDock,
-			Level:     1,
-			Angle:     angle,
-			Pos:       w.Planet.RimPoint(angle),
-			Extension: pv.Extension,
+			ID:           id,
+			Kind:         KindDock,
+			Level:        1,
+			Angle:        angle,
+			Pos:          w.Planet.RimPoint(angle),
+			WorkCapacity: true,
+			Extension:    pv.Extension,
 		})
 		if firstDock {
 			seedInitialDockSparkles(w, w.Buildings[len(w.Buildings)-1])
@@ -347,13 +369,37 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 		Angle: angle,
 		Pos:   w.Planet.RimPoint(angle),
 	})
+	clearOverlappingNodes(w, pv.Blocked)
 	return true
+}
+
+// clearOverlappingNodes removes nodes whose footprint overlapped a newly placed
+// camp. Workers whose NodeID referenced a cleared node will get nil from
+// findNode on their next tick and safely return home.
+func clearOverlappingNodes(w *World, blocked []*ResourceNode) {
+	if len(blocked) == 0 {
+		return
+	}
+	ids := make(map[int]bool, len(blocked))
+	for _, n := range blocked {
+		ids[n.ID] = true
+	}
+	kept := w.Nodes[:0]
+	for _, n := range w.Nodes {
+		if !ids[n.ID] {
+			kept = append(kept, n)
+		}
+	}
+	w.Nodes = kept
 }
 
 // curPlacementPreview returns the placement preview for the current cursor
 // position, or nil when placement is inactive, locked, or the cursor is over
 // a selectable building or too far from the rim.
 func (g *Game) curPlacementPreview() *placementPreview {
+	if g.pendingDestructive {
+		return &g.pendingPreview
+	}
 	if !g.placing {
 		return nil
 	}
@@ -366,7 +412,7 @@ func (g *Game) curPlacementPreview() *placementPreview {
 	if !g.hud.pointInHUD(mx, my, g.debug) {
 		wp := g.screenToWorld(mx, my)
 		for _, b := range g.world.Buildings {
-			if (b.Kind == KindDock || b.Kind == KindTownHall) && wp.Dist(b.Pos) <= 8.0 {
+			if b.Kind == KindDock && wp.Dist(b.Pos) <= 8.0 {
 				return nil
 			}
 		}

@@ -5,92 +5,6 @@ import (
 	"testing"
 )
 
-func TestTownCapacityCostProgression(t *testing.T) {
-	w := NewWorld()
-	want0 := townCapacityBaseCost * math.Pow(townCapacityCostGrowth, 0)
-	if got := townCapacityCost(w); math.Abs(got-want0) > 1e-9 {
-		t.Errorf("townCapacityCost with CapacityBought=0: got %.4f, want %.4f", got, want0)
-	}
-	w.Economy.CapacityBought = 1
-	want1 := townCapacityBaseCost * math.Pow(townCapacityCostGrowth, 1)
-	if got := townCapacityCost(w); math.Abs(got-want1) > 1e-9 {
-		t.Errorf("townCapacityCost with CapacityBought=1: got %.4f, want %.4f", got, want1)
-	}
-	w.Economy.CapacityBought = 3
-	want3 := townCapacityBaseCost * math.Pow(townCapacityCostGrowth, 3)
-	if got := townCapacityCost(w); math.Abs(got-want3) > 1e-9 {
-		t.Errorf("townCapacityCost with CapacityBought=3: got %.4f, want %.4f", got, want3)
-	}
-}
-
-func TestFirstTownCapacityBuildable(t *testing.T) {
-	w := NewWorld()
-	if firstTownCapacityBuildable(w) {
-		t.Fatal("first capacity should not be buildable without a Town Hall")
-	}
-
-	w.Buildings = append(w.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
-	})
-	w.Economy.WorkerCapacity = 1
-	w.Economy.Wood = townCapacityCost(w) - 1
-	if firstTownCapacityBuildable(w) {
-		t.Fatal("first capacity should not be buildable before it is affordable")
-	}
-
-	w.Economy.Wood = townCapacityCost(w)
-	if !firstTownCapacityBuildable(w) {
-		t.Fatal("first capacity should be buildable once the first house is affordable")
-	}
-
-	w.Economy.WorkerCapacity = 2
-	if firstTownCapacityBuildable(w) {
-		t.Fatal("first capacity attention should stop after the first paid house")
-	}
-}
-
-func TestTownCapacityPaymentKindPrefersWoodOnTie(t *testing.T) {
-	w := NewWorld()
-	w.Economy.Wood = 80
-	w.Economy.Water = 80
-	if got := townCapacityPaymentKind(w); got != KindWood {
-		t.Fatalf("townCapacityPaymentKind tie = %v, want %v", got, KindWood)
-	}
-}
-
-func TestTownCapacityPaymentKindBlocksWaterBeforeFirstDock(t *testing.T) {
-	w := NewWorld()
-	w.Buildings = append(w.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
-	})
-	w.Economy.Wood = 20
-	w.Economy.Water = 200
-
-	if got := townCapacityPaymentKind(w); got != KindWood {
-		t.Fatalf("townCapacityPaymentKind before first dock = %v, want %v", got, KindWood)
-	}
-	if townCapacityAffordable(w) {
-		t.Fatal("townCapacityAffordable should stay false when only blocked water is available")
-	}
-}
-
-func TestTownCapacityPaymentKindAllowsWaterAfterFirstDock(t *testing.T) {
-	w := NewWorld()
-	w.Buildings = append(w.Buildings,
-		&Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)},
-		&Building{Kind: KindDock, Angle: 1, Pos: w.Planet.RimPoint(1)},
-	)
-	w.Economy.Wood = 20
-	w.Economy.Water = 200
-
-	if got := townCapacityPaymentKind(w); got != KindWater {
-		t.Fatalf("townCapacityPaymentKind after first dock = %v, want %v", got, KindWater)
-	}
-	if !townCapacityAffordable(w) {
-		t.Fatal("townCapacityAffordable should use water once water has local producer support")
-	}
-}
-
 func TestCampCostProgression(t *testing.T) {
 	w := NewWorld()
 	// First logging camp (CampsBought==0) costs campBaseCost.
@@ -121,80 +35,6 @@ func TestMissingCostTargetsOnlyShortResources(t *testing.T) {
 	}
 	if got := missingCostTargets(w, 120, 10); got != costPulseWood|costPulseWater {
 		t.Fatalf("wood+water shortage mask = %d, want %d", got, costPulseWood|costPulseWater)
-	}
-}
-
-func TestBuildTownCapacityNoTownHall(t *testing.T) {
-	w := NewWorld()
-	w.Economy.Wood = 1000
-	if buildTownCapacity(w) {
-		t.Error("buildTownCapacity with no Town Hall should return false")
-	}
-	if w.Economy.WorkerCapacity != 0 {
-		t.Errorf("WorkerCapacity should stay 0 when no Town Hall; got %d", w.Economy.WorkerCapacity)
-	}
-}
-
-func TestBuildTownCapacitySpends(t *testing.T) {
-	w := NewWorld()
-	w.Buildings = append(w.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
-	})
-	w.Economy.WorkerCapacity = 1 // founding slot occupied (1 worker will exist)
-	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
-	cost := townCapacityCost(w)
-	w.Economy.Wood = cost
-
-	if !buildTownCapacity(w) {
-		t.Fatal("buildTownCapacity with enough wood should succeed")
-	}
-	if w.Economy.WorkerCapacity != 2 {
-		t.Errorf("WorkerCapacity: got %d, want 2", w.Economy.WorkerCapacity)
-	}
-	if w.Economy.CapacityBought != 1 {
-		t.Errorf("CapacityBought: got %d, want 1", w.Economy.CapacityBought)
-	}
-	if math.Abs(w.Economy.Wood) > 1e-9 {
-		t.Errorf("Wood after purchase: got %.4f, want 0", w.Economy.Wood)
-	}
-}
-
-func TestBuildTownCapacitySpendsWaterWhenWaterIsHigher(t *testing.T) {
-	w := NewWorld()
-	w.Buildings = append(w.Buildings,
-		&Building{Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0)},
-		&Building{Kind: KindDock, Angle: 1, Pos: w.Planet.RimPoint(1)},
-	)
-	w.Economy.WorkerCapacity = 1
-	w.Workers = []*Worker{{ID: 0, State: StateIdleWaiting, NodeID: -1, TargetNodeID: -1, PendingNodeID: -1}}
-	cost := townCapacityCost(w)
-	w.Economy.Wood = cost - 1
-	w.Economy.Water = cost + 20
-
-	if !buildTownCapacity(w) {
-		t.Fatal("buildTownCapacity with enough water should succeed")
-	}
-	if got := w.Economy.Water; math.Abs(got-20) > 1e-9 {
-		t.Errorf("Water after purchase: got %.4f, want 20", got)
-	}
-	if got := w.Economy.Wood; math.Abs(got-(cost-1)) > 1e-9 {
-		t.Errorf("Wood should be unchanged: got %.4f, want %.4f", got, cost-1)
-	}
-}
-
-func TestBuildTownCapacityInsufficientWood(t *testing.T) {
-	w := NewWorld()
-	w.Buildings = append(w.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
-	})
-	w.Economy.Wood = 0
-	w.Economy.Water = 0
-
-	if buildTownCapacity(w) {
-		t.Error("buildTownCapacity with no affordable payment resource should return false")
-	}
-	if w.Economy.WorkerCapacity != 0 {
-		t.Errorf("WorkerCapacity should stay 0 when purchase fails; got %d", w.Economy.WorkerCapacity)
 	}
 }
 
@@ -319,10 +159,14 @@ func TestPlaceBuildingRefusesNodeFootprintOverlap(t *testing.T) {
 		t.Fatal("Town Hall placement overlapping a node should fail")
 	}
 
+	// Logging camp placement succeeds and clears the overlapping node.
 	w.Buildings = []*Building{{Kind: KindTownHall, Angle: math.Pi, Pos: w.Planet.RimPoint(math.Pi)}}
 	w.Economy.Wood = CampCost(w)
-	if placeBuilding(w, 0) {
-		t.Fatal("logging camp placement overlapping a node should fail")
+	if !placeBuilding(w, 0) {
+		t.Fatal("logging camp placement overlapping a node should succeed (node is cleared)")
+	}
+	if len(w.Nodes) != 0 {
+		t.Fatalf("overlapping node should be removed after camp placement, got %d nodes", len(w.Nodes))
 	}
 }
 
@@ -374,7 +218,7 @@ func TestFreePlacementIgnoresCampCost(t *testing.T) {
 	}
 }
 
-func TestFreePlacementStillRespectsFootprints(t *testing.T) {
+func TestFreePlacementClearsOverlappingNodes(t *testing.T) {
 	w := NewWorld()
 	w.Nodes = nil
 	w.NextNodeID = 0
@@ -384,27 +228,24 @@ func TestFreePlacementStillRespectsFootprints(t *testing.T) {
 	n.Size = 1
 	w.Nodes = []*ResourceNode{n}
 
-	if placeBuildingWithFreePlacement(w, 0, true) {
-		t.Fatal("free camp placement should still fail when overlapping a node")
+	if !placeBuildingWithFreePlacement(w, 0, true) {
+		t.Fatal("free camp placement overlapping a node should succeed (node is cleared)")
+	}
+	if len(w.Nodes) != 0 {
+		t.Fatalf("overlapping node should be removed, got %d nodes", len(w.Nodes))
 	}
 }
 
-func TestMaxTownSlotsFromGeometry(t *testing.T) {
+func TestPlanetMinCompletionPopFromGeometry(t *testing.T) {
 	w := NewWorld()
-	w.Buildings = append(w.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
-	})
-	slots := maxTownSlots(w)
+	slots := planetMinCompletionPop(w.Planet)
 	if slots != 19 {
 		t.Errorf("expected 19 slots at radius 72, got %d", slots)
 	}
 	// Smaller planet should yield fewer slots.
 	w2 := NewWorld()
 	w2.Planet.Radius = 50
-	w2.Buildings = append(w2.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w2.Planet.RimPoint(0),
-	})
-	slots2 := maxTownSlots(w2)
+	slots2 := planetMinCompletionPop(w2.Planet)
 	if slots2 >= slots {
 		t.Errorf("smaller planet (radius 50, slots %d) should yield fewer slots than radius 72 (%d)", slots2, slots)
 	}
@@ -431,26 +272,6 @@ func TestTownFieldSlotsStartBelowTownHall(t *testing.T) {
 	firstTangentialOffset := math.Abs(slots[0].Y - rim.Y)
 	if firstTangentialOffset > townFieldSlotSpacing/2 {
 		t.Errorf("first slot tangential offset: got %.2f, want <= %.2f", firstTangentialOffset, townFieldSlotSpacing/2)
-	}
-}
-
-func TestBuildTownCapacityBlockedAtMax(t *testing.T) {
-	w := NewWorld()
-	w.Buildings = append(w.Buildings, &Building{
-		Kind: KindTownHall, Angle: 0, Pos: w.Planet.RimPoint(0),
-	})
-	max := maxTownSlots(w)
-	w.Economy.WorkerCapacity = max
-	w.Economy.Wood = 10000
-
-	if buildTownCapacity(w) {
-		t.Error("buildTownCapacity at geometry max should return false")
-	}
-	if w.Economy.WorkerCapacity != max {
-		t.Errorf("WorkerCapacity should stay %d; got %d", max, w.Economy.WorkerCapacity)
-	}
-	if w.Economy.Wood != 10000 {
-		t.Errorf("Wood should be unchanged; got %.2f", w.Economy.Wood)
 	}
 }
 

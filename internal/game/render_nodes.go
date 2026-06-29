@@ -14,6 +14,17 @@ import (
 // is active. In-range free nodes are emphasised; unavailable nodes keep their
 // normal world colours so only muted route lines imply local competition.
 func previewNodeColor(n *ResourceNode, pv *placementPreview) color.RGBA {
+	// Nodes whose footprint overlaps the camp ghost: red while hovering, faded while locked.
+	if pv.Kind == KindLoggingCamp {
+		for _, b := range pv.Blocked {
+			if b.ID == n.ID {
+				if pv.Locked {
+					return color.RGBA{R: 200, G: 80, B: 80, A: 70} // colGhostBad at low alpha
+				}
+				return colGhostBad
+			}
+		}
+	}
 	inRange := math.Abs(normAngle(n.Angle-pv.Angle)) <= previewArc
 	if inRange && pv.Kind == KindLoggingCamp && n.OwnerID == -1 && n.ReservedByWorkerID == -1 {
 		return color.RGBA{R: 80, G: 220, B: 100, A: 255} // brighter free

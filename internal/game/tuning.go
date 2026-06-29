@@ -4,10 +4,8 @@ import "math"
 
 const (
 	// economy / cost constants
-	campBaseCost           = 200.0 // first camp clearly unreachable during the first-lesson window
-	campCostGrowth         = 1.35  // gentler growth keeps the 4th camp affordable
-	townCapacityBaseCost   = 80.0  // house lights up a few trips after the initial growth fill
-	townCapacityCostGrowth = 1.15  // per paid capacity purchase
+	campBaseCost   = 200.0 // first camp clearly unreachable during the first-lesson window
+	campCostGrowth = 1.35  // gentler growth keeps the 4th camp affordable
 
 	// Two-phase town growth.
 	// Phase 1 (scripted lesson): the initial cap is small so the growth bar
@@ -41,7 +39,7 @@ const (
 	// once the geometric step would exceed this, growth becomes
 	// additive — keeping late-game trees naturally reachable
 	woodFieldReturnRatio = 0.27 // share of gross delivered load that becomes field EXP
-	nurtureTreesPerPress = 5    // trees spawned directly per Nurture button press
+	nurtureTreesPerPress = 1    // trees spawned per Nurture toggle cycle
 	forestHalfArc        = math.Pi
 	startingNodes        = 5
 	nodeMaxSize          = 2.0 // maximum size any resource node can reach

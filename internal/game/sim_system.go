@@ -3,9 +3,9 @@ package game
 import "math"
 
 // forestPlanetComplete reports the mastery gate for forest-kind planets:
-// town capacity is maxed AND every known KindWood region is saturated.
+// minimum completion population is reached AND every known KindWood region is saturated.
 func forestPlanetComplete(w *World) bool {
-	if !townFieldFull(w) {
+	if !planetPopComplete(w) {
 		return false
 	}
 	hasKnownForest := false
@@ -21,10 +21,10 @@ func forestPlanetComplete(w *World) bool {
 }
 
 // waterPlanetComplete reports the mastery gate for the water frontier:
-// town capacity is maxed AND every known production field is saturated
+// minimum completion population is reached AND every known production field is saturated
 // (KindWood nodes + KindWater sparkles) AND at least one dock is Level 2.
 func waterPlanetComplete(w *World) bool {
-	if !townFieldFull(w) {
+	if !planetPopComplete(w) {
 		return false
 	}
 	hasKnownField := false

@@ -30,12 +30,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Economy.Wood != w.Economy.Wood {
 		t.Errorf("Economy.Wood: got %.4f, want %.4f", got.Economy.Wood, w.Economy.Wood)
 	}
-	if got.Economy.WorkerCapacity != w.Economy.WorkerCapacity {
-		t.Errorf("Economy.WorkerCapacity: got %d, want %d", got.Economy.WorkerCapacity, w.Economy.WorkerCapacity)
-	}
-	if got.Economy.CapacityBought != w.Economy.CapacityBought {
-		t.Errorf("Economy.CapacityBought: got %d, want %d", got.Economy.CapacityBought, w.Economy.CapacityBought)
-	}
 	if got.Economy.TownGrowth != w.Economy.TownGrowth {
 		t.Errorf("Economy.TownGrowth: got %.4f, want %.4f", got.Economy.TownGrowth, w.Economy.TownGrowth)
 	}

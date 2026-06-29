@@ -33,25 +33,23 @@ type HUD struct {
 	debugSection int
 
 	// debug panel
-	debugPanel       *widget.Container
-	debugTabs        *widget.Container
-	debugCoreBtn     *widget.Button
-	debugPlaceBtn    *widget.Button
-	debugGrowthBtn   *widget.Button
-	woodText         *widget.Text
-	workerText       *widget.Text
-	nodeText         *widget.Text
-	fieldText        *widget.Text
-	previewText      *widget.Text
-	resourceSquare   *widget.Button
-	buildCapacityDbg *widget.Button
-	freeCapacityDbg  *widget.Button
-	addWorkerDbg     *widget.Button
-	buildCampDbg     *widget.Button
-	freeCampDbg      *widget.Button
-	upgradeFieldDbg  *widget.Button
-	growFullDbg      *widget.Button
-	resetBtn         *widget.Button
+	debugPanel      *widget.Container
+	debugTabs       *widget.Container
+	debugCoreBtn    *widget.Button
+	debugPlaceBtn   *widget.Button
+	debugGrowthBtn  *widget.Button
+	woodText        *widget.Text
+	workerText      *widget.Text
+	nodeText        *widget.Text
+	fieldText       *widget.Text
+	previewText     *widget.Text
+	resourceSquare  *widget.Button
+	addWorkerDbg    *widget.Button
+	buildCampDbg    *widget.Button
+	freeCampDbg     *widget.Button
+	upgradeFieldDbg *widget.Button
+	growFullDbg     *widget.Button
+	resetBtn        *widget.Button
 
 	// normal mode — top bar (resource info + actions, centered, full-width)
 	normalTopBar     *widget.Container
@@ -185,24 +183,20 @@ func (h *HUD) refreshDebug(w *World, placing bool, pv *placementPreview) {
 			}
 			fieldLines = append(fieldLines, fmt.Sprintf("  field[%d] nodes:%d %s", i, count, satStr))
 		}
-		fullStr := ""
-		if townFieldFull(w) {
-			fullStr = "  FULL"
+		popStatus := "open"
+		if planetPopComplete(w) {
+			popStatus = "complete"
 		}
-		h.fieldText.Label = fmt.Sprintf("wood EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\n%s\nnurture: %d/press  cue pending: %v\ntown growth %.1f/%.1f  cap %d/%d  used %d  avail %d  next cap %.0f%s",
+		h.fieldText.Label = fmt.Sprintf("wood EXP %.1f/%.1f  ret %.0f%%  last g/b/r %.1f/%.1f/%.1f\n%s\nnurture: %d/press  cue pending: %v\ntown growth %.1f/%.1f  work %d  workers %d  avail %d  min pop %d %s",
 			fpEXP, fpCap, woodFieldReturnRatio*100,
 			w.lastDelivery.Gross, w.lastDelivery.Banked, w.lastDelivery.Returned,
 			strings.Join(fieldLines, "\n"),
 			nurtureTreesPerPress, nurtureGrowthCuePending(w),
 			w.Economy.TownGrowth, w.Economy.TownGrowthCap,
-			w.Economy.WorkerCapacity, maxTownSlots(w), w.Economy.WorkerCapacity-availableCapacity(w), availableCapacity(w),
-			townCapacityCost(w), fullStr)
+			claimableNodeCount(w), len(w.Workers), availableCapacity(w),
+			w.Planet.MinCompletionPop, popStatus)
 	}
 
-	cc := townCapacityCost(w)
-	h.buildCapacityDbg.SetText(fmt.Sprintf("Build capacity (%.0f %s)", cc, kindName(townCapacityPaymentKind(w))))
-	h.buildCapacityDbg.GetWidget().Disabled = !townCapacityAffordable(w) || townHall(w) == nil || townFieldFull(w)
-	h.freeCapacityDbg.GetWidget().Disabled = townHall(w) == nil || townFieldFull(w)
 	h.addWorkerDbg.GetWidget().Disabled = townHall(w) == nil
 
 	if placing {
@@ -265,8 +259,6 @@ func (h *HUD) applyDebugSectionVisibility() {
 	h.woodText.GetWidget().SetVisibility(showCore)
 	h.workerText.GetWidget().SetVisibility(showCore)
 	h.nodeText.GetWidget().SetVisibility(showCore)
-	h.buildCapacityDbg.GetWidget().SetVisibility(showCore)
-	h.freeCapacityDbg.GetWidget().SetVisibility(showCore)
 	h.addWorkerDbg.GetWidget().SetVisibility(showCore)
 	h.buildCampDbg.GetWidget().SetVisibility(showCore)
 	h.resetBtn.GetWidget().SetVisibility(showCore)
@@ -288,10 +280,9 @@ func (h *HUD) refreshNormal(w *World) {
 	if discovered {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Show)
 		h.resourceText.Label = fmt.Sprintf("%.0f", w.Economy.Wood)
-		// Disable the Nurture square when all known fields are saturated or a
-		// growth cue is playing — the button has nothing to do in either state.
+		// Disable the Nurture square when all known fields are saturated.
 		saturated := !anyFieldCanSpawn(w)
-		h.resourceSquare.GetWidget().Disabled = saturated || nurtureGrowthCuePending(w)
+		h.resourceSquare.GetWidget().Disabled = saturated
 	} else {
 		h.resourceHUD.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
@@ -423,24 +414,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugTabs.AddChild(hud.debugPlaceBtn)
 	hud.debugTabs.AddChild(hud.debugGrowthBtn)
 
-	hud.buildCapacityDbg = widget.NewButton(
-		widget.ButtonOpts.Image(dbgBtnImg()),
-		widget.ButtonOpts.Text(fmt.Sprintf("Build capacity (%.0f)", townCapacityBaseCost), face, dbgTxtCol),
-		widget.ButtonOpts.TextPadding(dbgPad),
-		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			buildTownCapacity(g.world)
-		}),
-	)
-
-	hud.freeCapacityDbg = widget.NewButton(
-		widget.ButtonOpts.Image(dbgBtnImg()),
-		widget.ButtonOpts.Text("Free capacity", face, dbgTxtCol),
-		widget.ButtonOpts.TextPadding(dbgPad),
-		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
-			addFreeCapacity(g.world)
-		}),
-	)
-
 	hud.addWorkerDbg = widget.NewButton(
 		widget.ButtonOpts.Image(dbgBtnImg()),
 		widget.ButtonOpts.Text("Add free worker", face, dbgTxtCol),
@@ -539,8 +512,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	hud.debugPanel.AddChild(hud.nodeText)
 	hud.debugPanel.AddChild(hud.fieldText)
 	hud.debugPanel.AddChild(hud.previewText)
-	hud.debugPanel.AddChild(hud.buildCapacityDbg)
-	hud.debugPanel.AddChild(hud.freeCapacityDbg)
 	hud.debugPanel.AddChild(hud.addWorkerDbg)
 	hud.debugPanel.AddChild(hud.buildCampDbg)
 	hud.debugPanel.AddChild(hud.freeCampDbg)
@@ -613,7 +584,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			}),
 		),
 		widget.ButtonOpts.PressedHandler(func(_ *widget.ButtonPressedEventArgs) {
-			g.activateHold(holdNurture)
+			g.nurtureToggleActive = !g.nurtureToggleActive
 		}),
 	)
 	hud.resourceHUD.AddChild(hud.resourceSquare)

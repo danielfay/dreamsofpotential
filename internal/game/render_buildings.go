@@ -61,36 +61,6 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 		townHallBldHalfW, townHallBldHalfH, col)
 }
 
-// drawTownGrowthGauge draws a small progress bar below the Town Hall art,
-// aligned with the rim tangent, showing Town Growth / TownGrowthCap.
-func drawTownGrowthGauge(scene *ebiten.Image, p Planet, th *Building, growth, cap float64) {
-	if cap <= 0 {
-		return
-	}
-	frac := float32(growth / cap)
-	if frac > 1 {
-		frac = 1
-	}
-	const gaugeInset = float32(townHallBldInset) + float32(townHallBldHalfH) + 3
-	anchor := insetPoint(p, th.Angle, float64(gaugeInset))
-	ax, ay := float32(anchor.X), float32(anchor.Y)
-	ix := float32(-math.Cos(th.Angle))
-	iy := float32(-math.Sin(th.Angle))
-	tx := float32(-math.Sin(th.Angle))
-	ty := float32(math.Cos(th.Angle))
-	const halfW = float32(townHallBldHalfW) - 2
-	const halfH = float32(1)
-	// Frame
-	drawOrientedRect(scene, ax, ay, tx, ty, ix, iy, halfW, halfH, colTownGrowthGaugeFrame)
-	// Fill (from one end along the tangent)
-	if frac > 0 {
-		fillHW := halfW * frac
-		fcx := ax - tx*(halfW-fillHW)
-		fcy := ay - ty*(halfW-fillHW)
-		drawOrientedRect(scene, fcx, fcy, tx, ty, ix, iy, fillHW, halfH, colTownGrowthGaugeFill)
-	}
-}
-
 // insetPoint returns a world position stepped inward from the rim at angle by
 // offset pixels toward the planet center.
 func insetPoint(p Planet, angle, offset float64) Vec {
@@ -113,53 +83,4 @@ func idleTowerSlots(p Planet, th *Building, count int) []Vec {
 		slots[i] = insetPoint(p, th.Angle, -outset)
 	}
 	return slots
-}
-
-// drawTownField renders the settlement wedge inside the planet at the Town Hall
-// angle, with visible dwelling slots for built capacity. No-op until a Town
-// Hall exists.
-func drawTownField(scene *ebiten.Image, w *World, radius float32) {
-	th := townHall(w)
-	if th == nil {
-		return
-	}
-	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
-	start := th.Angle - townFieldHalfArc
-	end := th.Angle + townFieldHalfArc
-
-	// Warm clay wedge fill — full pizza slice from center to rim.
-	drawFilledSector(scene, cx, cy, radius, start, end, colTownFieldBase)
-	// Outer edge definition.
-	drawFieldSectorBand(scene, cx, cy, radius-0.5, 1.5, start, end, colTownFieldEdge)
-
-	// Dwelling slots — only built capacity is visible, so fresh towns start with
-	// one house and fill in one purchase at a time.
-	slots := townFieldSlots(w.Planet, th)
-	if len(slots) == 0 {
-		return
-	}
-	builtSlots := w.Economy.WorkerCapacity
-	if builtSlots < 0 {
-		builtSlots = 0
-	}
-	if builtSlots > len(slots) {
-		builtSlots = len(slots)
-	}
-	occupiedSlots := len(w.Workers)
-	if occupiedSlots > builtSlots {
-		occupiedSlots = builtSlots
-	}
-	cos := float32(math.Cos(th.Angle))
-	sin := float32(math.Sin(th.Angle))
-	ix := -cos // inward
-	iy := -sin
-	tx := -sin // tangent
-	ty := cos
-	for i, pos := range slots[:builtSlots] {
-		col := colTownFieldSlot
-		if i < occupiedSlots {
-			col = colTownFieldSlotOccupied
-		}
-		drawOrientedRect(scene, float32(pos.X), float32(pos.Y), tx, ty, ix, iy, 1.5, 1.5, col)
-	}
 }

@@ -30,36 +30,40 @@ const (
 
 // Game is the root ebiten game object.
 type Game struct {
-	world                        *World
-	scene                        *ebiten.Image // low-res 320×240 canvas; scaled up to the window
-	ui                           *ebitenui.UI
-	hud                          *HUD
-	placing                      bool              // true while waiting for player to click a camp location
-	freePlacing                  bool              // debug-only: next placement ignores camp cost
-	preview                      *placementPreview // current frame's placement preview; nil when not placing
-	showMenu                     bool              // true when the settings overlay is open
-	debug                        bool              // F3 — verbose debug panel; session-only, not persisted
-	debugSection                 int               // selected debug panel section; session-only
-	pulseTime                    float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget                  int               // costPulse* bitmask for unaffordable-cost flash targets
-	rejectTime                   float64           // seconds remaining on invalid placement feedback
-	screenW                      int               // current screen dimensions, updated each Draw()
-	screenH                      int
-	hudScale                     int         // integer view scale at last HUD build; triggers rebuild on change
-	hudDigits                    int         // digit count of wood at last HUD build; triggers rebuild on grow
-	saveTimer                    float64     // counts down to next autosave
-	nurtureConfirmLeft           float64     // seconds remaining on the nurture success flash
-	nurtureAttentionCooldown     float64     // counts down to next Nurture attention pulse
-	nurtureAttentionPulseLeft    float64     // seconds remaining on the Nurture attention flash
-	workerRatioAttentionCooldown float64     // counts down to next worker-ratio attention pulse
-	workerRatioAttentionLeft     float64     // seconds remaining on the worker-ratio attention flash
-	workerRatioAttentionReady    bool        // previous-frame state for first-available worker-ratio attention
-	dockUpgradeAttentionCooldown float64     // counts down to next dock-upgrade attention pulse
-	holdAction                   int         // current held purchase action (holdNone, holdNurture, …)
-	holdTimer                    float64     // counts down to next repeat fire
-	holdDuration                 float64     // total seconds the current hold has been active
-	importCh                     chan *World // receives a validated world from an import goroutine
-	dialogOpen                   atomic.Bool // true while a file dialog is open; blocks UI input
+	world                         *World
+	scene                         *ebiten.Image // low-res 320×240 canvas; scaled up to the window
+	ui                            *ebitenui.UI
+	hud                           *HUD
+	placing                       bool              // true while waiting for player to click a camp location
+	freePlacing                   bool              // debug-only: next placement ignores camp cost
+	pendingDestructive            bool              // true while waiting for second click to confirm a destructive camp
+	pendingPreview                placementPreview  // locked ghost for the pending destructive placement
+	pendingDestructiveFreePlacing bool              // freePlacing state at the time of the first click
+	preview                       *placementPreview // current frame's placement preview; nil when not placing
+	showMenu                      bool              // true when the settings overlay is open
+	debug                         bool              // F3 — verbose debug panel; session-only, not persisted
+	debugSection                  int               // selected debug panel section; session-only
+	pulseTime                     float64           // seconds remaining on the unaffordable-cost flash
+	pulseTarget                   int               // costPulse* bitmask for unaffordable-cost flash targets
+	rejectTime                    float64           // seconds remaining on invalid placement feedback
+	screenW                       int               // current screen dimensions, updated each Draw()
+	screenH                       int
+	hudScale                      int         // integer view scale at last HUD build; triggers rebuild on change
+	hudDigits                     int         // digit count of wood at last HUD build; triggers rebuild on grow
+	saveTimer                     float64     // counts down to next autosave
+	nurtureToggleActive           bool        // true while the nurture auto-cycle is running
+	nurtureConfirmLeft            float64     // seconds remaining on the nurture success flash
+	nurtureAttentionCooldown      float64     // counts down to next Nurture attention pulse
+	nurtureAttentionPulseLeft     float64     // seconds remaining on the Nurture attention flash
+	workerRatioAttentionCooldown  float64     // counts down to next worker-ratio attention pulse
+	workerRatioAttentionLeft      float64     // seconds remaining on the worker-ratio attention flash
+	workerRatioAttentionReady     bool        // previous-frame state for first-available worker-ratio attention
+	dockUpgradeAttentionCooldown  float64     // counts down to next dock-upgrade attention pulse
+	holdAction                    int         // current held purchase action (holdNone, holdNurture, …)
+	holdTimer                     float64     // counts down to next repeat fire
+	holdDuration                  float64     // total seconds the current hold has been active
+	importCh                      chan *World // receives a validated world from an import goroutine
+	dialogOpen                    atomic.Bool // true while a file dialog is open; blocks UI input
 
 	// reveal state (transient — not saved)
 	revealActive  bool
@@ -78,15 +82,10 @@ type Game struct {
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
 	sysDoubleClickTime   time.Time // time of that click
 
-	// planet-view selected building (dock tray or town hall tray)
-	selectedBuildingID          int     // index into w.Buildings; -1 = none
-	dockUpgradeRect             sysRect // upgrade button hit-test rect in native screen space
-	dockTrayRect                sysRect // entire dock tray background rect (clicking anywhere dismisses)
-	thCapacityRect              sysRect // capacity button in TH tray
-	thTrayRect                  sysRect // entire TH tray background rect
-	thCapacityAttentionCooldown float64 // counts down to next TH capacity attention pulse
-	thCapacityAttentionLeft     float64 // seconds remaining on the TH first-house attention ripple
-	thFirstCapacityBuildable    bool    // previous-frame state for the first house teaching pulse
+	// planet-view selected building (dock tray)
+	selectedBuildingID int     // index into w.Buildings; -1 = none
+	dockUpgradeRect    sysRect // upgrade button hit-test rect in native screen space
+	dockTrayRect       sysRect // entire dock tray background rect (clicking anywhere dismisses)
 
 	// labor focus control overlay
 	showFocusControl bool
@@ -141,7 +140,6 @@ func New() (*Game, error) {
 		nurtureAttentionCooldown:     nurtureAttentionInterval,
 		workerRatioAttentionCooldown: nurtureAttentionInterval,
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
-		thCapacityAttentionCooldown:  nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
 		sysInjectRect:                make(map[PotentialKind]sysRect, len(resourceFamilies)),
@@ -228,16 +226,6 @@ func missingPlacementCostTargets(w *World, pv *placementPreview) int {
 	return 0
 }
 
-func townCapacityCostTargets(w *World) int {
-	cost := townCapacityCost(w)
-	switch townCapacityPaymentKind(w) {
-	case KindWater:
-		return missingCostTargets(w, 0, cost)
-	default:
-		return missingCostTargets(w, cost, 0)
-	}
-}
-
 func (g *Game) Update() error {
 	if ebiten.IsWindowBeingClosed() {
 		_ = Save(g.world)
@@ -311,6 +299,14 @@ func (g *Game) Update() error {
 				}
 			}
 		}
+
+		if g.nurtureToggleActive {
+			if nurtureField(g.world) {
+				g.nurtureConfirmLeft = nurtureConfirmDuration
+			} else if !g.world.ResourceDiscovered || !anyFieldCanSpawn(g.world) {
+				g.nurtureToggleActive = false
+			}
+		}
 	}
 
 	// Advance inject-dot animations.
@@ -367,21 +363,6 @@ func (g *Game) Update() error {
 			g.dockUpgradeAttentionCooldown = nurtureAttentionInterval
 			if dock := dockUpgradeAttentionDock(g.world); dock != nil {
 				activatePulse(g.world, &dock.Pulse)
-			}
-		}
-		firstCapacityBuildable := firstTownCapacityBuildable(g.world)
-		if firstCapacityBuildable && !g.thFirstCapacityBuildable {
-			g.fireTownCapacityAttention()
-		}
-		g.thFirstCapacityBuildable = firstCapacityBuildable
-		if g.thCapacityAttentionLeft > 0 {
-			g.thCapacityAttentionLeft -= dt
-		}
-		g.thCapacityAttentionCooldown -= dt
-		if g.thCapacityAttentionCooldown <= 0 {
-			g.thCapacityAttentionCooldown = nurtureAttentionInterval
-			if firstTownCapacityBuildable(g.world) {
-				g.fireTownCapacityAttention()
 			}
 		}
 		if g.rejectTime > 0 {
@@ -457,13 +438,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawOverlay(screen)
 }
 
-func (g *Game) fireTownCapacityAttention() {
-	if townHall(g.world) == nil {
-		return
-	}
-	g.thCapacityAttentionLeft = nurtureAttentionPulseDur
-}
-
 // intScale returns the floor'd integer view scale, clamped to at least 1.
 func (g *Game) intScale() int {
 	scale, _, _ := viewGeom(g.screenW, g.screenH)
@@ -499,18 +473,15 @@ func clearTransientUI(g *Game) {
 	g.freePlacing = false
 	g.holdAction = holdNone
 	g.holdDuration = 0
+	g.nurtureToggleActive = false
 	g.showMenu = false
 	g.showFocusControl = false
 	g.closeBuildingTray()
 	g.workerRatioAttentionReady = false
-	g.thCapacityAttentionLeft = 0
-	g.thFirstCapacityBuildable = false
 }
 
 func (g *Game) closeBuildingTray() {
 	g.selectedBuildingID = -1
 	g.dockUpgradeRect = sysRect{}
 	g.dockTrayRect = sysRect{}
-	g.thCapacityRect = sysRect{}
-	g.thTrayRect = sysRect{}
 }
