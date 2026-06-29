@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielfay/dreamsofpotential/assets"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/solarlune/goaseprite"
 )
 
 var (
@@ -25,11 +26,17 @@ var (
 	dockSpriteOnce sync.Once
 	dockSpriteImg  *ebiten.Image
 
+	dockAseOnce sync.Once
+	dockAse_    *goaseprite.File
+
 	townHallBaseSpriteOnce sync.Once
 	townHallBaseSpriteImg  *ebiten.Image
 
 	townHallFireSpriteOnce sync.Once
 	townHallFireSpriteImg  *ebiten.Image
+
+	townHallFireAseOnce sync.Once
+	townHallFireAse_    *goaseprite.File
 )
 
 func workerSprite() *ebiten.Image {
@@ -99,6 +106,13 @@ func dockSprite() *ebiten.Image {
 	return dockSpriteImg
 }
 
+func dockAse() *goaseprite.File {
+	dockAseOnce.Do(func() {
+		dockAse_ = goaseprite.Read(assets.DockJSON)
+	})
+	return dockAse_
+}
+
 // drawCampSprite draws the logging camp sprite with base at the rim point,
 // roof extending outward. pos is the rim point, angle is the outward normal.
 func drawCampSprite(scene *ebiten.Image, pos Vec, angle float64, col color.RGBA) {
@@ -117,33 +131,22 @@ func drawCampSprite(scene *ebiten.Image, pos Vec, angle float64, col color.RGBA)
 	scene.DrawImage(img, op)
 }
 
-const (
-	dockSpriteW       = 15
-	dockSpriteH       = 9
-	dockSpriteFrames  = 2
-	dockSpriteRimY    = 4
-	dockSpriteFrameL1 = 0
-	dockSpriteFrameL2 = 1
-)
+const dockSpriteRimY = 4
 
 // drawDockArt draws the dock sprite anchored on the rim, with posts outward and
 // the deck straddling the shoreline. Level 2 uses the upgraded rail frame.
 func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA, level int) {
-	img := dockSprite()
-	frameIdx := dockSpriteFrameL1
-	if level >= 2 {
-		frameIdx = dockSpriteFrameL2
+	ase := dockAse()
+	frameIdx := 0
+	if level >= 2 && len(ase.Frames) > 1 {
+		frameIdx = 1
 	}
-	if frameIdx >= dockSpriteFrames {
-		frameIdx = dockSpriteFrameL1
-	}
-	frame := img.SubImage(image.Rect(
-		frameIdx*dockSpriteW, 0,
-		(frameIdx+1)*dockSpriteW, dockSpriteH,
-	)).(*ebiten.Image)
+	fr := ase.Frames[frameIdx]
+	fw, fh := int(ase.FrameWidth), int(ase.FrameHeight)
+	frame := dockSprite().SubImage(image.Rect(fr.X, fr.Y, fr.X+fw, fr.Y+fh)).(*ebiten.Image)
 	rimPt := p.RimPoint(angle)
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(-float64(dockSpriteW)/2, -float64(dockSpriteRimY))
+	op.GeoM.Translate(-float64(fw)/2, -float64(dockSpriteRimY))
 	op.GeoM.Rotate(angle + math.Pi/2)
 	op.GeoM.Translate(rimPt.X, rimPt.Y)
 	op.ColorScale.Scale(
@@ -177,16 +180,18 @@ func townHallFireSprite() *ebiten.Image {
 	return townHallFireSpriteImg
 }
 
+func townHallFireAse() *goaseprite.File {
+	townHallFireAseOnce.Do(func() {
+		townHallFireAse_ = goaseprite.Read(assets.TownHallFireJSON)
+	})
+	return townHallFireAse_
+}
+
 const (
-	townHallBaseW     = 17
-	townHallBaseH     = 9
-	townHallFireW     = 5
-	townHallFireH     = 9
-	townHallFireCount = 4
+	townHallBaseW = 17
+	townHallBaseH = 9
 	// fire columns 6–10 of the base; offset = -(baseW/2) + 6 = -8.5 + 6 = -2.5
 	townHallFireOffX = -2.5
-	// seconds per fire frame (~8 fps)
-	townHallFrameSec = 0.12
 )
 
 // drawTownHallSprite draws the animated town hall: static houses + log base,
@@ -206,15 +211,16 @@ func drawTownHallSprite(scene *ebiten.Image, planet Planet, angle float64, pulse
 	}
 	scene.DrawImage(base, op)
 
-	// Animated fire frame.
+	// Animated fire frame — timing and geometry from goaseprite data.
+	fireData := townHallFireAse()
+	frameDur := float64(fireData.Frames[0].Duration)
+	frameIdx := int(simTime/frameDur) % len(fireData.Frames)
+	fr := fireData.Frames[frameIdx]
+	fw, fh := int(fireData.FrameWidth), int(fireData.FrameHeight)
 	fire := townHallFireSprite()
-	frameIdx := int(simTime/townHallFrameSec) % townHallFireCount
-	fireFrame := fire.SubImage(image.Rect(
-		frameIdx*townHallFireW, 0,
-		(frameIdx+1)*townHallFireW, townHallFireH,
-	)).(*ebiten.Image)
+	fireFrame := fire.SubImage(image.Rect(fr.X, fr.Y, fr.X+fw, fr.Y+fh)).(*ebiten.Image)
 	op2 := &ebiten.DrawImageOptions{}
-	op2.GeoM.Translate(townHallFireOffX, -float64(townHallFireH))
+	op2.GeoM.Translate(townHallFireOffX, -float64(fh))
 	op2.GeoM.Rotate(rot)
 	op2.GeoM.Translate(rimPt.X, rimPt.Y)
 	if pulse {
@@ -238,10 +244,13 @@ func drawTownHallGhost(scene *ebiten.Image, planet Planet, angle float64, col co
 	op.ColorScale.ScaleAlpha(alpha)
 	scene.DrawImage(base, op)
 
+	fireData := townHallFireAse()
+	fr0 := fireData.Frames[0]
+	fw, fh := int(fireData.FrameWidth), int(fireData.FrameHeight)
 	fire := townHallFireSprite()
-	fireFrame := fire.SubImage(image.Rect(0, 0, townHallFireW, townHallFireH)).(*ebiten.Image)
+	fireFrame := fire.SubImage(image.Rect(fr0.X, fr0.Y, fr0.X+fw, fr0.Y+fh)).(*ebiten.Image)
 	op2 := &ebiten.DrawImageOptions{}
-	op2.GeoM.Translate(townHallFireOffX, -float64(townHallFireH))
+	op2.GeoM.Translate(townHallFireOffX, -float64(fh))
 	op2.GeoM.Rotate(rot)
 	op2.GeoM.Translate(rimPt.X, rimPt.Y)
 	op2.ColorScale.ScaleAlpha(alpha)
