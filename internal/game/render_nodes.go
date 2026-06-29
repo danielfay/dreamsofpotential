@@ -178,21 +178,3 @@ func drawPineTree(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visualSc
 		drawOrientedRect(scene, lx, ly, tx, ty, ix, iy, hw, halfH, col)
 	}
 }
-
-// drawSparkle draws an interior water sparkle as an animated + shape at n.Pos.
-// simTime drives a gentle per-node size pulse; alphaBoost brightens during growth cues.
-func drawSparkle(scene *ebiten.Image, n *ResourceNode, col color.RGBA, visualScale float32, alphaBoost uint8, simTime float64) {
-	if alphaBoost > 0 {
-		col = brighten(col, alphaBoost)
-	}
-	// Per-node phase offset so sparkles pulse independently.
-	phase := float64(n.Pos.X)*0.17 + float64(n.Pos.Y)*0.13
-	pulse := float32(1.0 + sparkleAnimAmp*math.Sin(simTime*sparkleAnimFreq+phase))
-	r := float32(n.Size) * sparkleBaseDrawRadius * visualScale * pulse
-	hw := r * sparkleArmWidthRatio
-	cx, cy := float32(n.Pos.X), float32(n.Pos.Y)
-	// Horizontal arm.
-	vector.FillRect(scene, cx-r, cy-hw, 2*r, 2*hw, col, false)
-	// Vertical arm.
-	vector.FillRect(scene, cx-hw, cy-r, 2*hw, 2*r, col, false)
-}

@@ -37,6 +37,12 @@ var (
 
 	townHallFireAseOnce sync.Once
 	townHallFireAse_    *goaseprite.File
+
+	sparkleSpriteOnce sync.Once
+	sparkleSpriteImg  *ebiten.Image
+
+	sparkleAseOnce sync.Once
+	sparkleAse_    *goaseprite.File
 )
 
 func workerSprite() *ebiten.Image {
@@ -255,6 +261,61 @@ func drawTownHallGhost(scene *ebiten.Image, planet Planet, angle float64, col co
 	op2.GeoM.Translate(rimPt.X, rimPt.Y)
 	op2.ColorScale.ScaleAlpha(alpha)
 	scene.DrawImage(fireFrame, op2)
+}
+
+func sparkleSprite() *ebiten.Image {
+	sparkleSpriteOnce.Do(func() {
+		img, _, err := image.Decode(bytes.NewReader(assets.SparklePNG))
+		if err != nil {
+			panic(err)
+		}
+		sparkleSpriteImg = ebiten.NewImageFromImage(img)
+	})
+	return sparkleSpriteImg
+}
+
+func sparkleAse() *goaseprite.File {
+	sparkleAseOnce.Do(func() {
+		sparkleAse_ = goaseprite.Read(assets.SparkleJSON)
+	})
+	return sparkleAse_
+}
+
+// drawSparkle draws an animated water sparkle sprite centered at n.Pos.
+// The 4-frame cycle shifts through white/blue/pink, staggered per node ID
+// so sparkles twinkle independently. claimed dims at low alpha; pulsed and
+// alphaBoost both brighten (pulse = field pulse, alphaBoost = growth cue).
+func drawSparkle(scene *ebiten.Image, n *ResourceNode, claimed bool, pulsed bool, visualScale float32, alphaBoost uint8, simTime float64) {
+	ase := sparkleAse()
+	frameDur := float64(ase.Frames[0].Duration)
+	// Pick size tier: frames 0–3 = large, 4–7 = medium, 8–11 = small.
+	sizeBase := 0
+	if n.Size < 0.55 {
+		sizeBase = 8
+	} else if n.Size < 0.72 {
+		sizeBase = 4
+	}
+	frameIdx := sizeBase + (int(simTime/frameDur)+int(n.ID))%4
+	fr := ase.Frames[frameIdx]
+	fw, fh := int(ase.FrameWidth), int(ase.FrameHeight)
+	frame := sparkleSprite().SubImage(image.Rect(fr.X, fr.Y, fr.X+fw, fr.Y+fh)).(*ebiten.Image)
+
+	scale := float64(visualScale)
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(fw)/2, -float64(fh)/2)
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Translate(n.Pos.X, n.Pos.Y)
+	if claimed {
+		op.ColorScale.ScaleAlpha(0.45)
+	}
+	if pulsed {
+		op.ColorScale.Scale(1.35, 1.35, 1.35, 1.0)
+	}
+	if alphaBoost > 0 {
+		boost := 1.0 + float32(alphaBoost)/128.0
+		op.ColorScale.Scale(boost, boost, boost, 1.0)
+	}
+	scene.DrawImage(frame, op)
 }
 
 // drawWorker draws the worker sprite centered at (x, y), rotated so the

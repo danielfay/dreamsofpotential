@@ -25,3 +25,9 @@ var TownHallFirePNG []byte
 
 //go:embed sprites/townhall_fire.json
 var TownHallFireJSON []byte
+
+//go:embed sprites/sparkle.png
+var SparklePNG []byte
+
+//go:embed sprites/sparkle.json
+var SparkleJSON []byte

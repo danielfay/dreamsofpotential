@@ -256,14 +256,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	// resource nodes — interior sparkles as blue + shapes; rim nodes as pine trees
 	for _, n := range w.Nodes {
 		if n.Interior {
-			col := colSparkle
-			if n.OwnerID != -1 {
-				col = colSparkleClaimed
-			}
-			if pulseActive(w, n.Pulse) {
-				col = brighten(col, 45)
-			}
-			drawSparkle(scene, n, col, growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n), w.SimTime)
+			drawSparkle(scene, n, n.OwnerID != -1, pulseActive(w, n.Pulse), growthNodeVisualScale(w, n), growthNodeVisualAlpha(w, n), w.SimTime)
 			continue
 		}
 		col := colNodeFree
