@@ -22,6 +22,9 @@ var (
 	campSpriteOnce sync.Once
 	campSpriteImg  *ebiten.Image
 
+	dockSpriteOnce sync.Once
+	dockSpriteImg  *ebiten.Image
+
 	townHallBaseSpriteOnce sync.Once
 	townHallBaseSpriteImg  *ebiten.Image
 
@@ -85,6 +88,17 @@ func campSprite() *ebiten.Image {
 	return campSpriteImg
 }
 
+func dockSprite() *ebiten.Image {
+	dockSpriteOnce.Do(func() {
+		img, _, err := image.Decode(bytes.NewReader(assets.DockPNG))
+		if err != nil {
+			panic(err)
+		}
+		dockSpriteImg = ebiten.NewImageFromImage(img)
+	})
+	return dockSpriteImg
+}
+
 // drawCampSprite draws the logging camp sprite with base at the rim point,
 // roof extending outward. pos is the rim point, angle is the outward normal.
 func drawCampSprite(scene *ebiten.Image, pos Vec, angle float64, col color.RGBA) {
@@ -101,6 +115,44 @@ func drawCampSprite(scene *ebiten.Image, pos Vec, angle float64, col color.RGBA)
 		float32(col.A)/255,
 	)
 	scene.DrawImage(img, op)
+}
+
+const (
+	dockSpriteW       = 15
+	dockSpriteH       = 9
+	dockSpriteFrames  = 2
+	dockSpriteRimY    = 4
+	dockSpriteFrameL1 = 0
+	dockSpriteFrameL2 = 1
+)
+
+// drawDockArt draws the dock sprite anchored on the rim, with posts outward and
+// the deck straddling the shoreline. Level 2 uses the upgraded rail frame.
+func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA, level int) {
+	img := dockSprite()
+	frameIdx := dockSpriteFrameL1
+	if level >= 2 {
+		frameIdx = dockSpriteFrameL2
+	}
+	if frameIdx >= dockSpriteFrames {
+		frameIdx = dockSpriteFrameL1
+	}
+	frame := img.SubImage(image.Rect(
+		frameIdx*dockSpriteW, 0,
+		(frameIdx+1)*dockSpriteW, dockSpriteH,
+	)).(*ebiten.Image)
+	rimPt := p.RimPoint(angle)
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(dockSpriteW)/2, -float64(dockSpriteRimY))
+	op.GeoM.Rotate(angle + math.Pi/2)
+	op.GeoM.Translate(rimPt.X, rimPt.Y)
+	op.ColorScale.Scale(
+		float32(col.R)/255,
+		float32(col.G)/255,
+		float32(col.B)/255,
+		float32(col.A)/255,
+	)
+	scene.DrawImage(frame, op)
 }
 
 func townHallBaseSprite() *ebiten.Image {

@@ -11,6 +11,9 @@ var TreePNG []byte
 //go:embed sprites/camp.png
 var CampPNG []byte
 
+//go:embed sprites/dock.png
+var DockPNG []byte
+
 //go:embed sprites/townhall_base.png
 var TownHallBasePNG []byte
 

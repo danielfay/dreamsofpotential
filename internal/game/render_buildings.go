@@ -61,35 +61,6 @@ func drawTownHallArt(scene *ebiten.Image, p Planet, angle float64, col color.RGB
 		townHallBldHalfW, townHallBldHalfH, col)
 }
 
-// drawDockArt draws a dock on the rim. Level 1 (or 0): a flat deck with end
-// posts (|_| shape). Level 2: adds a railing bar connecting the post tops (|=| shape).
-func drawDockArt(scene *ebiten.Image, p Planet, angle float64, col color.RGBA, level int) {
-	pos := p.RimPoint(angle)
-	ox := float32(math.Cos(angle))
-	oy := float32(math.Sin(angle))
-	tx := float32(-math.Sin(angle))
-	ty := float32(math.Cos(angle))
-	cx, cy := float32(pos.X), float32(pos.Y)
-	// Deck along the rim tangent, offset inward so its outward edge is flush with the rim.
-	dcx := cx - ox*dockDeckHalfH
-	dcy := cy - oy*dockDeckHalfH
-	drawOrientedRect(scene, dcx, dcy, tx, ty, ox, oy, dockDeckHalfLen, dockDeckHalfH, col)
-	// Posts at each end, offset outward so they extend above the rim.
-	for _, s := range [...]float32{-1, 1} {
-		px := cx + tx*(s*dockDeckHalfLen) + ox*dockPostHalfH
-		py := cy + ty*(s*dockDeckHalfLen) + oy*dockPostHalfH
-		drawOrientedRect(scene, px, py, tx, ty, ox, oy, dockPostHalfW, dockPostHalfH, col)
-	}
-	// Level 2: top railing connecting post tops.
-	if level >= 2 {
-		const dockRailHalfH = float32(0.7)
-		railOffset := dockPostHalfH*2 + dockRailHalfH
-		railCx := cx + ox*railOffset
-		railCy := cy + oy*railOffset
-		drawOrientedRect(scene, railCx, railCy, tx, ty, ox, oy, dockDeckHalfLen, dockRailHalfH, col)
-	}
-}
-
 // drawTownGrowthGauge draws a small progress bar below the Town Hall art,
 // aligned with the rim tangent, showing Town Growth / TownGrowthCap.
 func drawTownGrowthGauge(scene *ebiten.Image, p Planet, th *Building, growth, cap float64) {
