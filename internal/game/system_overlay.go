@@ -283,7 +283,7 @@ func drawDormantPlanetTrayBody(screen *ebiten.Image, w *World, selected int, x, 
 		}
 
 		label := systemDormantRequirementLabel(w, item.resource, item.req)
-		drawSysText(screen, label, barX+barW+textGap, y+trayH/2+float32(textH)/2, fam.PotentialLabelColor, face)
+		drawSysText(screen, label, barX+barW+textGap, y+trayH/2-float32(textH)/2, fam.PotentialLabelColor, face)
 		tw, _ := text.Measure(label, face, 0)
 		x += iconSize + textGap + barW + textGap + float32(tw)
 	}
