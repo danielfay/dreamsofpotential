@@ -22,16 +22,12 @@ func (g *Game) handleSystemInput() {
 
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
 		g.world.System.Selected = -1
+		g.pendingChannelActive = false
+		g.pendingChannelResource = focusKindNone
 		return
 	}
 
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		return
-	}
-
-	// Check awaken-echo tray button.
-	if g.sysAwakenRect.contains(fmx, fmy) {
-		awakenPlanet(g.world, g.world.System.Selected)
 		return
 	}
 
@@ -44,10 +40,19 @@ func (g *Game) handleSystemInput() {
 		return
 	}
 
+	if g.handleSystemChannelSourceClick(fmx, fmy) {
+		return
+	}
+
 	// Planet selection: convert to virtual world coords and check disks.
 	wp := g.screenToWorld(mx, my)
 	for i, p := range g.world.System.Planets {
 		if wp.Dist(p.Pos) <= p.Radius+3 {
+			if g.pendingChannelActive {
+				if g.resolvePendingSystemChannel(i) {
+					return
+				}
+			}
 			if i == g.sysDoubleClickPlanet &&
 				time.Since(g.sysDoubleClickTime) < sysDoubleClickWindow {
 				if p.zoomable() {
@@ -59,12 +64,10 @@ func (g *Game) handleSystemInput() {
 					g.sysDoubleClickPlanet = -1
 					return
 				}
-				if canAwaken(g.world, i) {
-					// Double-click on a dormant echo — awaken it.
-					awakenPlanet(g.world, i)
-					g.sysDoubleClickPlanet = -1
-					return
-				}
+			}
+			if g.world.System.Selected != i {
+				g.pendingChannelActive = false
+				g.pendingChannelResource = focusKindNone
 			}
 			g.world.System.Selected = i
 			g.sysDoubleClickPlanet = i
@@ -72,6 +75,55 @@ func (g *Game) handleSystemInput() {
 			return
 		}
 	}
+}
+
+func (g *Game) handleSystemChannelSourceClick(mx, my float32) bool {
+	sel := g.world.System.Selected
+	if sel < 0 || sel >= len(g.world.System.Planets) {
+		return false
+	}
+	source := g.world.System.Planets[sel]
+	if !source.Completed {
+		return false
+	}
+	for _, fam := range resourceFamilies {
+		rect := g.sysResourceRect[fam.Resource]
+		if !rect.contains(mx, my) {
+			continue
+		}
+		if systemPlanetEffectiveAbstractRate(source, fam.Resource) <= 0 {
+			return true
+		}
+		if g.pendingChannelActive && g.pendingChannelResource == fam.Resource {
+			g.pendingChannelActive = false
+			g.pendingChannelResource = focusKindNone
+			return true
+		}
+		g.pendingChannelActive = true
+		g.pendingChannelResource = fam.Resource
+		return true
+	}
+	return false
+}
+
+func (g *Game) resolvePendingSystemChannel(target int) bool {
+	source := g.world.System.Selected
+	if !g.pendingChannelActive || source < 0 {
+		return false
+	}
+	resource := g.pendingChannelResource
+	if ch := findChannel(g.world, source, resource); ch != nil && ch.Target == target {
+		clearChannelTarget(g.world, source, resource)
+		g.pendingChannelActive = false
+		g.pendingChannelResource = focusKindNone
+		return true
+	}
+	if !setChannelTarget(g.world, source, resource, target) {
+		return false
+	}
+	g.pendingChannelActive = false
+	g.pendingChannelResource = focusKindNone
+	return true
 }
 
 // handlePlanetViewSystemReturn handles wheel-down and the return button
@@ -288,13 +340,13 @@ func placeBuildingWithFreePlacement(w *World, angle float64, freePlacement bool)
 			w.Economy.Water -= dockExtWaterCost
 		}
 		w.Buildings = append(w.Buildings, &Building{
-			ID:           id,
-			Kind:         KindDock,
-			Level:        1,
-			Angle:        angle,
-			Pos:          w.Planet.RimPoint(angle),
-			WorkCapacity: true,
-			Extension:    pv.Extension,
+			ID:                id,
+			Kind:              KindDock,
+			Level:             1,
+			Angle:             angle,
+			Pos:               w.Planet.RimPoint(angle),
+			ClaimableWorkSlot: true,
+			Extension:         pv.Extension,
 		})
 		if firstDock {
 			seedInitialDockSparkles(w, w.Buildings[len(w.Buildings)-1])

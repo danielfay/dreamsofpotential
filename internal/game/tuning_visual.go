@@ -113,11 +113,11 @@ const (
 
 	// Manual screen-space HUD base sizes. These are multiplied by the relevant
 	// HUD scale knob and the current view scale.
-	systemTopHUDHeightBase     = 34
+	systemTopHUDHeightBase     = 22
 	systemTopHUDSquareBase     = 8
 	systemTopHUDCircleBase     = 4
 	systemTopHUDAllocPipBase   = 4
-	systemTopHUDPaddingVBase   = 3
+	systemTopHUDPaddingVBase   = 2
 	systemTopHUDRowGapBase     = 3
 	systemTopHUDColumnGapBase  = 16
 	bottomHUDHeightBase        = 20
@@ -158,6 +158,21 @@ const (
 	// reveal animation phases (seconds)
 	revealPhaseASecs   = 1.0   // planet pulse + pull phase before system appears
 	revealWaveSpeedPxS = 200.0 // pixels/second the reveal wave expands
+
+	channelStockedLineWidth    = 2.25
+	channelEmptyLineWidth      = 1.00
+	channelStockedLineAlpha    = 220
+	channelEmptyLineAlpha      = 100
+	channelDormantBlend        = 64
+	channelFlowSpeed           = 0.28
+	channelFlowDotRadius       = 1.8
+	channelFlowDotStockedAlpha = 240
+	channelFlowDotEmptyAlpha   = 120
+	validTargetPulseHz         = 1.35
+	validTargetRingInset       = 5.0
+	validTargetRingPulse       = 2.0
+	validTargetRingWidth       = 1.5
+	validTargetRingAlpha       = 220
 
 	// Completion atmosphere — wide coloured glow drawn behind the planet on completion.
 	atmosphereIntroDur   = 3.0  // seconds for the atmosphere to expand into place

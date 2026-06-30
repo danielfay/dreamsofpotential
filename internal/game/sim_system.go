@@ -144,6 +144,8 @@ func checkActivePlanetCompletion(w *World) {
 	p.AbstractRate = EstimateRate(w) * completionAmplifier
 	if isWaterFrontier {
 		p.AbstractWaterRate = EstimateWaterRate(w) * completionAmplifier
+	} else if p.LayoutID == 0 {
+		p.AbstractWaterRate = lakewoodLatentWaterRate
 	}
 	p.Completed = true
 	p.CompletedAt = w.SimTime
@@ -152,15 +154,131 @@ func checkActivePlanetCompletion(w *World) {
 	}
 }
 
-// canAwaken reports whether the planet at idx can be manually awakened right now.
-// A planet can be awakened if it is dormant and is an echo or frontier kind.
-// Requirement-fill-based auto-awakening happens inside tickSystemChannels.
-func canAwaken(w *World, idx int) bool {
-	if idx < 0 || idx >= len(w.System.Planets) {
+type channelTickState struct {
+	fam          *resourceFamily
+	source       int
+	target       int
+	rate         float64
+	delivered    float64
+	stocked      bool
+	targetActive bool
+	valid        bool
+}
+
+func channelSourceStockpile(w *World, source int, fam *resourceFamily) *float64 {
+	if source == w.Active {
+		return fam.Stockpile(&w.Economy)
+	}
+	if source < 0 || source >= len(w.PlanetStates) || w.PlanetStates[source] == nil {
+		return nil
+	}
+	return fam.LocalStockpile(w.PlanetStates[source])
+}
+
+func channelTargetStockpile(w *World, target int, fam *resourceFamily) *float64 {
+	if target == w.Active {
+		return fam.Stockpile(&w.Economy)
+	}
+	if target < 0 || target >= len(w.PlanetStates) || w.PlanetStates[target] == nil {
+		return nil
+	}
+	return fam.LocalStockpile(w.PlanetStates[target])
+}
+
+func channelTargetReadyForResource(w *World, target int, resource ResourceKind) bool {
+	return true
+}
+
+func channelState(w *World, ch Channel, dt float64) channelTickState {
+	state := channelTickState{
+		source: ch.Source,
+		target: ch.Target,
+	}
+	if ch.Source < 0 || ch.Source >= len(w.System.Planets) || ch.Target < 0 || ch.Target >= len(w.System.Planets) {
+		return state
+	}
+	state.fam = familyForResource(ch.Resource)
+	if state.fam == nil {
+		return state
+	}
+	srcPlanet := &w.System.Planets[ch.Source]
+	state.rate = systemPlanetEffectiveAbstractRate(*srcPlanet, ch.Resource)
+	if state.rate <= 0 {
+		return state
+	}
+	if srcStockpile := channelSourceStockpile(w, ch.Source, state.fam); srcStockpile != nil && *srcStockpile > 0 {
+		state.stocked = true
+		state.delivered = channelStockedFrac * state.rate * dt
+		if state.delivered > *srcStockpile {
+			state.delivered = *srcStockpile
+		}
+	} else {
+		state.delivered = channelEmptyFrac * state.rate * dt
+	}
+	tgtPlanet := &w.System.Planets[ch.Target]
+	if tgtPlanet.Awakened && !channelTargetReadyForResource(w, ch.Target, ch.Resource) {
+		return state
+	}
+	state.targetActive = tgtPlanet.Awakened
+	state.valid = state.delivered > 0
+	return state
+}
+
+func canAssignChannel(w *World, source int, resource ResourceKind, target int) bool {
+	if source < 0 || source >= len(w.System.Planets) || target < 0 || target >= len(w.System.Planets) {
 		return false
 	}
-	p := w.System.Planets[idx]
-	return !p.Awakened && (p.Kind == PlanetEcho || p.Kind == PlanetUnknown)
+	if source == target {
+		return false
+	}
+	srcPlanet := w.System.Planets[source]
+	if !srcPlanet.Completed {
+		return false
+	}
+	return systemPlanetEffectiveAbstractRate(srcPlanet, resource) > 0
+}
+
+func setChannelTarget(w *World, source int, resource ResourceKind, target int) bool {
+	if !canAssignChannel(w, source, resource, target) {
+		return false
+	}
+	if ch := findChannel(w, source, resource); ch != nil {
+		ch.Target = target
+		return true
+	}
+	w.System.Channels = append(w.System.Channels, Channel{
+		Source:   source,
+		Resource: resource,
+		Target:   target,
+	})
+	return true
+}
+
+func clearChannelTarget(w *World, source int, resource ResourceKind) bool {
+	for i := range w.System.Channels {
+		ch := w.System.Channels[i]
+		if ch.Source != source || ch.Resource != resource {
+			continue
+		}
+		w.System.Channels = append(w.System.Channels[:i], w.System.Channels[i+1:]...)
+		return true
+	}
+	return false
+}
+
+func applyChannelDiscovery(w *World, target int, resource ResourceKind) {
+	if resource != KindWater {
+		return
+	}
+	w.Economy.WaterDiscovered = true
+	revealKindFields(w, KindWater)
+	if target == w.Active {
+		w.ResourceDiscovered = true
+		return
+	}
+	if target >= 0 && target < len(w.PlanetStates) && w.PlanetStates[target] != nil {
+		w.PlanetStates[target].ResourceDiscovered = true
+	}
 }
 
 // awakenPlanet creates the durable live state for the planet at idx.
@@ -209,70 +327,31 @@ func findChannel(w *World, source int, resource ResourceKind) *Channel {
 func tickSystemChannels(w *World, dt float64) {
 	for i := range w.System.Channels {
 		ch := &w.System.Channels[i]
-		src := ch.Source
-		tgt := ch.Target
-		if src < 0 || src >= len(w.System.Planets) || tgt < 0 || tgt >= len(w.System.Planets) {
+		state := channelState(w, *ch, dt)
+		if !state.valid {
 			continue
 		}
-		fam := familyForResource(ch.Resource)
-		if fam == nil {
-			continue
-		}
-		srcPlanet := &w.System.Planets[src]
-
-		// Resolve source rate and stockpile.
-		rate := *fam.AbstractRate(srcPlanet)
-		if rate <= 0 {
-			continue
-		}
-		var srcStockpile *float64
-		if src == w.Active {
-			srcStockpile = fam.Stockpile(&w.Economy)
-		} else if ps := w.PlanetStates[src]; ps != nil {
-			srcStockpile = fam.LocalStockpile(ps)
-		}
-
-		// Compute delivery; drain source only when stocked.
-		var delivered float64
-		if srcStockpile != nil && *srcStockpile > 0 {
-			delivered = channelStockedFrac * rate * dt
-			if delivered > *srcStockpile {
-				delivered = *srcStockpile
+		if state.stocked {
+			if srcStockpile := channelSourceStockpile(w, state.source, state.fam); srcStockpile != nil {
+				*srcStockpile -= state.delivered
 			}
-			*srcStockpile -= delivered
-		} else {
-			delivered = channelEmptyFrac * rate * dt
 		}
-
-		tgtPlanet := &w.System.Planets[tgt]
+		tgtPlanet := &w.System.Planets[state.target]
 
 		// Apply delivery to target.
 		if !tgtPlanet.Awakened {
 			// Dormant: accumulate fill toward awakening requirement.
-			fill := fam.AwakenFill(tgtPlanet)
-			req := *fam.AwakenReq(tgtPlanet)
-			*fill += delivered
+			fill := state.fam.AwakenFill(tgtPlanet)
+			req := *state.fam.AwakenReq(tgtPlanet)
+			*fill += state.delivered
 			if req > 0 && *fill > req {
 				*fill = req
 			}
 		} else {
 			// Awakened or completed: deliver into local stockpile.
-			// Skip water delivery to a target that hasn't discovered water yet.
-			if ch.Resource == KindWater {
-				var discovered bool
-				if tgt == w.Active {
-					discovered = w.Economy.WaterDiscovered
-				} else if ps := w.PlanetStates[tgt]; ps != nil {
-					discovered = ps.ResourceDiscovered
-				}
-				if !discovered {
-					continue
-				}
-			}
-			if tgt == w.Active {
-				*fam.Stockpile(&w.Economy) += delivered
-			} else if ps := w.PlanetStates[tgt]; ps != nil {
-				*fam.LocalStockpile(ps) += delivered
+			if tgtStockpile := channelTargetStockpile(w, state.target, state.fam); tgtStockpile != nil {
+				*tgtStockpile += state.delivered
+				applyChannelDiscovery(w, state.target, ch.Resource)
 			}
 		}
 
@@ -288,7 +367,7 @@ func tickSystemChannels(w *World, dt float64) {
 				}
 			}
 			if allMet {
-				awakenPlanet(w, tgt)
+				awakenPlanet(w, state.target)
 			}
 		}
 	}
@@ -306,9 +385,17 @@ func triggerUnlock(w *World) {
 	// Echoes are dormant — show a projected rate; AbstractRate stays 0 until completion.
 	if len(w.System.Planets) > 1 {
 		w.System.Planets[1].ProjectedRate = base * echoRateFracA
+		w.System.Planets[1].AwakenReqWood = echoAwakenReqWood
+		w.System.Planets[1].AwakenReqWater = echoAwakenReqWater
 	}
 	if len(w.System.Planets) > 2 {
 		w.System.Planets[2].ProjectedRate = base * echoRateFracB
+		w.System.Planets[2].AwakenReqWood = echoAwakenReqWood
+		w.System.Planets[2].AwakenReqWater = echoAwakenReqWater
+	}
+	if len(w.System.Planets) > 3 {
+		w.System.Planets[3].AwakenReqWood = frontierAwakenReqWood
+		w.System.Planets[3].AwakenReqWater = frontierAwakenReqWater
 	}
 	w.System.Planets[0].CompletedAt = w.SimTime
 	w.System.Unlocked = true

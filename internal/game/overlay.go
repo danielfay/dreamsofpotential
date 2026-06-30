@@ -50,13 +50,13 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 		}
 		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeAfterglow > 0 {
 			t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
-			col := colGrowthGaugeAfterglow
+			col, _ := growthGaugeFlashColors(KindWood)
 			col.A = uint8(120 * t)
 			vector.FillRect(screen, x, y, w, h, col, false)
 		}
 		if g.world.growthCue.Kind == KindWood && g.world.growthCue.GaugeRelease > 0 {
 			t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
-			col := colGrowthGaugeRelease
+			_, col := growthGaugeFlashColors(KindWood)
 			col.A = uint8(210 * t)
 			vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, col, false)
 		}
@@ -79,16 +79,30 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 			}
 			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeAfterglow > 0 {
 				t := g.world.growthCue.GaugeAfterglow / growthGaugeAfterglowTime
-				col := colGrowthGaugeAfterglow
+				col, _ := growthGaugeFlashColors(KindWater)
 				col.A = uint8(120 * t)
 				vector.FillRect(screen, wx, wy, ww, h, col, false)
 			}
 			if g.world.growthCue.Kind == KindWater && g.world.growthCue.GaugeRelease > 0 {
 				t := g.world.growthCue.GaugeRelease / growthGaugeReleaseTime
-				col := colGrowthGaugeRelease
+				_, col := growthGaugeFlashColors(KindWater)
 				col.A = uint8(210 * t)
 				vector.StrokeRect(screen, wx-1, wy-1, ww+2, h+2, 1, col, false)
 			}
+		}
+
+		if activeIncomingChannelForResource(g.world, KindWood) {
+			glow := brighten(colWoodResource, 72)
+			glow.A = 48
+			vector.FillRect(screen, x, float32(r.Min.Y), w, float32(r.Dy()), glow, false)
+		}
+		if g.world.Economy.WaterDiscovered && activeIncomingChannelForResource(g.world, KindWater) {
+			wr := g.hud.waterHUD.GetWidget().Rect
+			wx := float32(wr.Min.X)
+			ww := float32(wr.Dx())
+			glow := brighten(colSparkle, 72)
+			glow.A = 48
+			vector.FillRect(screen, wx, float32(wr.Min.Y), ww, float32(wr.Dy()), glow, false)
 		}
 
 		if len(g.world.Workers) > 0 && g.world.Economy.TownGrowthCap > 0 && g.hud.workerHUD != nil {
@@ -144,27 +158,27 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 
 	if g.pulseTime > 0 {
 		colPulse := colCostPulse
-		colPulse.A = uint8(200 * g.pulseTime / pulseDuration)
+		colPulse.A = uint8(96 * g.pulseTime / pulseDuration)
 		if g.pulseTarget&costPulseWood != 0 && g.hud.resourceHUD != nil {
 			pr := g.hud.resourceHUD.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			vector.FillRect(screen,
+				float32(pr.Min.X), float32(pr.Min.Y),
+				float32(pr.Max.X-pr.Min.X), float32(pr.Max.Y-pr.Min.Y),
+				colPulse, false)
 		}
 		if g.pulseTarget&costPulseWater != 0 && g.hud.waterHUD != nil {
 			pr := g.hud.waterHUD.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			vector.FillRect(screen,
+				float32(pr.Min.X), float32(pr.Min.Y),
+				float32(pr.Max.X-pr.Min.X), float32(pr.Max.Y-pr.Min.Y),
+				colPulse, false)
 		}
 		if g.pulseTarget&costPulseNurture != 0 {
 			pr := g.hud.resourceSquare.GetWidget().Rect
-			vector.StrokeRect(screen,
-				float32(pr.Min.X)-2, float32(pr.Min.Y)-2,
-				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
-				2, colPulse, false)
+			vector.FillRect(screen,
+				float32(pr.Min.X), float32(pr.Min.Y),
+				float32(pr.Max.X-pr.Min.X), float32(pr.Max.Y-pr.Min.Y),
+				colPulse, false)
 		}
 	}
 }
@@ -218,4 +232,27 @@ func drawButtonProgress(screen *ebiten.Image, btn *widget.Button, frac float32, 
 	x := float32(r.Min.X)
 	y := float32(r.Max.Y) - h
 	vector.FillRect(screen, x, y, w, h, col, false)
+}
+
+func activeIncomingChannelForResource(w *World, resource ResourceKind) bool {
+	for _, ch := range w.System.Channels {
+		if ch.Target != w.Active || ch.Resource != resource {
+			continue
+		}
+		state := channelState(w, ch, 1.0)
+		if state.valid {
+			return true
+		}
+	}
+	return false
+}
+
+func growthGaugeFlashColors(kind ResourceKind) (afterglow, release color.RGBA) {
+	base := colWoodResource
+	if kind == KindWater {
+		base = colSparkle
+	}
+	afterglow = brighten(base, 54)
+	release = brighten(base, 108)
+	return afterglow, release
 }

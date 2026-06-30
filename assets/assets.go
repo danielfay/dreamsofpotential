@@ -31,3 +31,6 @@ var SparklePNG []byte
 
 //go:embed sprites/sparkle.json
 var SparkleJSON []byte
+
+//go:embed sprites/transfer_button.png
+var TransferButtonPNG []byte

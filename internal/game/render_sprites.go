@@ -43,6 +43,9 @@ var (
 
 	sparkleAseOnce sync.Once
 	sparkleAse_    *goaseprite.File
+
+	transferButtonSpriteOnce sync.Once
+	transferButtonSpriteImg  *ebiten.Image
 )
 
 func workerSprite() *ebiten.Image {
@@ -279,6 +282,17 @@ func sparkleAse() *goaseprite.File {
 		sparkleAse_ = goaseprite.Read(assets.SparkleJSON)
 	})
 	return sparkleAse_
+}
+
+func transferButtonSprite() *ebiten.Image {
+	transferButtonSpriteOnce.Do(func() {
+		img, _, err := image.Decode(bytes.NewReader(assets.TransferButtonPNG))
+		if err != nil {
+			panic(err)
+		}
+		transferButtonSpriteImg = ebiten.NewImageFromImage(img)
+	})
+	return transferButtonSpriteImg
 }
 
 // drawSparkle draws an animated water sparkle sprite centered at n.Pos.

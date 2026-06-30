@@ -969,12 +969,8 @@ func completeWaterUnload(w *World, wk *Worker, dock *Building) {
 	tryConsumeGrowth(w)
 	// On first water delivery: reveal unknown water fields on all planets so
 	// previously-teased lakes become real (enabling nurture and progression).
-	// Also auto-set a labor split if the player hasn't configured one yet.
 	if !wasDiscovered && w.Economy.WaterDiscovered {
 		revealKindFields(w, KindWater)
-		if len(w.LaborFocus) == 0 && dockHasServiceableSparkles(w) {
-			setAutoProofSplit(w)
-		}
 	}
 	if dock != nil {
 		activatePulse(w, &dock.Pulse)
@@ -1010,18 +1006,4 @@ func dockHasServiceableSparkles(w *World) bool {
 
 func laborFocusControlAvailable(w *World) bool {
 	return len(w.Workers) > 0 && dockHasServiceableSparkles(w)
-}
-
-// setAutoProofSplit initialises LaborFocus to 1 water + rest wood worker,
-// preserving any subsequent manual overrides (only called when LaborFocus is nil).
-func setAutoProofSplit(w *World) {
-	total := len(w.Workers)
-	if total == 0 {
-		return
-	}
-	wood := total - 1
-	if wood < 0 {
-		wood = 0
-	}
-	w.LaborFocus = laborFocusMap(wood, 1)
 }
