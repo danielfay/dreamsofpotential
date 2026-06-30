@@ -67,6 +67,8 @@ type Game struct {
 	revealActive  bool
 	revealElapsed float64
 
+	starfield starfieldState
+
 	// system-view button rects in native screen space (set during drawOverlay; read by handleSystemInput)
 	sysEnterRect    sysRect                  // enter-planet tray button
 	sysReturnRect   sysRect                  // return-to-system button in planet view
@@ -113,6 +115,7 @@ func New() (*Game, error) {
 	g := &Game{
 		world:                        w,
 		scene:                        ebiten.NewImage(virtW, virtH),
+		starfield:                    newStarfield(),
 		hudScale:                     initialScale,
 		hudDigits:                    woodDigits(w.Economy.Wood),
 		saveTimer:                    autoSavePeriod,
@@ -227,6 +230,7 @@ func (g *Game) Update() error {
 		return nil
 	}
 
+	updateStarfield(&g.starfield)
 	g.handleGlobalInput()
 	if g.showMenu {
 		g.preview = nil
@@ -384,6 +388,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.ui.Draw(screen)
 		return
 	}
+
+	drawStarfield(g.scene, &g.starfield, bgCol)
 
 	switch {
 	case g.revealActive:

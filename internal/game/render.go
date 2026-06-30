@@ -1,8 +1,10 @@
 package game
 
 import (
+	"image"
 	"image/color"
 	"math"
+	"math/rand"
 
 	"github.com/mazznoer/colorgrad"
 	"github.com/tanema/gween/ease"
@@ -59,6 +61,92 @@ func init() {
 	gradAtmosphereA = buildAtmosphereGrad(colAtmosphereA)
 	gradAtmosphereB = buildAtmosphereGrad(colAtmosphereB)
 	gradAtmosphereWater = buildAtmosphereGrad(colAtmosphereWater)
+}
+
+// flickerStar tracks one star pixel that occasionally blinks off for a few frames.
+type flickerStar struct {
+	x, y   int
+	timer  float64 // counts down; triggers dark when ≤ 0
+	offFor float64 // seconds remaining dark
+	period float64 // seconds between blinks
+}
+
+// starfieldState holds the randomised tile grid and flicker star list for the
+// shared space background drawn behind both planet and system views.
+type starfieldState struct {
+	tileGrid     [5][4]int // which of the 10 tile variants each 64×64 cell shows
+	flickerStars []flickerStar
+}
+
+// newStarfield builds a deterministic starfield layout seeded at 42.
+// Tile indices 8 and 9 carry a designated flicker star at known tile-relative positions.
+func newStarfield() starfieldState {
+	rng := rand.New(rand.NewSource(42))
+	var sf starfieldState
+	for cx := range sf.tileGrid {
+		for cy := range sf.tileGrid[cx] {
+			sf.tileGrid[cx][cy] = rng.Intn(10)
+		}
+	}
+	for cx := range sf.tileGrid {
+		for cy := range sf.tileGrid[cx] {
+			var rx, ry int
+			switch sf.tileGrid[cx][cy] {
+			case 8:
+				rx, ry = 42, 28
+			case 9:
+				rx, ry = 35, 52
+			default:
+				continue
+			}
+			sf.flickerStars = append(sf.flickerStars, flickerStar{
+				x:      cx*64 + rx,
+				y:      cy*64 + ry,
+				timer:  4.0 + rng.Float64()*4.0,
+				period: 4.0 + rng.Float64()*4.0,
+			})
+		}
+	}
+	return sf
+}
+
+func updateStarfield(sf *starfieldState) {
+	for i := range sf.flickerStars {
+		fs := &sf.flickerStars[i]
+		if fs.offFor > 0 {
+			fs.offFor -= dt
+		} else {
+			fs.timer -= dt
+			if fs.timer <= 0 {
+				fs.offFor = 3 * dt
+				fs.timer = fs.period
+			}
+		}
+	}
+}
+
+func drawStarfield(scene *ebiten.Image, sf *starfieldState, bgCol color.RGBA) {
+	scene.Fill(bgCol)
+	img := starfieldSprite()
+	const (
+		tileW = 64
+		tileH = 64
+	)
+	for cx := range sf.tileGrid {
+		for cy := range sf.tileGrid[cx] {
+			tileIdx := sf.tileGrid[cx][cy]
+			src := image.Rect(tileIdx*tileW, 0, (tileIdx+1)*tileW, tileH)
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Translate(float64(cx*tileW), float64(cy*tileH))
+			scene.DrawImage(img.SubImage(src).(*ebiten.Image), op)
+		}
+	}
+	for i := range sf.flickerStars {
+		if sf.flickerStars[i].offFor > 0 {
+			fs := sf.flickerStars[i]
+			vector.FillRect(scene, float32(fs.x), float32(fs.y), 1, 1, bgCol, false)
+		}
+	}
 }
 
 // viewGeom returns the uniform scale and top-left offset that centres the
@@ -196,7 +284,6 @@ func atmosphereFor(p SystemPlanet) (color.RGBA, colorgrad.Gradient) {
 // line preview. debug enables the range-boundary markers.
 func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) {
 	pal := activePlanetPalette(w)
-	scene.Fill(pal.background)
 
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	r := float32(w.Planet.Radius)
