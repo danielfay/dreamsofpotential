@@ -380,7 +380,8 @@ func systemPlanetHasEcology(w *World, selected int, resource ResourceKind) bool 
 	case KindWood:
 		return p.Kind == PlanetStarting || p.Kind == PlanetEcho || p.AwakenReqWood > 0
 	case KindWater:
-		return p.Kind == PlanetUnknown || p.ProjectedWaterRate > 0 || p.AbstractWaterRate > 0 || p.AwakenReqWater > 0
+		return p.Kind == PlanetUnknown || p.ProjectedWaterRate > 0 || p.AbstractWaterRate > 0 || p.AwakenReqWater > 0 ||
+			(p.Kind == PlanetEcho && p.RingColorIdx == 0) // layout 0 (Lakewood) has water ecology
 	default:
 		return false
 	}
