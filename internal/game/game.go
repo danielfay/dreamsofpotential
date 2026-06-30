@@ -389,6 +389,21 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 
+	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+
+	// Tile the starfield across the full screen so letterbox/pillarbox bars
+	// get the same background as the virtual canvas.
+	sfImg := starfieldSprite()
+	sfW := 640.0 * scale
+	startX := offX - math.Ceil(offX/sfW)*sfW
+	for x := startX; x < float64(g.screenW); x += sfW {
+		sfOp := &ebiten.DrawImageOptions{}
+		sfOp.GeoM.Scale(scale, scale)
+		sfOp.GeoM.Translate(x, offY)
+		sfOp.Filter = ebiten.FilterNearest
+		screen.DrawImage(sfImg, sfOp)
+	}
+
 	drawStarfield(g.scene, &g.starfield, bgCol)
 
 	switch {
@@ -400,7 +415,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		DrawWorld(g.scene, g.world, g.preview, g.debug)
 	}
 
-	scale, offX, offY := viewGeom(g.screenW, g.screenH)
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(scale, scale)
 	op.GeoM.Translate(offX, offY)
