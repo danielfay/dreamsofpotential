@@ -3,7 +3,6 @@
   "description": "Lakewood entered with full town and both forest regions near-saturated. Main forest fully packed; island forest filled minus one spawn slot. Expected read: next tree spawn event fires completion; lake topology clearly visible between dense regions.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "awakenEchoes": [1],

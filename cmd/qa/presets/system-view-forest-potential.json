@@ -1,9 +1,8 @@
 {
   "name": "system-view-forest-potential",
-  "description": "Starting planet complete; system view with 1 Forest Potential earned and visible in HUD. No echo awakened yet. Expected read: Forest Potential circle lit in top-right HUD; awaken action inactive (no echo selected).",
+  "description": "Starting planet complete; system view with no echoes awakened yet. Expected read: system view with echo channel setup available; no Potential UI.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "wood": 50

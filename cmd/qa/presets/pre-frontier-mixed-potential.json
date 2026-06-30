@@ -1,9 +1,8 @@
 {
   "name": "pre-frontier-mixed-potential",
-  "description": "System unlocked; 1 Forest Potential banked but no Water Potential; frontier selected. Expected read: only Forest Potential circle lit; awaken button in tray is dimmed because Water Potential is missing.",
+  "description": "Starting planet complete; frontier selected; no echoes completed yet. Expected read: frontier tray with awaken unavailable — no completed source planet to channel from.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "selectPlanet": 3,

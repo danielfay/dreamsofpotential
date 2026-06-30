@@ -42,6 +42,9 @@ type screenshotScenario struct {
 	selectBuilding   *int // non-nil: select this building index (for tray screenshots)
 	showFocusControl bool
 	focusDraftWater  int
+	// channel choosing-target overlay
+	pendingChannelActive   bool
+	pendingChannelResource ResourceKind
 }
 
 func screenshotScenarios() []screenshotScenario {
@@ -91,6 +94,12 @@ func screenshotScenarios() []screenshotScenario {
 		m6SystemViewRatesScenario(),              // 41
 		m6PlanetViewAwakenedScenario(),           // 42
 		m5AwakenBootstrapScenario(),              // 43
+		m6ChoosingTargetScenario(),               // 44
+		m6DormantFillScenario(),                  // 45
+		m6ChannelStockedScenario(),               // 46
+		m6ChannelEmptyScenario(),                 // 47
+		m6AutoAwakenReadyScenario(),              // 48
+		m6TradeInflowScenario(),                  // 49
 	}
 }
 
@@ -435,7 +444,7 @@ func systemViewEchoAwakenablePotentialScenario() screenshotScenario {
 		SelectPlanet: intPtr(1),
 		Wood:         &wood,
 	})
-	return screenshotScenario{name: "19-system-view-echo-awakenable-potential", world: w, fullHUD: true}
+	return screenshotScenario{name: "19-system-view-echo-awakenable", world: w, fullHUD: true}
 }
 
 func systemViewEchoAwakenedScenario() screenshotScenario {
@@ -487,7 +496,7 @@ func systemViewForestPotentialScenario() screenshotScenario {
 		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
 		Wood: &wood,
 	})
-	return screenshotScenario{name: "24-system-view-forest-potential", world: w, fullHUD: true}
+	return screenshotScenario{name: "24-system-view-revealed", world: w, fullHUD: true}
 }
 
 func tightGroveFreshScenario() screenshotScenario {
@@ -533,7 +542,7 @@ func systemViewLakewoodCompletedScenario() screenshotScenario {
 		CompleteEchoes: []int{1},
 		Wood:           &wood,
 	})
-	return screenshotScenario{name: "27-system-view-lakewood-completed-water-potential", world: w, fullHUD: true}
+	return screenshotScenario{name: "27-system-view-lakewood-completed", world: w, fullHUD: true}
 }
 
 func systemViewUnknownWaterResonanceScenario() screenshotScenario {
@@ -831,6 +840,103 @@ func m5AwakenBootstrapScenario() screenshotScenario {
 	return screenshotScenario{name: "43-m5-awaken-bootstrap", world: w, fullHUD: true}
 }
 
+// m6ChoosingTargetScenario shows the system view while assigning a wood channel:
+// the source (echo 1) is selected and valid targets pulse with the selection ring.
+func m6ChoosingTargetScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		SelectPlanet:   intPtr(1),
+		Wood:           &wood,
+	})
+	return screenshotScenario{
+		name:                   "44-m6-channel-choosing-target",
+		world:                  w,
+		fullHUD:                true,
+		pendingChannelActive:   true,
+		pendingChannelResource: KindWood,
+	}
+}
+
+// m6DormantFillScenario shows a dormant echo with partial awaken fill visible
+// in the system tray (fill bar ~50% complete).
+func m6DormantFillScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		Channels:       []QAChannel{{Source: 1, Resource: "wood", Target: 2}},
+		AwakenFill:     []QAAwakenFill{{Planet: 2, Wood: 150}},
+		SelectPlanet:   intPtr(2),
+		Wood:           &wood,
+	})
+	w.System.Planets[2].AwakenReqWood = 300
+	w.System.Planets[2].AwakenFillWood = 150
+	return screenshotScenario{name: "45-m6-dormant-fill", world: w, fullHUD: true}
+}
+
+// m6ChannelStockedScenario shows a wood channel from a stocked source (bright,
+// thick line with two flow dots).
+func m6ChannelStockedScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		Channels:       []QAChannel{{Source: 1, Resource: "wood", Target: 2}},
+		Wood:           &wood,
+	})
+	if w.PlanetStates[1] == nil {
+		w.PlanetStates[1] = &PlanetState{}
+	}
+	w.PlanetStates[1].LocalWood = 200
+	return screenshotScenario{name: "46-m6-channel-stocked", world: w, fullHUD: true}
+}
+
+// m6ChannelEmptyScenario shows a wood channel from an empty source (dim, thin
+// line with one flow dot).
+func m6ChannelEmptyScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		Channels:       []QAChannel{{Source: 1, Resource: "wood", Target: 2}},
+		Wood:           &wood,
+	})
+	return screenshotScenario{name: "47-m6-channel-empty", world: w, fullHUD: true}
+}
+
+// m6AutoAwakenReadyScenario shows a dormant echo whose fill bar is nearly full,
+// one tick away from auto-awakening.
+func m6AutoAwakenReadyScenario() screenshotScenario {
+	wood := 50.0
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{1},
+		Channels:       []QAChannel{{Source: 1, Resource: "wood", Target: 2}},
+		SelectPlanet:   intPtr(2),
+		Wood:           &wood,
+	})
+	w.System.Planets[2].AwakenReqWood = 300
+	w.System.Planets[2].AwakenFillWood = 299
+	return screenshotScenario{name: "48-m6-auto-awaken-ready", world: w, fullHUD: true}
+}
+
+// m6TradeInflowScenario shows the planet view of an awakened echo receiving
+// wood via an incoming channel — trade inflow visible in the HUD stockpile.
+func m6TradeInflowScenario() screenshotScenario {
+	enter := 1
+	w := mustBuildQAWorld(QAPreset{
+		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
+		CompleteEchoes: []int{2},
+		AwakenEchoes:   []int{1},
+		EnterPlanet:    &enter,
+		Channels:       []QAChannel{{Source: 2, Resource: "wood", Target: 1}},
+	})
+	w.Economy.Wood = 120
+	return screenshotScenario{name: "49-m6-trade-inflow", world: w, fullHUD: true}
+}
+
 func intPtr(v int) *int { return &v }
 
 func screenshotWorld(seed int64) *World {
@@ -905,19 +1011,22 @@ func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 		selectedBldID = *shot.selectBuilding
 	}
 	game := &Game{
-		world:              shot.world,
-		scene:              ebiten.NewImage(virtW, virtH),
-		hudScale:           scale,
-		hudDigits:          woodDigits(shot.world.Economy.Wood),
-		preview:            shot.preview,
-		placing:            shot.placing,
-		debug:              shot.debug,
-		debugSection:       shot.debugSection,
-		selectedBuildingID: selectedBldID,
-		revealActive:       shot.revealActive,
-		revealElapsed:      shot.revealElapsed,
-		showFocusControl:   shot.showFocusControl,
-		focusDraftWater:    shot.focusDraftWater,
+		world:                  shot.world,
+		scene:                  ebiten.NewImage(virtW, virtH),
+		hudScale:               scale,
+		hudDigits:              woodDigits(shot.world.Economy.Wood),
+		preview:                shot.preview,
+		placing:                shot.placing,
+		debug:                  shot.debug,
+		debugSection:           shot.debugSection,
+		selectedBuildingID:     selectedBldID,
+		revealActive:           shot.revealActive,
+		revealElapsed:          shot.revealElapsed,
+		showFocusControl:       shot.showFocusControl,
+		focusDraftWater:        shot.focusDraftWater,
+		pendingChannelActive:   shot.pendingChannelActive,
+		pendingChannelResource: shot.pendingChannelResource,
+		sysResourceRect:        make(map[ResourceKind]sysRect),
 	}
 	hud, ui, err := buildHUD(game, scale)
 	if err != nil {

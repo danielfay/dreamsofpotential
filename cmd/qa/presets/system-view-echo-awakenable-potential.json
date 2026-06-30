@@ -1,9 +1,8 @@
 {
   "name": "system-view-echo-awakenable-potential",
-  "description": "Starting planet complete; 1 Forest Potential banked; echo 1 (Lakewood) selected and awakenable. Expected read: Forest Potential circle lit; awaken action active on the selected echo (costs 1 Forest Potential).",
+  "description": "Starting planet complete; echo 1 (Lakewood) selected. Expected read: echo tray visible; awaken now available via channel assignment from the completed starting planet.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "selectPlanet": 1,

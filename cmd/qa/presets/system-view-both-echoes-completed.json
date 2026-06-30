@@ -3,7 +3,6 @@
   "description": "Both echo planets completed. Expected read: afterglow rings on both echoes; unknown frontier shows a faint sinusoidal shimmer; selecting the unknown does nothing; global wood/sec reflects both amplified rates.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "completeEchoes": [1, 2],
