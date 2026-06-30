@@ -88,8 +88,8 @@ func screenshotScenarios() []screenshotScenario {
 		workerRatioUIOpenScenario(),              // 38
 		workerRatioHUDScenario(),                 // 39
 		waterPlanetCompletedSystemViewScenario(), // 40
-		m5SystemViewRateAllocationScenario(),     // 41
-		m5PlanetViewFractionalCirclesScenario(),  // 42
+		m6SystemViewRatesScenario(),              // 41
+		m6PlanetViewAwakenedScenario(),           // 42
 		m5AwakenBootstrapScenario(),              // 43
 	}
 }
@@ -561,14 +561,12 @@ func systemViewFrontierPreAwakenable() screenshotScenario {
 
 func systemViewFrontierAwakenableScenario() screenshotScenario {
 	wood := 50.0
-	forestPot := 1
 	sel := 3
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
-		CompleteEchoes:  []int{1},
-		ForestPotential: &forestPot,
-		SelectPlanet:    &sel,
-		Wood:            &wood,
+		CompleteEchoes: []int{1},
+		SelectPlanet:   &sel,
+		Wood:           &wood,
 	})
 	return screenshotScenario{name: "30-system-view-frontier-awakenable", world: w, fullHUD: true}
 }
@@ -793,10 +791,9 @@ func waterPlanetCompletedSystemViewScenario() screenshotScenario {
 	return screenshotScenario{name: "40-water-planet-completed-system-view", world: w, fullHUD: true}
 }
 
-// m5SystemViewRateAllocationScenario shows the system view after one echo is
-// completed, with a fractional WoodAllocPotential so both Potential and Research
-// pips are visible alongside the wood rate display.
-func m5SystemViewRateAllocationScenario() screenshotScenario {
+// m6SystemViewRatesScenario shows the system view after one echo is completed,
+// with the channel-based rate display in the top HUD.
+func m6SystemViewRatesScenario() screenshotScenario {
 	wood := 50.0
 	w := mustBuildQAWorld(QAPreset{
 		Seed: 11, PlaceTownHall: true, SaturateWoodField: true, Reveal: true,
@@ -804,13 +801,12 @@ func m5SystemViewRateAllocationScenario() screenshotScenario {
 		SelectPlanet:   intPtr(1),
 		Wood:           &wood,
 	})
-	w.SystemEconomy.WoodAllocPotential = 0.75
-	return screenshotScenario{name: "41-m5-system-view-rate-allocation", world: w, fullHUD: true}
+	return screenshotScenario{name: "41-m6-system-view-rates", world: w, fullHUD: true}
 }
 
-// m5PlanetViewFractionalCirclesScenario shows an echo in planet view with a
-// fractional Forest Potential balance so the HUD displays partial circle pips.
-func m5PlanetViewFractionalCirclesScenario() screenshotScenario {
+// m6PlanetViewAwakenedScenario shows an awakened echo in planet view with
+// the seed wood stockpile visible in the HUD.
+func m6PlanetViewAwakenedScenario() screenshotScenario {
 	wood := 50.0
 	enter := 1
 	w := mustBuildQAWorld(QAPreset{
@@ -820,8 +816,7 @@ func m5PlanetViewFractionalCirclesScenario() screenshotScenario {
 		EchoPlaceTownHall: true,
 		Wood:              &wood,
 	})
-	w.Economy.Potential[PotentialForest] = 2.7
-	return screenshotScenario{name: "42-m5-planet-view-fractional-circles", world: w, fullHUD: true}
+	return screenshotScenario{name: "42-m6-planet-view-awakened", world: w, fullHUD: true}
 }
 
 // m5AwakenBootstrapScenario shows a freshly awakened echo entered before any Town

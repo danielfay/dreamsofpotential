@@ -58,12 +58,6 @@ type QAPreset struct {
 	// system view on the starting planet. Applied after AwakenFrontier.
 	CompleteFrontier bool `json:"completeFrontier"`
 
-	// ForestPotential / WaterPotential stamp exact Potential balances after all
-	// other overrides (including AwakenEchoes, CompleteEchoes, AwakenFrontier).
-	// Use to set precise amounts for QA scenarios without relying on the growth path.
-	ForestPotential *int `json:"forestPotential"`
-	WaterPotential  *int `json:"waterPotential"`
-
 	// EnterPlanet switches the active planet and enters planet view.
 	// Applied after AwakenEchoes, CompleteEchoes, and AwakenFrontier.
 	EnterPlanet *int `json:"enterPlanet"`
@@ -201,7 +195,6 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			return nil, fmt.Errorf("awakenEchoes: planet %d is not an echo", idx)
 		}
 		if !w.System.Planets[idx].Awakened {
-			w.Economy.Potential[PotentialForest] += 1.0
 			awakenPlanet(w, idx)
 		}
 	}
@@ -214,7 +207,6 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 			return nil, fmt.Errorf("completeEchoes: planet %d is not an echo", idx)
 		}
 		if !w.System.Planets[idx].Awakened {
-			w.Economy.Potential[PotentialForest] += 1.0
 			awakenPlanet(w, idx)
 		}
 		// Build out the echo to meet the completion gate.
@@ -239,13 +231,10 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		enterSystemView(w)
 	}
 
-	// Frontier awakening — grant required Potential and awaken the frontier.
+	// Frontier awakening.
 	if p.AwakenFrontier {
 		const frontierIdx = 3
 		if !w.System.Planets[frontierIdx].Awakened {
-			for kind, cost := range planetAwakenCost(w, frontierIdx) {
-				w.Economy.Potential[kind] += float64(cost)
-			}
 			awakenPlanet(w, frontierIdx)
 		}
 	}
@@ -279,15 +268,6 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		}
 		switchToPlanet(w, 0)
 		enterSystemView(w)
-	}
-
-	// Potential stamps — applied after all lifecycle overrides so callers can set
-	// exact balances regardless of what the growth path happened to award.
-	if p.ForestPotential != nil {
-		w.Economy.Potential[PotentialForest] = float64(*p.ForestPotential)
-	}
-	if p.WaterPotential != nil {
-		w.Economy.Potential[PotentialWater] = float64(*p.WaterPotential)
 	}
 
 	// Select a specific planet in system view.

@@ -166,13 +166,6 @@ func (g *Game) drawOverlay(screen *ebiten.Image) {
 				float32(pr.Max.X-pr.Min.X)+4, float32(pr.Max.Y-pr.Min.Y)+4,
 				2, colPulse, false)
 		}
-		for i := range resourceFamilies {
-			fam := &resourceFamilies[i]
-			r := g.sysInjectRect[fam.Potential]
-			if g.pulseTarget&fam.InjectCostPulse != 0 && r.w > 0 {
-				vector.StrokeRect(screen, r.x-2, r.y-2, r.w+4, r.h+4, 2, colPulse, false)
-			}
-		}
 	}
 }
 

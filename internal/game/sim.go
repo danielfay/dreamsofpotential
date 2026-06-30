@@ -79,10 +79,9 @@ func Tick(w *World, dt float64) (justUnlocked bool) {
 			checkActivePlanetCompletion(w)
 			updateActiveAbstractRate(w, dt)
 		}
-		// System economy (research + Potential generation) is a background
-		// process that runs every frame post-unlock, independent of the active
+		// Channel delivery runs every frame post-unlock, independent of the active
 		// view. The system is never "parked" like a planet — issue 106.
-		tickSystemEconomy(w, dt)
+		tickSystemChannels(w, dt)
 		return false
 	}
 	// Pre-unlock: check mastery gate exactly once.

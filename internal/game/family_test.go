@@ -6,8 +6,8 @@ func TestResourceFamilyRegistryConsistency(t *testing.T) {
 	for i := range resourceFamilies {
 		fam := &resourceFamilies[i]
 		if fam.Stockpile == nil || fam.LocalStockpile == nil || fam.AbstractRate == nil ||
-			fam.ProjectedRate == nil || fam.SystemRate == nil || fam.Research == nil ||
-			fam.AllocPotential == nil || fam.Estimate == nil {
+			fam.ProjectedRate == nil || fam.AwakenReq == nil || fam.AwakenFill == nil ||
+			fam.Estimate == nil {
 			t.Fatalf("resourceFamilies[%d] has nil accessors", i)
 		}
 		if got := familyForResource(fam.Resource); got != fam {

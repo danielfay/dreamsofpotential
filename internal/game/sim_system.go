@@ -1,7 +1,5 @@
 package game
 
-import "math"
-
 // forestPlanetComplete reports the mastery gate for forest-kind planets:
 // minimum completion population is reached AND every known KindWood region is saturated.
 func forestPlanetComplete(w *World) bool {
@@ -115,41 +113,6 @@ func updateActiveAbstractRate(w *World, dt float64) {
 	}
 }
 
-// systemRate returns total resource/sec from all completed planets for fam.
-func systemRate(w *World, fam *resourceFamily) float64 {
-	var total float64
-	for _, p := range w.System.Planets {
-		if !p.Completed {
-			continue
-		}
-		total += *fam.AbstractRate(&p)
-	}
-	return total
-}
-
-// systemWoodRate returns total wood/sec from all completed planets.
-func systemWoodRate(w *World) float64 {
-	return systemRate(w, familyForResource(KindWood))
-}
-
-// systemWaterRate returns total water/sec from all completed planets.
-func systemWaterRate(w *World) float64 {
-	return systemRate(w, familyForResource(KindWater))
-}
-
-// tickSystemEconomy computes system-wide rates from completed planets and
-// allocates them to Potential and Research accumulators.
-func tickSystemEconomy(w *World, dt float64) {
-	for i := range resourceFamilies {
-		fam := &resourceFamilies[i]
-		rate := systemRate(w, fam)
-		*fam.SystemRate(&w.SystemEconomy) = rate
-		alloc := *fam.AllocPotential(&w.SystemEconomy)
-		w.Economy.Potential[fam.Potential] += rate * alloc * dt
-		*fam.Research(&w.SystemEconomy) += rate * (1 - alloc) * dt
-	}
-}
-
 // allEchoesComplete reports whether every echo planet in the system is completed.
 func allEchoesComplete(w *World) bool {
 	for _, p := range w.System.Planets {
@@ -178,7 +141,6 @@ func checkActivePlanetCompletion(w *World) {
 			return
 		}
 	}
-	awardCompletionPotential(w)
 	p.AbstractRate = EstimateRate(w) * completionAmplifier
 	if isWaterFrontier {
 		p.AbstractWaterRate = EstimateWaterRate(w) * completionAmplifier
@@ -190,84 +152,30 @@ func checkActivePlanetCompletion(w *World) {
 	}
 }
 
-// injectCirclePacket spends 1 whole Potential circle of kind on the selected
-// system planet: deducts 1.0 from the fractional pool, activates the matching
-// field family if not yet active, and grants a flat local resource packet.
-// Returns false if the player cannot afford the circle.
-func injectCirclePacket(w *World, kind PotentialKind) bool {
-	if math.Floor(w.Economy.Potential[kind]) < 1 {
-		return false
-	}
-	sel := w.System.Selected
-	if sel < 0 {
-		return false
-	}
-	w.Economy.Potential[kind] -= 1.0
-	fam := familyForPotential(kind)
-	if fam == nil {
-		return false
-	}
-	if sel == w.Active {
-		activateFieldFamily(w.Planet.Fields, fam.Resource)
-		*fam.Stockpile(&w.Economy) += fam.CirclePacket
-	} else if ps := w.PlanetStates[sel]; ps != nil {
-		activateFieldFamily(ps.Planet.Fields, fam.Resource)
-		*fam.LocalStockpile(ps) += fam.CirclePacket
-	}
-	return true
-}
-
-// activateFieldFamily marks the first field of kind as Known in fields if none
-// is already known. No-op if the family is already active.
-func activateFieldFamily(fields []*ResourceField, kind ResourceKind) {
-	for _, f := range fields {
-		if f.Kind == kind && !f.Known {
-			f.Known = true
-			return
-		}
-	}
-}
-
-// planetAwakenCost returns the Potential cost to awaken the planet at idx.
-// Echo planets cost 1 Forest Potential; the unknown frontier costs 1 Forest + 1 Water Potential.
-func planetAwakenCost(w *World, idx int) map[PotentialKind]int {
-	if idx >= 0 && idx < len(w.System.Planets) && w.System.Planets[idx].Kind == PlanetUnknown {
-		return map[PotentialKind]int{PotentialForest: 1, PotentialWater: 1}
-	}
-	return map[PotentialKind]int{PotentialForest: 1}
-}
-
-// canAwaken reports whether the planet at idx can be awakened right now.
-// Echoes require 1 Forest Potential; the unknown frontier requires 1 Forest + 1 Water Potential.
+// canAwaken reports whether the planet at idx can be manually awakened right now.
+// A planet can be awakened if it is dormant and is an echo or frontier kind.
+// Requirement-fill-based auto-awakening happens inside tickSystemChannels.
 func canAwaken(w *World, idx int) bool {
 	if idx < 0 || idx >= len(w.System.Planets) {
 		return false
 	}
 	p := w.System.Planets[idx]
-	if p.Awakened {
-		return false
-	}
-	if p.Kind != PlanetEcho && p.Kind != PlanetUnknown {
-		return false
-	}
-	for kind, cost := range planetAwakenCost(w, idx) {
-		if math.Floor(w.Economy.Potential[kind]) < float64(cost) {
-			return false
-		}
-	}
-	return true
+	return !p.Awakened && (p.Kind == PlanetEcho || p.Kind == PlanetUnknown)
 }
 
-// awakenPlanet spends the required Potential to awaken the planet at idx,
-// creating its durable live state. The player stays in system view (no auto-zoom).
+// awakenPlanet creates the durable live state for the planet at idx.
+// Does not require Potential; seeds awakenSeedWood into the new planet's stockpile.
 func awakenPlanet(w *World, idx int) {
-	if !canAwaken(w, idx) {
+	if idx < 0 || idx >= len(w.System.Planets) {
 		return
 	}
-	for kind, cost := range planetAwakenCost(w, idx) {
-		w.Economy.Potential[kind] -= float64(cost)
-	}
 	p := &w.System.Planets[idx]
+	if p.Awakened {
+		return
+	}
+	if p.Kind != PlanetEcho && p.Kind != PlanetUnknown {
+		return
+	}
 	p.Awakened = true
 	if p.Kind == PlanetUnknown {
 		w.PlanetStates[idx] = newWaterFrontierState()
@@ -278,34 +186,110 @@ func awakenPlanet(w *World, idx int) {
 		p.LayoutID = p.RingColorIdx
 		w.PlanetStates[idx] = newEchoPlanetState(p.LayoutID)
 	}
-	// Bootstrap: grant a circle packet for each Potential circle spent on awakening.
-	// Lives in parked state; materialises into Economy.Wood/Water when player enters.
-	for kind, cost := range planetAwakenCost(w, idx) {
-		fam := familyForPotential(kind)
+	// Seed starting wood so the player can afford a camp immediately on entry.
+	w.PlanetStates[idx].LocalWood += awakenSeedWood
+}
+
+// findChannel returns a pointer to the first channel with the given source and
+// resource, or nil if none exists.
+func findChannel(w *World, source int, resource ResourceKind) *Channel {
+	for i := range w.System.Channels {
+		c := &w.System.Channels[i]
+		if c.Source == source && c.Resource == resource {
+			return c
+		}
+	}
+	return nil
+}
+
+// tickSystemChannels delivers resources along each channel and auto-awakens
+// dormant targets whose requirements are fully met.
+// Called unconditionally on every tick when the system is unlocked (same path as
+// the old tickSystemEconomy) to preserve the invariant from TestSystemEconomyRunsInBothViews.
+func tickSystemChannels(w *World, dt float64) {
+	for i := range w.System.Channels {
+		ch := &w.System.Channels[i]
+		src := ch.Source
+		tgt := ch.Target
+		if src < 0 || src >= len(w.System.Planets) || tgt < 0 || tgt >= len(w.System.Planets) {
+			continue
+		}
+		fam := familyForResource(ch.Resource)
 		if fam == nil {
 			continue
 		}
-		for range cost {
-			*fam.LocalStockpile(w.PlanetStates[idx]) += fam.CirclePacket
-		}
-	}
-}
+		srcPlanet := &w.System.Planets[src]
 
-// awardCompletionPotential grants 1 Potential token per distinct resource kind
-// present on the active planet's fields. Called once on starting-planet unlock
-// and once on each echo completion; the caller's one-shot flags prevent re-fire.
-func awardCompletionPotential(w *World) {
-	if w.Economy.Potential == nil {
-		w.Economy.Potential = make(map[PotentialKind]float64)
-	}
-	seen := make(map[ResourceKind]bool)
-	for _, f := range w.Planet.Fields {
-		if seen[f.Kind] {
+		// Resolve source rate and stockpile.
+		rate := *fam.AbstractRate(srcPlanet)
+		if rate <= 0 {
 			continue
 		}
-		seen[f.Kind] = true
-		if fam := familyForResource(f.Kind); fam != nil {
-			w.Economy.Potential[fam.Potential] += 1.0
+		var srcStockpile *float64
+		if src == w.Active {
+			srcStockpile = fam.Stockpile(&w.Economy)
+		} else if ps := w.PlanetStates[src]; ps != nil {
+			srcStockpile = fam.LocalStockpile(ps)
+		}
+
+		// Compute delivery; drain source only when stocked.
+		var delivered float64
+		if srcStockpile != nil && *srcStockpile > 0 {
+			delivered = channelStockedFrac * rate * dt
+			if delivered > *srcStockpile {
+				delivered = *srcStockpile
+			}
+			*srcStockpile -= delivered
+		} else {
+			delivered = channelEmptyFrac * rate * dt
+		}
+
+		tgtPlanet := &w.System.Planets[tgt]
+
+		// Apply delivery to target.
+		if !tgtPlanet.Awakened {
+			// Dormant: accumulate fill toward awakening requirement.
+			fill := fam.AwakenFill(tgtPlanet)
+			req := *fam.AwakenReq(tgtPlanet)
+			*fill += delivered
+			if req > 0 && *fill > req {
+				*fill = req
+			}
+		} else {
+			// Awakened or completed: deliver into local stockpile.
+			// Skip water delivery to a target that hasn't discovered water yet.
+			if ch.Resource == KindWater {
+				var discovered bool
+				if tgt == w.Active {
+					discovered = w.Economy.WaterDiscovered
+				} else if ps := w.PlanetStates[tgt]; ps != nil {
+					discovered = ps.ResourceDiscovered
+				}
+				if !discovered {
+					continue
+				}
+			}
+			if tgt == w.Active {
+				*fam.Stockpile(&w.Economy) += delivered
+			} else if ps := w.PlanetStates[tgt]; ps != nil {
+				*fam.LocalStockpile(ps) += delivered
+			}
+		}
+
+		// Auto-awaken dormant target if all nonzero requirements are filled.
+		if !tgtPlanet.Awakened {
+			allMet := true
+			for j := range resourceFamilies {
+				f := &resourceFamilies[j]
+				req := *f.AwakenReq(tgtPlanet)
+				if req > 0 && *f.AwakenFill(tgtPlanet) < req {
+					allMet = false
+					break
+				}
+			}
+			if allMet {
+				awakenPlanet(w, tgt)
+			}
 		}
 	}
 }
@@ -316,7 +300,6 @@ func awardCompletionPotential(w *World) {
 // rate; they only gain real AbstractRate after checkActivePlanetCompletion fires.
 // Must only be called when startingPlanetComplete is true.
 func triggerUnlock(w *World) {
-	awardCompletionPotential(w)
 	base := EstimateRate(w)
 	w.System.Planets[0].AbstractRate = base
 	w.System.Planets[0].Completed = true

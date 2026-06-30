@@ -24,8 +24,6 @@ const (
 	costPulseWood = 1 << iota
 	costPulseWater
 	costPulseNurture
-	costPulseForestCircle
-	costPulseWaterCircle
 )
 
 // Game is the root ebiten game object.
@@ -70,13 +68,9 @@ type Game struct {
 	revealElapsed float64
 
 	// system-view button rects in native screen space (set during drawOverlay; read by handleSystemInput)
-	sysEnterRect  sysRect                   // enter-planet tray button
-	sysAwakenRect sysRect                   // awaken-echo tray button
-	sysReturnRect sysRect                   // return-to-system button in planet view
-	sysInjectRect map[PotentialKind]sysRect // circle inject buttons by Potential family
-	sysAllocRect  map[PotentialKind]sysRect // alloc pip strips by Potential family
-
-	sysInjectDots []sysInjectDot // active circle-packet injection animations
+	sysEnterRect  sysRect // enter-planet tray button
+	sysAwakenRect sysRect // awaken-echo tray button
+	sysReturnRect sysRect // return-to-system button in planet view
 
 	// double-click tracking for system-view planet zoom
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
@@ -104,25 +98,6 @@ func (r sysRect) contains(x, y float32) bool {
 	return r.w > 0 && x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h
 }
 
-// sysInjectDot is one particle in the circle-packet injection animation.
-// Dots travel from the HUD circle toward the target planet and fade out.
-type sysInjectDot struct {
-	ox, oy float32 // origin screen pos
-	tx, ty float32 // target planet center screen pos
-	age    float32 // seconds elapsed
-	life   float32 // total lifetime
-	col    color.RGBA
-}
-
-func (g *Game) ensureTransientMaps() {
-	if g.sysInjectRect == nil {
-		g.sysInjectRect = make(map[PotentialKind]sysRect, len(resourceFamilies))
-	}
-	if g.sysAllocRect == nil {
-		g.sysAllocRect = make(map[PotentialKind]sysRect, len(resourceFamilies))
-	}
-}
-
 // New constructs and returns a ready-to-run Game.
 // It loads a saved world from disk if one exists, otherwise starts fresh.
 func New() (*Game, error) {
@@ -142,8 +117,6 @@ func New() (*Game, error) {
 		dockUpgradeAttentionCooldown: nurtureAttentionInterval,
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
-		sysInjectRect:                make(map[PotentialKind]sysRect, len(resourceFamilies)),
-		sysAllocRect:                 make(map[PotentialKind]sysRect, len(resourceFamilies)),
 		selectedBuildingID:           -1,
 	}
 	hud, ui, err := buildHUD(g, initialScale)
@@ -309,16 +282,6 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// Advance inject-dot animations.
-	alive := g.sysInjectDots[:0]
-	for _, d := range g.sysInjectDots {
-		d.age += dt
-		if d.age < d.life {
-			alive = append(alive, d)
-		}
-	}
-	g.sysInjectDots = alive
-
 	justUnlocked := Tick(g.world, dt)
 	if justUnlocked {
 		g.revealActive = true
@@ -384,7 +347,6 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	g.ensureTransientMaps()
 	g.screenW, g.screenH = screen.Bounds().Dx(), screen.Bounds().Dy()
 
 	rebuildHUD := false

@@ -343,7 +343,6 @@ func TestSaveLoadRoundTripEchoLifecycle(t *testing.T) {
 	Tick(w, dt) // unlock
 
 	// Awaken echo 1 and mark it completed with a known amplified rate.
-	w.Economy.Potential[PotentialForest] = 1.0
 	awakenPlanet(w, 1)
 	w.System.Planets[1].Completed = true
 	w.System.Planets[1].AbstractRate = 3.75
@@ -379,12 +378,14 @@ func TestSaveLoadRoundTripEchoLifecycle(t *testing.T) {
 	}
 }
 
-func TestSavePotentialRoundTrip(t *testing.T) {
+func TestSaveLoadRoundTripChannels(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	w := newTestWorld(100)
-	w.Economy.Potential[PotentialForest] = 2.0
-	w.Economy.Potential[PotentialWater] = 1.0
+	w.System.Channels = []Channel{
+		{Source: 0, Resource: KindWood, Target: 1},
+		{Source: 0, Resource: KindWater, Target: 3},
+	}
 
 	if err := Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -393,11 +394,38 @@ func TestSavePotentialRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.Economy.Potential[PotentialForest] != 2.0 {
-		t.Errorf("PotentialForest: got %.1f, want 2", got.Economy.Potential[PotentialForest])
+	if len(got.System.Channels) != 2 {
+		t.Fatalf("Channels len: got %d, want 2", len(got.System.Channels))
 	}
-	if got.Economy.Potential[PotentialWater] != 1.0 {
-		t.Errorf("PotentialWater: got %.1f, want 1", got.Economy.Potential[PotentialWater])
+	if got.System.Channels[0] != (Channel{Source: 0, Resource: KindWood, Target: 1}) {
+		t.Errorf("Channels[0]: got %+v", got.System.Channels[0])
+	}
+	if got.System.Channels[1] != (Channel{Source: 0, Resource: KindWater, Target: 3}) {
+		t.Errorf("Channels[1]: got %+v", got.System.Channels[1])
+	}
+}
+
+func TestSaveLoadRoundTripAwakenFill(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newTestWorld(100)
+	w.System.Planets[1].AwakenReqWood = 300.0
+	w.System.Planets[1].AwakenFillWood = 123.5
+	w.System.Planets[1].AwakenReqWater = 0.0
+	w.System.Planets[1].AwakenFillWater = 0.0
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.System.Planets[1].AwakenReqWood != 300.0 {
+		t.Errorf("AwakenReqWood: got %f, want 300", got.System.Planets[1].AwakenReqWood)
+	}
+	if got.System.Planets[1].AwakenFillWood != 123.5 {
+		t.Errorf("AwakenFillWood: got %f, want 123.5", got.System.Planets[1].AwakenFillWood)
 	}
 }
 
@@ -485,8 +513,6 @@ func TestSaveLoadRoundTripFrontierAwakened(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	w := newRevealedWorld()
-	w.Economy.Potential[PotentialForest] = 1.0
-	w.Economy.Potential[PotentialWater] = 1.0
 	awakenPlanet(w, 3)
 
 	if err := Save(w); err != nil {
@@ -502,12 +528,6 @@ func TestSaveLoadRoundTripFrontierAwakened(t *testing.T) {
 	}
 	if got.PlanetStates[3] == nil {
 		t.Error("PlanetStates[3] should be non-nil after round-trip")
-	}
-	if got.Economy.Potential[PotentialForest] != 0 {
-		t.Errorf("Forest Potential after frontier awaken: got %.1f, want 0", got.Economy.Potential[PotentialForest])
-	}
-	if got.Economy.Potential[PotentialWater] != 0 {
-		t.Errorf("Water Potential after frontier awaken: got %.1f, want 0", got.Economy.Potential[PotentialWater])
 	}
 }
 
@@ -605,50 +625,6 @@ func TestSaveLoadRoundTripLocalStockpiles(t *testing.T) {
 	}
 }
 
-// TestSaveLoadRoundTripSystemEconomy verifies that SystemEconomy fields survive
-// a save/load cycle unchanged.
-func TestSaveLoadRoundTripSystemEconomy(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	w := newTestWorld(100)
-	w.SystemEconomy = SystemEconomy{
-		WoodRate:            2.5,
-		WaterRate:           1.1,
-		WoodAllocPotential:  0.75,
-		WaterAllocPotential: 0.5,
-		WoodResearch:        0.3,
-		WaterResearch:       0.1,
-	}
-
-	if err := Save(w); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	got, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	se := got.SystemEconomy
-	if se.WoodRate != 2.5 {
-		t.Errorf("WoodRate: got %.4f, want 2.5", se.WoodRate)
-	}
-	if se.WaterRate != 1.1 {
-		t.Errorf("WaterRate: got %.4f, want 1.1", se.WaterRate)
-	}
-	if se.WoodAllocPotential != 0.75 {
-		t.Errorf("WoodAllocPotential: got %.4f, want 0.75", se.WoodAllocPotential)
-	}
-	if se.WaterAllocPotential != 0.5 {
-		t.Errorf("WaterAllocPotential: got %.4f, want 0.5", se.WaterAllocPotential)
-	}
-	if se.WoodResearch != 0.3 {
-		t.Errorf("WoodResearch: got %.4f, want 0.3", se.WoodResearch)
-	}
-	if se.WaterResearch != 0.1 {
-		t.Errorf("WaterResearch: got %.4f, want 0.1", se.WaterResearch)
-	}
-}
-
 // TestSaveLoadRoundTripProjectedRates verifies that ProjectedRate and
 // ProjectedWaterRate on SystemPlanet survive a save/load cycle.
 func TestSaveLoadRoundTripProjectedRates(t *testing.T) {
@@ -676,18 +652,6 @@ func TestSaveLoadRoundTripProjectedRates(t *testing.T) {
 	}
 	if got.System.Planets[2].ProjectedRate != 2.0 {
 		t.Errorf("Planets[2].ProjectedRate: got %f, want 2.0", got.System.Planets[2].ProjectedRate)
-	}
-}
-
-// TestNewWorldSystemEconomyDefaults verifies that NewWorld initializes
-// SystemEconomy with WoodAllocPotential=1 and WaterAllocPotential=1.
-func TestNewWorldSystemEconomyDefaults(t *testing.T) {
-	w := NewWorld()
-	if w.SystemEconomy.WoodAllocPotential != 1.0 {
-		t.Errorf("WoodAllocPotential: got %f, want 1.0", w.SystemEconomy.WoodAllocPotential)
-	}
-	if w.SystemEconomy.WaterAllocPotential != 1.0 {
-		t.Errorf("WaterAllocPotential: got %f, want 1.0", w.SystemEconomy.WaterAllocPotential)
 	}
 }
 

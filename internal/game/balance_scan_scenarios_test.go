@@ -19,14 +19,11 @@ func bootstrapStartingPlanet(w *World) {
 	triggerUnlock(w)
 }
 
-// echoPreSetup returns a preSetup func that bootstraps the starting planet,
-// grants the required awakening potential, and switches to the target echo.
+// echoPreSetup returns a preSetup func that bootstraps the starting planet
+// and switches to the target echo.
 func echoPreSetup(echoIdx int) func(w *World) {
 	return func(w *World) {
 		bootstrapStartingPlanet(w)
-		for kind, cost := range planetAwakenCost(w, echoIdx) {
-			w.Economy.Potential[kind] += float64(cost)
-		}
 		awakenPlanet(w, echoIdx)
 		switchToPlanet(w, echoIdx)
 		enterPlanetView(w)
