@@ -415,7 +415,7 @@ func claimableNodeCount(w *World) int {
 }
 
 func planetPopComplete(w *World) bool {
-	return w.Planet.MinCompletionPop > 0 && len(w.Workers) >= w.Planet.MinCompletionPop
+	return (w.Planet.MinCompletionPop > 0 && len(w.Workers) >= w.Planet.MinCompletionPop) || w.Economy.TownGrowthOverflow > 0
 }
 
 // availableCapacity returns the number of unused worker slots implied by
