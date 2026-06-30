@@ -146,15 +146,14 @@ const (
 )
 
 // SystemPlanet is a persistent record for one planet in the system view.
-// AbstractRate is the wood/sec this planet contributes to the global bank;
-// set at first completion for the starting planet, fixed at boot for echoes.
+// AbstractRate is the wood/sec this planet produces; set at first completion.
 // Seed is reserved for future world generation. Pos/Radius are in 320×240 virtual space.
 type SystemPlanet struct {
 	Kind               PlanetKind
 	Pos                Vec
 	Radius             float64
 	AbstractRate       float64
-	AbstractWaterRate  float64 // water/sec contributed to the global bank; set on completion
+	AbstractWaterRate  float64 // water/sec produced; set on completion or as a latent rate
 	ProjectedRate      float64 // authored future rate shown for dormant/incomplete planets
 	ProjectedWaterRate float64
 	RingColorIdx       int     // 0 or 1 — slight visual variation between the two echoes
@@ -163,6 +162,15 @@ type SystemPlanet struct {
 	Completed          bool    // reached its completion gate
 	CompletedAt        float64 // planet SimTime when completion triggered; drives atmosphere intro
 	LayoutID           int     // which authored layout (0 or 1)
+
+	// Awakening requirements: how much of each resource must be channeled in
+	// before the planet auto-awakens. Zero means that resource is not required.
+	AwakenReqWood  float64
+	AwakenReqWater float64
+
+	// Accumulated fill from incoming channels; persists until awakening.
+	AwakenFillWood  float64
+	AwakenFillWater float64
 }
 
 // zoomable reports whether this planet has a live sim the player can zoom into.
@@ -200,6 +208,7 @@ type System struct {
 	View     ViewMode       // current view mode; persisted across save/load
 	Selected int            // index into Planets; -1 = none selected
 	Planets  []SystemPlanet // always 4 entries: starting, echo A, echo B, unknown
+	Channels []Channel      // durable resource links between planets
 }
 
 // Building is a player-placed structure on the planet rim.
@@ -301,30 +310,23 @@ type Economy struct {
 	Water               float64 // harvested blue water material; revealed on first dock delivery
 	WaterDiscovered     bool    // true after the first water delivery (controls HUD visibility)
 	CampsBought         int
-	TownGrowth          float64                   // accumulates gross delivery amount; clamped at TownGrowthCap
-	TownGrowthCap       float64                   // spawns a worker when TownGrowth reaches this; grows each arrival
-	TownGrowthOverflow  float64                   // excess growth banked while capacity-blocked; drains on next open slot
-	LastWorkerSpawnTime float64                   // SimTime of most recent spawn; used to enforce workerSpawnCooldown
-	Potential           map[PotentialKind]float64 // banked system-tier Potential tokens (fractional); spendable count is math.Floor(value)
+	TownGrowth          float64 // accumulates gross delivery amount; clamped at TownGrowthCap
+	TownGrowthCap       float64 // spawns a worker when TownGrowth reaches this; grows each arrival
+	TownGrowthOverflow  float64 // excess growth banked while capacity-blocked; drains on next open slot
+	LastWorkerSpawnTime float64 // SimTime of most recent spawn; used to enforce workerSpawnCooldown
 }
 
-// SystemEconomy tracks system-wide resource rates and allocation.
-type SystemEconomy struct {
-	WoodRate  float64 // wood/sec from all completed planets
-	WaterRate float64 // water/sec from all completed planets
-
-	// Allocation: fraction [0,1] directed to Potential; remainder goes to Research
-	WoodAllocPotential  float64
-	WaterAllocPotential float64
-
-	// Fractional research progress per family (accumulated until a threshold unlocks a benefit)
-	WoodResearch  float64
-	WaterResearch float64
+// Channel describes a durable resource link from a completed source planet to a
+// dormant or awakened target planet. Source and Target are indices into System.Planets.
+type Channel struct {
+	Source   int
+	Resource ResourceKind
+	Target   int
 }
 
 // SaveVersion is bumped on every backwards-incompatible World JSON change.
 // Load discards saves whose Version field doesn't match.
-const SaveVersion = 21
+const SaveVersion = 22
 
 // World holds all game state for a single planet plus the system layer.
 type World struct {
@@ -343,8 +345,6 @@ type World struct {
 	SavedLaborRatio    map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
 	WorkerRatioSeen    bool                 // true once the labor focus HUD button has been opened
 	System             System               // system-view unlock state; persisted
-
-	SystemEconomy SystemEconomy // system-wide rates and allocation; see SystemEconomy struct
 
 	// Multi-planet support: PlanetStates holds parked live state for non-active
 	// planets, index-aligned to System.Planets. The entry for Active is always nil
@@ -769,12 +769,11 @@ func newWorldWithSeed(seed int64) *World {
 	planet.MinCompletionPop = planetMinCompletionPop(planet)
 
 	return &World{
-		Version:       SaveVersion,
-		Planet:        planet,
-		Economy:       Economy{TownGrowthCap: townGrowthBaseCap, Potential: make(map[PotentialKind]float64)},
-		SystemEconomy: SystemEconomy{WoodAllocPotential: 1.0, WaterAllocPotential: 1.0},
-		Active:        0,
-		PlanetStates:  make([]*PlanetState, len(planets)),
+		Version:      SaveVersion,
+		Planet:       planet,
+		Economy:      Economy{TownGrowthCap: townGrowthBaseCap},
+		Active:       0,
+		PlanetStates: make([]*PlanetState, len(planets)),
 		System: System{
 			Unlocked: false,
 			View:     ViewPlanet,

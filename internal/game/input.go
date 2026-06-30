@@ -20,42 +20,6 @@ func (g *Game) handleSystemInput() {
 	mx, my := ebiten.CursorPosition()
 	fmx, fmy := float32(mx), float32(my)
 
-	// Allocation pip strips: left-click increments, right-click decrements by one step.
-	if g.world.System.Unlocked {
-		stepAlloc := func(fam *resourceFamily, delta int) bool {
-			if fam == nil {
-				return false
-			}
-			r := g.sysAllocRect[fam.Potential]
-			if !r.contains(fmx, fmy) {
-				return false
-			}
-			cur := int(math.Round(*fam.AllocPotential(&g.world.SystemEconomy) * 4))
-			next := cur + delta
-			if next < 0 {
-				next = 0
-			} else if next > 4 {
-				next = 4
-			}
-			*fam.AllocPotential(&g.world.SystemEconomy) = float64(next) / 4
-			return true
-		}
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			for i := range resourceFamilies {
-				if stepAlloc(&resourceFamilies[i], +1) {
-					return
-				}
-			}
-		}
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
-			for i := range resourceFamilies {
-				if stepAlloc(&resourceFamilies[i], -1) {
-					return
-				}
-			}
-		}
-	}
-
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
 		g.world.System.Selected = -1
 		return
@@ -80,22 +44,6 @@ func (g *Game) handleSystemInput() {
 		return
 	}
 
-	// Circle inject buttons in the top HUD.
-	if g.world.System.Unlocked && g.world.System.Selected >= 0 {
-		for i := range resourceFamilies {
-			fam := &resourceFamilies[i]
-			if !g.sysInjectRect[fam.Potential].contains(fmx, fmy) {
-				continue
-			}
-			if injectCirclePacket(g.world, fam.Potential) {
-				g.spawnInjectDots(fam.Potential)
-			} else {
-				g.flashCostTargets(fam.InjectCostPulse)
-			}
-			return
-		}
-	}
-
 	// Planet selection: convert to virtual world coords and check disks.
 	wp := g.screenToWorld(mx, my)
 	for i, p := range g.world.System.Planets {
@@ -112,7 +60,7 @@ func (g *Game) handleSystemInput() {
 					return
 				}
 				if canAwaken(g.world, i) {
-					// Double-click on an affordable dormant echo — awaken it.
+					// Double-click on a dormant echo — awaken it.
 					awakenPlanet(g.world, i)
 					g.sysDoubleClickPlanet = -1
 					return

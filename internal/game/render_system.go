@@ -128,8 +128,8 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 		} else {
 			vector.FillCircle(scene, cx, cy, r, colSysUnknown, false)
 			vector.FillCircle(scene, cx, cy, r, colSysUnknownRim, false)
-			// Water Potential earned → blue-leaning shimmer hints at the frontier without unlocking it.
-			if w.Economy.Potential[PotentialWater] > 0 {
+			// Water discovered → blue-leaning shimmer hints at the frontier.
+			if w.Economy.WaterDiscovered {
 				shimmer := float32(0.5 + 0.5*math.Sin(simTime*1.5))
 				shimAlpha := uint8(float32(28) * shimmer * brightness)
 				if shimAlpha > 0 {

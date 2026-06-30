@@ -7,15 +7,12 @@ import "image/color"
 type resourceFamily struct {
 	Resource                ResourceKind
 	Potential               PotentialKind
-	CirclePacket            float64
-	InjectCostPulse         int
 	Stockpile               func(*Economy) *float64
 	LocalStockpile          func(*PlanetState) *float64
 	AbstractRate            func(*SystemPlanet) *float64
 	ProjectedRate           func(*SystemPlanet) *float64
-	SystemRate              func(*SystemEconomy) *float64
-	Research                func(*SystemEconomy) *float64
-	AllocPotential          func(*SystemEconomy) *float64
+	AwakenReq               func(*SystemPlanet) *float64
+	AwakenFill              func(*SystemPlanet) *float64
 	Estimate                func(*World) float64
 	PotentialColor          color.RGBA
 	PotentialLabelColor     color.RGBA
@@ -25,19 +22,14 @@ type resourceFamily struct {
 
 var resourceFamilies = []resourceFamily{
 	{
-		Resource:        KindWood,
-		Potential:       PotentialForest,
-		CirclePacket:    circlePacketWood,
-		InjectCostPulse: costPulseForestCircle,
-		Stockpile:       func(e *Economy) *float64 { return &e.Wood },
-		LocalStockpile: func(ps *PlanetState) *float64 {
-			return &ps.LocalWood
-		},
+		Resource:                KindWood,
+		Potential:               PotentialForest,
+		Stockpile:               func(e *Economy) *float64 { return &e.Wood },
+		LocalStockpile:          func(ps *PlanetState) *float64 { return &ps.LocalWood },
 		AbstractRate:            func(p *SystemPlanet) *float64 { return &p.AbstractRate },
 		ProjectedRate:           func(p *SystemPlanet) *float64 { return &p.ProjectedRate },
-		SystemRate:              func(se *SystemEconomy) *float64 { return &se.WoodRate },
-		Research:                func(se *SystemEconomy) *float64 { return &se.WoodResearch },
-		AllocPotential:          func(se *SystemEconomy) *float64 { return &se.WoodAllocPotential },
+		AwakenReq:               func(p *SystemPlanet) *float64 { return &p.AwakenReqWood },
+		AwakenFill:              func(p *SystemPlanet) *float64 { return &p.AwakenFillWood },
 		Estimate:                EstimateRate,
 		PotentialColor:          colForestPotential,
 		PotentialLabelColor:     colForestPotentialLabel,
@@ -45,19 +37,14 @@ var resourceFamilies = []resourceFamily{
 		ProjectedRateLabelColor: color.RGBA{R: colWoodLabel.R, G: colWoodLabel.G, B: colWoodLabel.B, A: colWoodLabel.A / 2},
 	},
 	{
-		Resource:        KindWater,
-		Potential:       PotentialWater,
-		CirclePacket:    circlePacketWater,
-		InjectCostPulse: costPulseWaterCircle,
-		Stockpile:       func(e *Economy) *float64 { return &e.Water },
-		LocalStockpile: func(ps *PlanetState) *float64 {
-			return &ps.LocalWater
-		},
+		Resource:                KindWater,
+		Potential:               PotentialWater,
+		Stockpile:               func(e *Economy) *float64 { return &e.Water },
+		LocalStockpile:          func(ps *PlanetState) *float64 { return &ps.LocalWater },
 		AbstractRate:            func(p *SystemPlanet) *float64 { return &p.AbstractWaterRate },
 		ProjectedRate:           func(p *SystemPlanet) *float64 { return &p.ProjectedWaterRate },
-		SystemRate:              func(se *SystemEconomy) *float64 { return &se.WaterRate },
-		Research:                func(se *SystemEconomy) *float64 { return &se.WaterResearch },
-		AllocPotential:          func(se *SystemEconomy) *float64 { return &se.WaterAllocPotential },
+		AwakenReq:               func(p *SystemPlanet) *float64 { return &p.AwakenReqWater },
+		AwakenFill:              func(p *SystemPlanet) *float64 { return &p.AwakenFillWater },
 		Estimate:                EstimateWaterRate,
 		PotentialColor:          colWaterPotential,
 		PotentialLabelColor:     colWaterPotentialLabel,

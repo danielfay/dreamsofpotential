@@ -304,7 +304,6 @@ func (r *echoCompletionRunner) Setup(w *World) {
 	triggerUnlock(w)
 
 	// Awaken the target echo and enter it.
-	w.Economy.Potential[PotentialForest] = 1
 	awakenPlanet(w, r.echoIdx)
 	switchToPlanet(w, r.echoIdx)
 	enterPlanetView(w)
@@ -420,12 +419,6 @@ func TestSimTraceTightGroveCompletion(t *testing.T) {
 	if !w.System.Planets[echoIdx].Completed {
 		t.Errorf("Tight Grove: expected Completed=true after trace")
 	}
-	if got := w.Economy.Potential[PotentialForest]; math.Floor(got) != 1 {
-		t.Errorf("Forest Potential after Tight Grove: got %.4f (floor=%.0f), want 1 spendable token", got, math.Floor(got))
-	}
-	if got := w.Economy.Potential[PotentialWater]; math.Floor(got) != 0 {
-		t.Errorf("Water Potential after Tight Grove: got %.4f, want 0 (no water field)", got)
-	}
 	t.Logf("Tight Grove completed — AbstractRate: %.4f wood/sec", w.System.Planets[echoIdx].AbstractRate)
 }
 
@@ -443,9 +436,6 @@ func TestSimTraceLakewoodCompletion(t *testing.T) {
 	w := runSimTrace(t, "Lakewood completion (layoutID 0)", 45, runner)
 	if !w.System.Planets[echoIdx].Completed {
 		t.Errorf("Lakewood: expected Completed=true after trace")
-	}
-	if got := w.Economy.Potential[PotentialWater]; math.Floor(got) != 1 {
-		t.Errorf("Water Potential after Lakewood: got %.4f (floor=%.0f), want 1 spendable token", got, math.Floor(got))
 	}
 	// Verify lake-aware routing enabled workers to reach the island forest.
 	var islandField *ResourceField
@@ -527,8 +517,6 @@ func (r *waterFrontierRunner) Setup(w *World) {
 	w.ResourceDiscovered = true
 	triggerUnlock(w)
 
-	w.Economy.Potential[PotentialForest] = 1
-	w.Economy.Potential[PotentialWater] = 1
 	awakenPlanet(w, 3)
 	switchToPlanet(w, 3)
 	enterPlanetView(w)
@@ -655,10 +643,6 @@ func (r *waterPlanetCompletionRunner) Setup(w *World) {
 	w.ResourceDiscovered = true
 	triggerUnlock(w)
 
-	// Grant + spend Potential to awaken the frontier (index 3).
-	for kind, cost := range planetAwakenCost(w, 3) {
-		w.Economy.Potential[kind] += float64(cost)
-	}
 	awakenPlanet(w, 3)
 	switchToPlanet(w, 3)
 	enterPlanetView(w)

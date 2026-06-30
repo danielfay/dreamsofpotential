@@ -21,72 +21,44 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		return scaledHUDFloat(scale, systemTopHUDScale, base)
 	}
 
-	for i := range resourceFamilies {
-		fam := &resourceFamilies[i]
-		g.sysInjectRect[fam.Potential] = sysRect{}
-		g.sysAllocRect[fam.Potential] = sysRect{}
-	}
-
 	if g.world.ResourceDiscovered || g.world.System.Unlocked {
 		type systemResourceColumn struct {
-			showSquare    bool
-			squareText    string
-			squareCol     color.RGBA
-			squareTextCol color.RGBA
-			showCircle    bool
-			circleCount   float64
-			circleCol     color.RGBA
-			circleTextCol color.RGBA
-			potKind       PotentialKind
-			width         float32
+			show    bool
+			text    string
+			col     color.RGBA
+			textCol color.RGBA
+			width   float32
 		}
 
 		squareSize := systemTopHUD(systemTopHUDSquareBase)
-		circleR := systemTopHUD(systemTopHUDCircleBase)
 		textGap := systemTopHUD(bottomHUDTextGapBase)
 		columnGap := systemTopHUD(systemTopHUDColumnGapBase)
 
-		mkColumn := func(showSquare bool, squareText string, squareCol, squareTextCol color.RGBA, potKind PotentialKind, circleCol, circleTextCol color.RGBA) systemResourceColumn {
-			count, earned := g.world.Economy.Potential[potKind]
+		mkColumn := func(show bool, squareText string, squareCol, squareTextCol color.RGBA) systemResourceColumn {
 			col := systemResourceColumn{
-				showSquare:    showSquare,
-				squareText:    squareText,
-				squareCol:     squareCol,
-				squareTextCol: squareTextCol,
-				showCircle:    earned,
-				circleCount:   count,
-				circleCol:     circleCol,
-				circleTextCol: circleTextCol,
-				potKind:       potKind,
+				show:    show,
+				text:    squareText,
+				col:     squareCol,
+				textCol: squareTextCol,
 			}
-			if showSquare {
+			if show {
 				tw, _ := text.Measure(squareText, face, 0)
 				col.width = squareSize + textGap + float32(tw)
-			}
-			if earned {
-				whole := int(math.Floor(count))
-				circleStr := fmt.Sprintf("%d", whole)
-				tw, _ := text.Measure(circleStr, face, 0)
-				w := circleR*2 + textGap + float32(tw)
-				if w > col.width {
-					col.width = w
-				}
-			}
-			if g.world.System.View == ViewSystem && g.world.System.Unlocked {
-				allocPipSz := systemTopHUD(systemTopHUDAllocPipBase)
-				allocPipGap := systemTopHUD(1)
-				allocW := 4*allocPipSz + 3*allocPipGap
-				if allocW > col.width {
-					col.width = allocW
-				}
 			}
 			return col
 		}
 
 		var woodText, waterText string
 		if g.world.System.View == ViewSystem {
-			woodText = systemRateText(g.world.SystemEconomy.WoodRate)
-			waterText = systemRateText(g.world.SystemEconomy.WaterRate)
+			var woodSysRate, waterSysRate float64
+			for _, p := range g.world.System.Planets {
+				if p.Completed {
+					woodSysRate += p.AbstractRate
+					waterSysRate += p.AbstractWaterRate
+				}
+			}
+			woodText = systemRateText(woodSysRate)
+			waterText = systemRateText(waterSysRate)
 		} else {
 			woodText = fmt.Sprintf("%.0f (%s)", g.world.Economy.Wood, systemRateText(EstimateRate(g.world)))
 			waterText = fmt.Sprintf("%.0f (%s)", g.world.Economy.Water, systemRateText(EstimateWaterRate(g.world)))
@@ -96,20 +68,18 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 				g.world.ResourceDiscovered || g.world.System.Unlocked,
 				woodText,
 				colWoodResource, colWoodLabel,
-				PotentialForest, colForestPotential, colForestPotentialLabel,
 			),
 			mkColumn(
 				g.world.Economy.WaterDiscovered,
 				waterText,
 				colSparkle, color.RGBA{R: 100, G: 200, B: 255, A: 220},
-				PotentialWater, colWaterPotential, colWaterPotentialLabel,
 			),
 		}
 
 		var visibleCols []systemResourceColumn
 		totalW := float32(0)
 		for _, col := range columns {
-			if !col.showSquare && !col.showCircle {
+			if !col.show {
 				continue
 			}
 			if len(visibleCols) > 0 {
@@ -128,77 +98,23 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			vector.StrokeLine(screen, x, h, x+w, h, 1, colSysTrayBorder, false)
 
 			paddingY := systemTopHUD(systemTopHUDPaddingVBase)
-			rowGap := systemTopHUD(systemTopHUDRowGapBase)
 			topY := paddingY
-			bottomY := topY + squareSize + rowGap
 			cx := float32(g.screenW)/2 - totalW/2
 			for i, col := range visibleCols {
 				if i > 0 {
 					cx += columnGap
 				}
-				if col.showSquare {
+				if col.show {
 					rowW := squareSize
-					if col.squareText != "" {
-						tw, _ := text.Measure(col.squareText, face, 0)
+					if col.text != "" {
+						tw, _ := text.Measure(col.text, face, 0)
 						rowW += textGap + float32(tw)
 					}
 					rowX := cx + (col.width-rowW)/2
-					vector.FillRect(screen, rowX, topY, squareSize, squareSize, col.squareCol, false)
-					if col.squareText != "" {
-						_, th := text.Measure(col.squareText, face, 0)
-						drawSysText(screen, col.squareText, rowX+squareSize+textGap, topY+squareSize-float32(th), col.squareTextCol, face)
-					}
-				}
-				if col.showCircle {
-					count := col.circleCount
-					whole := int(math.Floor(count))
-					frac := count - float64(whole)
-					circleStr := fmt.Sprintf("%d", whole)
-					tw, _ := text.Measure(circleStr, face, 0)
-					rowW := circleR*2 + textGap + float32(tw)
-					rowX := cx + (col.width-rowW)/2
-					circleY := bottomY + circleR
-					circleCX := rowX + circleR
-					if frac > 0.01 {
-						bgCol := col.circleCol
-						bgCol.A = 50
-						drawPotentialCircle(screen, circleCX, circleY, circleR, bgCol)
-						drawFractionalCircle(screen, circleCX, circleY, circleR, frac, col.circleCol)
-					} else {
-						drawPotentialCircle(screen, circleCX, circleY, circleR, col.circleCol)
-					}
-					_, th := text.Measure(circleStr, face, 0)
-					drawSysText(screen, circleStr, rowX+circleR*2+textGap, circleY-float32(th)/2, col.circleTextCol, face)
-					if g.world.System.Unlocked {
-						r := sysRect{x: rowX, y: bottomY, w: rowW, h: circleR * 2}
-						g.sysInjectRect[col.potKind] = r
-						mx, my := ebiten.CursorPosition()
-						if r.contains(float32(mx), float32(my)) {
-							vector.StrokeCircle(screen, circleCX, circleY, circleR+1.5, 1.5, colInjectHover, false)
-						}
-
-						var allocVal float64
-						if fam := familyForPotential(col.potKind); fam != nil {
-							allocVal = *fam.AllocPotential(&g.world.SystemEconomy)
-						}
-						allocLevel := int(math.Round(allocVal * 4))
-						const nAllocPips = 4
-						allocPipSz := systemTopHUD(systemTopHUDAllocPipBase)
-						allocPipGap := systemTopHUD(1)
-						allocW := float32(nAllocPips)*allocPipSz + float32(nAllocPips-1)*allocPipGap
-						allocX := cx + (col.width-allocW)/2
-						allocY := bottomY + circleR*2 + systemTopHUD(systemTopHUDRowGapBase)
-						for i := 0; i < nAllocPips; i++ {
-							px := allocX + float32(i)*(allocPipSz+allocPipGap)
-							var pipCol color.RGBA
-							if i < allocLevel {
-								pipCol = col.circleCol
-							} else {
-								pipCol = color.RGBA{R: 55, G: 55, B: 75, A: 220}
-							}
-							vector.FillRect(screen, px, allocY, allocPipSz, allocPipSz, pipCol, false)
-						}
-						g.sysAllocRect[col.potKind] = sysRect{x: allocX, y: allocY, w: allocW, h: allocPipSz}
+					vector.FillRect(screen, rowX, topY, squareSize, squareSize, col.col, false)
+					if col.text != "" {
+						_, th := text.Measure(col.text, face, 0)
+						drawSysText(screen, col.text, rowX+squareSize+textGap, topY+squareSize-float32(th), col.textCol, face)
 					}
 				}
 				cx += col.width
@@ -271,33 +187,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 	showAwaken := (p.Kind == PlanetEcho || p.Kind == PlanetUnknown) && !p.Awakened
 	showEnter := !showAwaken && p.zoomable()
 
-	type potCostItem struct {
-		kind     PotentialKind
-		col      color.RGBA
-		labelCol color.RGBA
-	}
-	potOrder := []potCostItem{
-		{PotentialWater, colWaterPotential, colWaterPotentialLabel},
-		{PotentialForest, colForestPotential, colForestPotentialLabel},
-	}
-	awakenCostMap := planetAwakenCost(g.world, sel)
-	costStr := "1"
-	costW, costH := text.Measure(costStr, face, 0)
-	circR := systemHUD(bottomHUDCircleBase)
-	costItemGap := systemHUD(bottomHUDCostGapBase)
-	costWidth := float32(0)
-	if showAwaken {
-		for _, pk := range potOrder {
-			if awakenCostMap[pk.kind] == 0 {
-				continue
-			}
-			if costWidth > 0 {
-				costWidth += costItemGap
-			}
-			costWidth += float32(costW) + systemHUD(3) + circR*2
-		}
-	}
-
 	rateGap := systemHUD(bottomHUDRateGapBase)
 	contentGap := systemHUD(bottomHUDContentGapBase)
 	totalW := swSize
@@ -309,9 +198,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 			}
 			totalW += item.width
 		}
-	}
-	if costWidth > 0 {
-		totalW += contentGap + costWidth
 	}
 	if showAwaken || showEnter {
 		totalW += contentGap + btnSize
@@ -331,26 +217,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		cx += item.width
 	}
 	cx += contentGap
-
-	if showAwaken && costWidth > 0 {
-		costY := btnY + (btnSize-float32(costH))/2
-		circY := btnY + btnSize/2
-		drewCost := false
-		for _, pk := range potOrder {
-			if awakenCostMap[pk.kind] == 0 {
-				continue
-			}
-			if drewCost {
-				cx += costItemGap
-			}
-			drawSysText(screen, costStr, cx, costY, pk.labelCol, face)
-			cx += float32(costW) + systemHUD(3) + circR
-			drawPotentialCircle(screen, cx, circY, circR, pk.col)
-			cx += circR
-			drewCost = true
-		}
-		cx += contentGap
-	}
 
 	btnX := cx
 
@@ -382,51 +248,6 @@ func (g *Game) drawSystemOverlay(screen *ebiten.Image) {
 		g.sysEnterRect = sysRect{x: btnX, y: btnY, w: btnSize, h: btnSize}
 	}
 
-	for _, d := range g.sysInjectDots {
-		t := d.age / d.life
-		x := d.ox + (d.tx-d.ox)*t
-		y := d.oy + (d.ty-d.oy)*t
-		r := float32(3)*(1-t) + 1
-		c := d.col
-		c.A = uint8(float32(200) * (1 - t))
-		vector.FillCircle(screen, x, y, r, c, false)
-	}
-}
-
-// spawnInjectDots spawns 8 particles from the inject circle toward the selected planet.
-func (g *Game) spawnInjectDots(kind PotentialKind) {
-	sel := g.world.System.Selected
-	if sel < 0 || sel >= len(g.world.System.Planets) {
-		return
-	}
-	fam := familyForPotential(kind)
-	if fam == nil {
-		return
-	}
-	r := g.sysInjectRect[kind]
-	col := fam.PotentialColor
-	if r.w <= 0 {
-		return
-	}
-	px, py := g.worldToScreen(g.world.System.Planets[sel].Pos)
-	circleR := r.h / 2
-	cx := r.x + circleR
-	cy := r.y + circleR
-	const n = 8
-	const spread = float32(4)
-	const life = float32(0.85)
-	for i := 0; i < n; i++ {
-		angle := float64(i) * math.Pi * 2 / n
-		g.sysInjectDots = append(g.sysInjectDots, sysInjectDot{
-			ox:   cx + float32(math.Cos(angle))*spread,
-			oy:   cy + float32(math.Sin(angle))*spread,
-			tx:   px,
-			ty:   py,
-			age:  0,
-			life: life,
-			col:  col,
-		})
-	}
 }
 
 // drawPotentialCircle draws a single Potential token circle centered at (cx, cy).

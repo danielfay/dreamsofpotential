@@ -142,9 +142,29 @@ const (
 	abstractRateWindowSec = 60.0 // rolling window length in seconds
 	abstractRateBuckets   = 12   // sub-buckets (each spans abstractRateWindowSec/abstractRateBuckets s)
 
-	// ── Circle packet injection ───────────────────────────────────────────────────
-	// Local resources granted per Potential circle spent — both on awakening and
-	// during active play. Values are TBD — tune during QA.
-	circlePacketWood  = 200.0 // local wood granted per PotentialForest circle spent
-	circlePacketWater = 100.0 // local water granted per PotentialWater circle spent
+	// ── Planet-to-planet channels ─────────────────────────────────────────────────
+	// Fraction of the source planet's abstract rate delivered per second when the
+	// source has a non-empty local stockpile (stocked) vs. when it is depleted (empty).
+	// Empty delivery still trickles so channels make slow progress even without surplus.
+	channelStockedFrac = 0.10 // 10% of rate/s delivered; also drains source stockpile
+	channelEmptyFrac   = 0.05 // 5% of rate/s delivered; no drain (rate only)
+
+	// awakenSeedWood is the local wood seeded into a freshly awakened echo or
+	// frontier planet, replacing the old circle-packet bootstrap.
+	awakenSeedWood = 200.0
+
+	// ── Per-planet awakening requirements (first-pass) ────────────────────────────
+	// How much wood/water must be channeled into a dormant planet before it auto-awakens.
+	// Zero means that resource is not required.
+	echoAwakenReqWood  = 300.0 // wood required to awaken either echo planet
+	echoAwakenReqWater = 0.0   // no water requirement for pure-forest echoes
+
+	// The water frontier requires both wood and water deliveries.
+	frontierAwakenReqWood  = 200.0
+	frontierAwakenReqWater = 150.0
+
+	// ── Lakewood latent water rate ────────────────────────────────────────────────
+	// When Lakewood (echoA, layoutID 0) completes, it gains this latent water rate
+	// so a channel can target the frontier even before water is discovered there.
+	lakewoodLatentWaterRate = 0.3 // water/s — small but enough to prime frontier fill
 )
