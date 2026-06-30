@@ -5,7 +5,6 @@
   "placeTownHall": true,
   "workers": 5,
   "settleSeconds": 2,
-  "fillTownCapacity": true,
   "nearWoodFieldSaturation": true,
   "wood": 50
 }

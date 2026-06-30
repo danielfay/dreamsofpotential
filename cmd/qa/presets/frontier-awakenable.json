@@ -1,13 +1,11 @@
 {
   "name": "frontier-awakenable",
-  "description": "System unlocked; exactly 1 Forest and 1 Water Potential banked; frontier selected and awakenable. Expected read: both Potential circles lit; awaken button in tray is active showing Forest + Water cost.",
+  "description": "Lakewood complete; frontier selected. Expected read: frontier tray shows channel setup available; awakening now via incoming channels from completed echoes.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "completeEchoes": [1],
-  "forestPotential": 1,
   "selectPlanet": 3,
   "wood": 50
 }

@@ -1,9 +1,8 @@
 {
   "name": "completed-planet-real-output",
-  "description": "Echo planet 1 fully completed. AbstractRate > 0 feeds system allocation. Expected: system view shows non-zero WoodRate ticking Potential upward.",
+  "description": "Echo planet 1 fully completed; selected in system view. Expected: non-zero AbstractRate drives channel delivery; channel setup available from this echo.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "completeEchoes": [1],

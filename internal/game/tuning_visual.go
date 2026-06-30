@@ -113,11 +113,11 @@ const (
 
 	// Manual screen-space HUD base sizes. These are multiplied by the relevant
 	// HUD scale knob and the current view scale.
-	systemTopHUDHeightBase     = 22
+	systemTopHUDHeightBase     = 24.75 // matches planetTopHUDHeightBase * planetTopHUDScale / systemTopHUDScale
 	systemTopHUDSquareBase     = 8
 	systemTopHUDCircleBase     = 4
 	systemTopHUDAllocPipBase   = 4
-	systemTopHUDPaddingVBase   = 2
+	systemTopHUDPaddingVBase   = 4.5 // matches planetTopHUDPaddingVBase * planetTopHUDScale / systemTopHUDScale
 	systemTopHUDRowGapBase     = 3
 	systemTopHUDColumnGapBase  = 16
 	bottomHUDHeightBase        = 20

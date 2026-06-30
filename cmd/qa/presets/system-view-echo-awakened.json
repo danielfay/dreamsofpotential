@@ -3,7 +3,6 @@
   "description": "Post-reveal with echo planet 1 awakened and selected in system view. The echo has a dormant forest but no Town Hall. Expected read: brighter solid rim on echo 1; Enter button in tray; double-click enters it.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "awakenEchoes": [1],

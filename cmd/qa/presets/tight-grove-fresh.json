@@ -3,7 +3,6 @@
   "description": "Tight Grove awakened and entered; Town Hall placed; 12 pre-spawned trees crowd the rim. Expected read: dense tree ring leaves only 1–2 valid camp placement spots; yellow-green echo rim colour.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "awakenEchoes": [2],

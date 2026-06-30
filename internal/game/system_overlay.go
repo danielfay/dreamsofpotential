@@ -283,7 +283,7 @@ func drawDormantPlanetTrayBody(screen *ebiten.Image, w *World, selected int, x, 
 		}
 
 		label := systemDormantRequirementLabel(w, item.resource, item.req)
-		drawSysText(screen, label, barX+barW+textGap, y+trayH/2+float32(textH)/2, fam.PotentialLabelColor, face)
+		drawSysText(screen, label, barX+barW+textGap, y+trayH/2-float32(textH)/2, fam.PotentialLabelColor, face)
 		tw, _ := text.Measure(label, face, 0)
 		x += iconSize + textGap + barW + textGap + float32(tw)
 	}
@@ -380,7 +380,8 @@ func systemPlanetHasEcology(w *World, selected int, resource ResourceKind) bool 
 	case KindWood:
 		return p.Kind == PlanetStarting || p.Kind == PlanetEcho || p.AwakenReqWood > 0
 	case KindWater:
-		return p.Kind == PlanetUnknown || p.ProjectedWaterRate > 0 || p.AbstractWaterRate > 0 || p.AwakenReqWater > 0
+		return p.Kind == PlanetUnknown || p.ProjectedWaterRate > 0 || p.AbstractWaterRate > 0 || p.AwakenReqWater > 0 ||
+			(p.Kind == PlanetEcho && p.RingColorIdx == 0) // layout 0 (Lakewood) has water ecology
 	default:
 		return false
 	}

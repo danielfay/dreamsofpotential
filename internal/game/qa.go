@@ -5,6 +5,20 @@ import (
 	"math"
 )
 
+// QAChannel describes one trade channel to create during QA world setup.
+type QAChannel struct {
+	Source   int    `json:"source"`
+	Resource string `json:"resource"` // "wood" or "water"
+	Target   int    `json:"target"`
+}
+
+// QAAwakenFill stamps per-planet awaken fill values during QA world setup.
+type QAAwakenFill struct {
+	Planet int     `json:"planet"`
+	Wood   float64 `json:"wood,omitempty"`
+	Water  float64 `json:"water,omitempty"`
+}
+
 // QAPreset describes a reproducible mid-game world state for manual QA.
 // Pointer fields are optional; nil means "use default or skip".
 type QAPreset struct {
@@ -46,8 +60,14 @@ type QAPreset struct {
 	// SelectPlanet sets System.Selected after echo lifecycle processing.
 	SelectPlanet *int `json:"selectPlanet"`
 
-	// AwakenFrontier awakens the unknown frontier (Planets index 3) regardless of
-	// current Potential balance — it grants the required Potential before awakening.
+	// Channels — create trade channels after all echo/frontier lifecycle steps.
+	// Each entry appends a Channel to System.Channels directly (no validation).
+	Channels []QAChannel `json:"channels,omitempty"`
+
+	// AwakenFill — stamp per-planet awaken fill values after Channels are set up.
+	AwakenFill []QAAwakenFill `json:"awakenFill,omitempty"`
+
+	// AwakenFrontier awakens the unknown frontier (Planets index 3) directly.
 	// Applied after CompleteEchoes and before SelectPlanet/EnterPlanet.
 	AwakenFrontier bool `json:"awakenFrontier"`
 
@@ -268,6 +288,36 @@ func BuildQAWorld(p QAPreset) (*World, error) {
 		}
 		switchToPlanet(w, 0)
 		enterSystemView(w)
+	}
+
+	// Channels — append trade channels directly after all lifecycle steps.
+	for i, ch := range p.Channels {
+		var res ResourceKind
+		switch ch.Resource {
+		case "wood":
+			res = KindWood
+		case "water":
+			res = KindWater
+		default:
+			return nil, fmt.Errorf("channels[%d]: unknown resource %q", i, ch.Resource)
+		}
+		if ch.Source < 0 || ch.Source >= len(w.System.Planets) {
+			return nil, fmt.Errorf("channels[%d]: source %d out of range", i, ch.Source)
+		}
+		if ch.Target < 0 || ch.Target >= len(w.System.Planets) {
+			return nil, fmt.Errorf("channels[%d]: target %d out of range", i, ch.Target)
+		}
+		w.System.Channels = append(w.System.Channels, Channel{Source: ch.Source, Resource: res, Target: ch.Target})
+	}
+
+	// AwakenFill — stamp per-planet fill values after channels.
+	for _, af := range p.AwakenFill {
+		if af.Planet < 0 || af.Planet >= len(w.System.Planets) {
+			return nil, fmt.Errorf("awakenFill: planet %d out of range", af.Planet)
+		}
+		planet := &w.System.Planets[af.Planet]
+		planet.AwakenFillWood = af.Wood
+		planet.AwakenFillWater = af.Water
 	}
 
 	// Select a specific planet in system view.

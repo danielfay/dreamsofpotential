@@ -3,7 +3,6 @@
   "description": "Water frontier with 4 workers, water discovered, and a 1:3 water/wood focus ratio set. Expected read: worker HUD shows 1/4 ratio; one water-focused worker, three wood-focused workers.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "completeEchoes": [1],

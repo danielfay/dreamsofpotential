@@ -1,9 +1,8 @@
 {
   "name": "system-view-lakewood-completed-water-potential",
-  "description": "Lakewood complete; system view showing both Forest and Water Potential circles in HUD. Expected read: both Potential circles lit; Lakewood shows completion afterglow ring; frontier shows blue shimmer hint.",
+  "description": "Lakewood complete; system view. Expected read: Lakewood shows completion afterglow ring; frontier shows blue shimmer hint; channel setup available from Lakewood.",
   "seed": 11,
   "placeTownHall": true,
-  "fillTownCapacity": true,
   "saturateWoodField": true,
   "reveal": true,
   "completeEchoes": [1],

@@ -3610,3 +3610,72 @@ func TestRevealKindFields_WaterDeliveryTrigger(t *testing.T) {
 		t.Error("parked planet: FieldProgress[KindWater] should exist after first water delivery")
 	}
 }
+
+func TestChannel_DormantFillSurvivesCancelRedirect(t *testing.T) {
+	w := newChannelFixture(t)
+	w.System.Planets[2].AwakenReqWood = 999
+	tickSystemChannels(w, 1.0)
+	fill := w.System.Planets[2].AwakenFillWood
+	if fill == 0 {
+		t.Fatal("expected nonzero fill after first tick")
+	}
+	clearChannelTarget(w, 1, KindWood)
+	if w.System.Planets[2].AwakenFillWood != fill {
+		t.Errorf("fill changed after cancel: want %f, got %f", fill, w.System.Planets[2].AwakenFillWood)
+	}
+	setChannelTarget(w, 1, KindWood, 2)
+	tickSystemChannels(w, 1.0)
+	if w.System.Planets[2].AwakenFillWood <= fill {
+		t.Errorf("fill did not accumulate after redirect: before=%f after=%f", fill, w.System.Planets[2].AwakenFillWood)
+	}
+}
+
+func TestChannel_ActivePlanetReceivesIntoEconomy(t *testing.T) {
+	w := newRevealedWorld()
+	awakenPlanet(w, 1)
+	switchToPlanet(w, 1)
+	// Set up completed echo 2 as the channel source.
+	awakenPlanet(w, 2)
+	w.System.Planets[2].Completed = true
+	w.System.Planets[2].AbstractRate = 10.0
+	if w.PlanetStates[2] == nil {
+		w.PlanetStates[2] = &PlanetState{}
+	}
+	w.PlanetStates[2].LocalWood = 100
+	w.System.Channels = []Channel{{Source: 2, Resource: KindWood, Target: 1}}
+	// w.Active == 1: channelTargetStockpile returns &w.Economy.Wood.
+	before := w.Economy.Wood
+	tickSystemChannels(w, 1.0)
+	if w.Economy.Wood <= before {
+		t.Errorf("active planet Economy.Wood did not increase: before=%f after=%f", before, w.Economy.Wood)
+	}
+}
+
+func TestChannel_TradeDeliveryNoTownGrowthOrFieldEXP(t *testing.T) {
+	w := newRevealedWorld()
+	awakenPlanet(w, 1)
+	switchToPlanet(w, 1)
+	awakenPlanet(w, 2)
+	w.System.Planets[2].Completed = true
+	w.System.Planets[2].AbstractRate = 10.0
+	if w.PlanetStates[2] == nil {
+		w.PlanetStates[2] = &PlanetState{}
+	}
+	w.PlanetStates[2].LocalWood = 100
+	w.System.Channels = []Channel{{Source: 2, Resource: KindWood, Target: 1}}
+
+	beforeGrowth := w.Economy.TownGrowth
+	var beforeEXP float64
+	if fp := w.Planet.FieldProgress[KindWood]; fp != nil {
+		beforeEXP = fp.EXP
+	}
+
+	tickSystemChannels(w, 1.0)
+
+	if w.Economy.TownGrowth != beforeGrowth {
+		t.Errorf("TownGrowth changed after channel trade: before=%f after=%f", beforeGrowth, w.Economy.TownGrowth)
+	}
+	if fp := w.Planet.FieldProgress[KindWood]; fp != nil && fp.EXP != beforeEXP {
+		t.Errorf("FieldProgress EXP changed after channel trade: before=%f after=%f", beforeEXP, fp.EXP)
+	}
+}
