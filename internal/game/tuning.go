@@ -124,7 +124,8 @@ const (
 	dockPostHalfH   = float32(2.2) // half-height of each end post (outward)
 
 	// Dive-reach wedge shown in dock placement preview and on placed docks.
-	dockWedgeHalfArc = 0.22 // angular half-width of the wedge (radians)
+	// 0.33 widens the total cone by 50% over the original 0.22 half-arc.
+	dockWedgeHalfArc = 0.33 // angular half-width of the wedge (radians)
 
 	// ── system view / abstract production
 	echoRateFracA       = 0.55 // echo A projected rate as fraction of starting planet's snapshotted rate
@@ -166,5 +167,5 @@ const (
 	// ── Lakewood latent water rate ────────────────────────────────────────────────
 	// When Lakewood (echoA, layoutID 0) completes, it gains this latent water rate
 	// so a channel can target the frontier even before water is discovered there.
-	lakewoodLatentWaterRate = 0.3 // water/s — small but enough to prime frontier fill
+	lakewoodLatentWaterRate = 10.0 // hidden latent water rate; empty-path channel delivers 0.5/s to bootstrap the frontier
 )

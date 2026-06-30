@@ -586,6 +586,72 @@ func TestSaveLoadRoundTripInteriorSparkle(t *testing.T) {
 	}
 }
 
+func TestLoadNormalizesClaimableWorkSlots(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	w := newWaterSparkleTestWorld()
+	wood := newNode(w, KindWood, 0)
+	sparkle := newSparkle(w, Vec{X: 10, Y: 10})
+	w.Nodes = []*ResourceNode{wood, sparkle}
+	w.Buildings = append(w.Buildings, &Building{
+		ID:    w.NextBuildingID,
+		Kind:  KindDock,
+		Angle: shoreEdgeAngle(),
+		Pos:   w.Planet.RimPoint(shoreEdgeAngle()),
+	})
+	w.NextBuildingID++
+
+	// Simulate an older or mismatched save payload where the serialized
+	// claimable-slot field is absent and loads as the zero value.
+	for _, n := range w.Nodes {
+		n.ClaimableWorkSlot = false
+	}
+	for _, b := range w.Buildings {
+		b.ClaimableWorkSlot = false
+	}
+
+	if err := Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	var gotWood, gotSparkle *ResourceNode
+	for _, n := range got.Nodes {
+		switch n.ID {
+		case wood.ID:
+			gotWood = n
+		case sparkle.ID:
+			gotSparkle = n
+		}
+	}
+	if gotWood == nil || gotSparkle == nil {
+		t.Fatal("expected wood node and sparkle after load")
+	}
+	if !gotWood.ClaimableWorkSlot {
+		t.Fatal("wood node should be normalized to ClaimableWorkSlot=true after load")
+	}
+	if gotSparkle.ClaimableWorkSlot {
+		t.Fatal("interior sparkle should remain ClaimableWorkSlot=false after load")
+	}
+
+	var gotDock *Building
+	for _, b := range got.Buildings {
+		if b.Kind == KindDock {
+			gotDock = b
+			break
+		}
+	}
+	if gotDock == nil {
+		t.Fatal("expected dock after load")
+	}
+	if !gotDock.ClaimableWorkSlot {
+		t.Fatal("dock should be normalized to ClaimableWorkSlot=true after load")
+	}
+}
+
 // TestSaveLoadRoundTripLocalStockpiles verifies that LocalWood/LocalWater in
 // PlanetState survive a save/load cycle and are restored into Economy on loadPlanet.
 func TestSaveLoadRoundTripLocalStockpiles(t *testing.T) {

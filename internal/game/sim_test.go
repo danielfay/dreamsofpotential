@@ -148,6 +148,49 @@ func TestNoWorkerArrivalBeyondClaimableWork(t *testing.T) {
 	}
 }
 
+func TestWaterSparklesDoNotIncreasePopulationCapacity(t *testing.T) {
+	w := newWaterSparkleTestWorld()
+	w.Nodes = nil
+	w.NextNodeID = 0
+	w.NextWorkerID = 0
+
+	woodNode := newNode(w, KindWood, 0)
+	w.Nodes = append(w.Nodes, woodNode)
+	for i := range 5 {
+		w.Nodes = append(w.Nodes, newSparkle(w, Vec{X: float64(i + 1), Y: float64(i + 1)}))
+	}
+	w.Buildings = append(w.Buildings, &Building{
+		ID:                w.NextBuildingID,
+		Kind:              KindDock,
+		Angle:             shoreEdgeAngle(),
+		Pos:               w.Planet.RimPoint(shoreEdgeAngle()),
+		ClaimableWorkSlot: true,
+	})
+	w.NextBuildingID++
+
+	w.Workers = []*Worker{
+		{ID: 0, NodeID: woodNode.ID, TargetNodeID: -1, PendingNodeID: -1},
+		{ID: 1, DockID: w.Buildings[len(w.Buildings)-1].ID, TargetNodeID: -1, PendingNodeID: -1},
+	}
+	woodNode.OwnerID = 0
+
+	if got := claimableNodeCount(w); got != 2 {
+		t.Fatalf("claimableNodeCount = %d, want 2 (1 tree + 1 dock)", got)
+	}
+
+	w.Economy.TownGrowthCap = 1
+	w.Economy.TownGrowth = 1
+	if tryConsumeGrowth(w) {
+		t.Fatal("tryConsumeGrowth should not spawn a worker when only sparkles add apparent capacity")
+	}
+	if len(w.Workers) != 2 {
+		t.Fatalf("worker count = %d, want 2", len(w.Workers))
+	}
+	if w.Economy.TownGrowth != w.Economy.TownGrowthCap {
+		t.Fatalf("TownGrowth = %.2f, want clamped cap %.2f", w.Economy.TownGrowth, w.Economy.TownGrowthCap)
+	}
+}
+
 func TestNoMultiWorkerBurst(t *testing.T) {
 	w, node := newDeliveryWorld()
 	w.Economy.TownGrowthCap = 1.0 // tiny cap; huge gross will dwarf it
@@ -1694,15 +1737,15 @@ func TestAllEchoesComplete(t *testing.T) {
 
 // ── Awakening tests ───────────────────────────────────────────────────────────
 
-func TestCanAwaken_DormantEcho(t *testing.T) {
+func TestTriggerUnlock_SetsAwakenRequirements(t *testing.T) {
 	w := newRevealedWorld()
-	if !canAwaken(w, 1) {
-		t.Error("canAwaken should return true for dormant echo")
+	if w.System.Planets[1].AwakenReqWood != echoAwakenReqWood || w.System.Planets[2].AwakenReqWood != echoAwakenReqWood {
+		t.Fatalf("echo awaken wood reqs = (%f, %f), want %f", w.System.Planets[1].AwakenReqWood, w.System.Planets[2].AwakenReqWood, echoAwakenReqWood)
 	}
-	// Cannot awaken something already awakened.
-	awakenPlanet(w, 1)
-	if canAwaken(w, 1) {
-		t.Error("canAwaken should return false for already-awakened planet")
+	if w.System.Planets[3].AwakenReqWood != frontierAwakenReqWood || w.System.Planets[3].AwakenReqWater != frontierAwakenReqWater {
+		t.Fatalf("frontier awaken reqs = (%f, %f), want (%f, %f)",
+			w.System.Planets[3].AwakenReqWood, w.System.Planets[3].AwakenReqWater,
+			frontierAwakenReqWood, frontierAwakenReqWater)
 	}
 }
 
@@ -1803,6 +1846,9 @@ func TestLakewood_CompletionSetsCompleted(t *testing.T) {
 	if w.System.Planets[1].AbstractRate <= 0 {
 		t.Error("Lakewood AbstractRate should be > 0 after completion")
 	}
+	if math.Abs(w.System.Planets[1].AbstractWaterRate-lakewoodLatentWaterRate) > 1e-9 {
+		t.Errorf("Lakewood AbstractWaterRate: got %f, want %f", w.System.Planets[1].AbstractWaterRate, lakewoodLatentWaterRate)
+	}
 }
 
 // TestLakewood_RequiresIslandSaturation verifies that Lakewood does not complete
@@ -1857,9 +1903,6 @@ func TestLakewood_WaterFieldsDoNotAccrueEXP(t *testing.T) {
 // TestLakewood_Awakens verifies Lakewood can be awakened directly.
 func TestLakewood_Awakens(t *testing.T) {
 	w := newRevealedWorld()
-	if !canAwaken(w, 1) {
-		t.Fatal("canAwaken should be true for dormant Lakewood")
-	}
 	awakenPlanet(w, 1) // layoutID 0 = Lakewood
 	if !w.System.Planets[1].Awakened {
 		t.Error("Lakewood (planet 1) should be awakened")
@@ -2508,10 +2551,82 @@ func TestWaterInfluence_DoesNotBlockSpawning(t *testing.T) {
 
 // ── Frontier awakening tests ──────────────────────────────────────────────────
 
-func TestCanAwaken_FrontierDormant(t *testing.T) {
+func TestSetChannelTarget_RejectsInvalidTargets(t *testing.T) {
 	w := newRevealedWorld()
-	if !canAwaken(w, 3) {
-		t.Error("canAwaken(frontier): should be true for dormant frontier")
+	w.System.Planets[1].Completed = true
+	w.System.Planets[1].AbstractRate = 10
+	w.System.Planets[2].Completed = true
+	w.System.Planets[2].LayoutID = 1
+	w.System.Planets[2].AbstractRate = 10
+	if setChannelTarget(w, 1, KindWood, 1) {
+		t.Fatal("setChannelTarget should reject self-targeting")
+	}
+	if setChannelTarget(w, 2, KindWater, 1) {
+		t.Fatal("setChannelTarget should reject zero-rate channel creation")
+	}
+}
+
+func TestSetChannelTarget_CreatesAndRedirects(t *testing.T) {
+	w := newRevealedWorld()
+	w.System.Planets[1].Completed = true
+	w.System.Planets[1].AbstractRate = 10
+	if !setChannelTarget(w, 1, KindWood, 2) {
+		t.Fatal("setChannelTarget should create a valid channel")
+	}
+	if len(w.System.Channels) != 1 {
+		t.Fatalf("channels len: got %d, want 1", len(w.System.Channels))
+	}
+	if w.System.Channels[0] != (Channel{Source: 1, Resource: KindWood, Target: 2}) {
+		t.Fatalf("created channel = %+v", w.System.Channels[0])
+	}
+	if !setChannelTarget(w, 1, KindWood, 3) {
+		t.Fatal("setChannelTarget should redirect an existing channel")
+	}
+	if len(w.System.Channels) != 1 {
+		t.Fatalf("channels len after redirect: got %d, want 1", len(w.System.Channels))
+	}
+	if w.System.Channels[0].Target != 3 {
+		t.Fatalf("redirected target = %d, want 3", w.System.Channels[0].Target)
+	}
+}
+
+func TestSetChannelTarget_LakewoodLatentWaterFallback(t *testing.T) {
+	w := newRevealedWorld()
+	w.System.Planets[1].Completed = true
+	w.System.Planets[1].LayoutID = 0
+	w.System.Planets[1].AbstractRate = 10
+	w.System.Planets[1].AbstractWaterRate = 0
+	if !setChannelTarget(w, 1, KindWater, 3) {
+		t.Fatal("setChannelTarget should allow Lakewood latent water even when saved AbstractWaterRate is zero")
+	}
+	if len(w.System.Channels) != 1 {
+		t.Fatalf("channels len: got %d, want 1", len(w.System.Channels))
+	}
+	if got := systemPlanetDisplayRate(w, 1, KindWater); got != 0 {
+		t.Fatalf("systemPlanetDisplayRate should stay hidden at 0 for latent water, got %f", got)
+	}
+	if got := systemPlanetEffectiveAbstractRate(w.System.Planets[1], KindWater); math.Abs(got-lakewoodLatentWaterRate) > 1e-9 {
+		t.Fatalf("systemPlanetEffectiveAbstractRate latent water = %f, want %f", got, lakewoodLatentWaterRate)
+	}
+}
+
+func TestClearChannelTarget_RemovesMatchingChannel(t *testing.T) {
+	w := newRevealedWorld()
+	w.System.Channels = []Channel{
+		{Source: 1, Resource: KindWood, Target: 2},
+		{Source: 1, Resource: KindWater, Target: 3},
+	}
+	if !clearChannelTarget(w, 1, KindWood) {
+		t.Fatal("clearChannelTarget should remove an existing channel")
+	}
+	if len(w.System.Channels) != 1 {
+		t.Fatalf("channels len after clear: got %d, want 1", len(w.System.Channels))
+	}
+	if w.System.Channels[0] != (Channel{Source: 1, Resource: KindWater, Target: 3}) {
+		t.Fatalf("remaining channel = %+v", w.System.Channels[0])
+	}
+	if clearChannelTarget(w, 1, KindWood) {
+		t.Fatal("clearChannelTarget should return false once the channel is gone")
 	}
 }
 
@@ -3410,6 +3525,39 @@ func TestChannel_AwakensAndContinuesDelivery(t *testing.T) {
 	tickSystemChannels(w, 1.0)
 	if ps.LocalWood <= beforeWood {
 		t.Errorf("LocalWood did not increase post-awakening: before=%f after=%f", beforeWood, ps.LocalWood)
+	}
+}
+
+func TestChannel_WaterDeliveryUnlocksAwakenedTarget(t *testing.T) {
+	w := newRevealedWorld()
+	w.System.Planets[1].Completed = true
+	w.System.Planets[1].LayoutID = 0
+	w.System.Planets[1].AbstractRate = 10
+	w.System.Planets[1].AbstractWaterRate = 0
+	awakenPlanet(w, 3)
+	if w.PlanetStates[1] == nil {
+		w.PlanetStates[1] = &PlanetState{}
+	}
+	w.PlanetStates[1].LocalWater = 100
+	w.System.Channels = []Channel{{Source: 1, Resource: KindWater, Target: 3}}
+	if w.Economy.WaterDiscovered {
+		t.Fatal("WaterDiscovered should start false")
+	}
+	if w.PlanetStates[3].ResourceDiscovered {
+		t.Fatal("frontier ResourceDiscovered should start false")
+	}
+
+	beforeWater := w.PlanetStates[3].LocalWater
+	tickSystemChannels(w, 1.0)
+
+	if w.PlanetStates[3].LocalWater <= beforeWater {
+		t.Fatalf("frontier LocalWater did not increase: before=%f after=%f", beforeWater, w.PlanetStates[3].LocalWater)
+	}
+	if !w.Economy.WaterDiscovered {
+		t.Fatal("WaterDiscovered should become true after channel-delivered water")
+	}
+	if !w.PlanetStates[3].ResourceDiscovered {
+		t.Fatal("frontier ResourceDiscovered should become true after channel-delivered water")
 	}
 }
 

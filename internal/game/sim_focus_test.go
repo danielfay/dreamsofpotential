@@ -295,9 +295,9 @@ func TestFocusRatioMaintained(t *testing.T) {
 	}
 }
 
-// TestAutoProofSplit verifies that the first water delivery triggers LaborFocus
-// when a dock has reachable serviceable sparkles.
-func TestAutoProofSplit(t *testing.T) {
+// TestFirstWaterDelivery_DoesNotAutoAssignLaborFocus verifies that the first
+// water delivery reveals water without automatically moving any workers.
+func TestFirstWaterDelivery_DoesNotAutoAssignLaborFocus(t *testing.T) {
 	// Build a world with a dock and a sparkle that is properly assigned to the dock.
 	// Use a shore-edge dock so assignServicingDocks can assign nearby sparkles.
 	w := newWaterFrontierFixture()
@@ -338,51 +338,14 @@ func TestAutoProofSplit(t *testing.T) {
 
 	completeWaterUnload(w, wk, dock)
 
-	if len(w.LaborFocus) == 0 {
-		t.Fatal("LaborFocus should be set after first water delivery with serviceable sparkles")
-	}
-	if w.LaborFocus[KindWater] != 1 {
-		t.Errorf("LaborFocus[KindWater] = %d, want 1", w.LaborFocus[KindWater])
-	}
-	wantWood := len(w.Workers) - 1
-	if w.LaborFocus[KindWood] != wantWood {
-		t.Errorf("LaborFocus[KindWood] = %d, want %d", w.LaborFocus[KindWood], wantWood)
+	if len(w.LaborFocus) != 0 {
+		t.Fatalf("LaborFocus should stay unset after first water delivery, got %v", w.LaborFocus)
 	}
 }
 
-// TestSetAutoProofSplit verifies that setAutoProofSplit correctly sets
-// LaborFocus to 1 water + remaining workers as wood.
-func TestSetAutoProofSplit(t *testing.T) {
-	w := NewWorld()
-	// Simulate 4 workers (no Town Hall needed for this low-level test).
-	for range 4 {
-		w.Workers = append(w.Workers, &Worker{
-			ID:            w.NextWorkerID,
-			FocusedKind:   focusKindNone,
-			NodeID:        -1,
-			TargetNodeID:  -1,
-			PendingNodeID: -1,
-			DockID:        -1,
-		})
-		w.NextWorkerID++
-	}
-
-	setAutoProofSplit(w)
-
-	if len(w.LaborFocus) == 0 {
-		t.Fatal("LaborFocus not set by setAutoProofSplit")
-	}
-	if w.LaborFocus[KindWater] != 1 {
-		t.Errorf("LaborFocus[KindWater] = %d, want 1", w.LaborFocus[KindWater])
-	}
-	if w.LaborFocus[KindWood] != 3 {
-		t.Errorf("LaborFocus[KindWood] = %d, want 3", w.LaborFocus[KindWood])
-	}
-}
-
-// TestAutoProofSplitNoTriggerIfAlreadySet verifies auto proof split does not
-// overwrite an existing LaborFocus.
-func TestAutoProofSplitNoTriggerIfAlreadySet(t *testing.T) {
+// TestFirstWaterDelivery_PreservesExistingLaborFocus verifies the first water
+// delivery leaves a player-authored LaborFocus unchanged.
+func TestFirstWaterDelivery_PreservesExistingLaborFocus(t *testing.T) {
 	w := newFocusWorld(t, 3)
 
 	w.LaborFocus = map[ResourceKind]int{KindWood: 2, KindWater: 1}

@@ -237,7 +237,7 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 	for _, b := range w.Buildings {
 		if b.Kind == KindDock {
 			if b.Level >= 2 {
-				drawDockReachSector(scene, cx, cy, 0, r,
+				drawDockReachSector(scene, cx, cy, r*float32(sparkleInnerFrac), r,
 					b.Angle-dockWedgeHalfArc, b.Angle+dockWedgeHalfArc)
 			} else {
 				drawDockReachSector(scene, cx, cy, r*2/3, r,

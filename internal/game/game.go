@@ -68,9 +68,13 @@ type Game struct {
 	revealElapsed float64
 
 	// system-view button rects in native screen space (set during drawOverlay; read by handleSystemInput)
-	sysEnterRect  sysRect // enter-planet tray button
-	sysAwakenRect sysRect // awaken-echo tray button
-	sysReturnRect sysRect // return-to-system button in planet view
+	sysEnterRect    sysRect                  // enter-planet tray button
+	sysReturnRect   sysRect                  // return-to-system button in planet view
+	sysResourceRect map[ResourceKind]sysRect // completed-source resource swatches in the system tray
+
+	// transient system-channel gesture state
+	pendingChannelActive   bool
+	pendingChannelResource ResourceKind
 
 	// double-click tracking for system-view planet zoom
 	sysDoubleClickPlanet int       // index of last clicked planet (-1 = none)
@@ -118,6 +122,7 @@ func New() (*Game, error) {
 		importCh:                     make(chan *World, 1),
 		sysDoubleClickPlanet:         -1,
 		selectedBuildingID:           -1,
+		sysResourceRect:              make(map[ResourceKind]sysRect, len(resourceFamilies)),
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -440,6 +445,9 @@ func clearTransientUI(g *Game) {
 	g.showFocusControl = false
 	g.closeBuildingTray()
 	g.workerRatioAttentionReady = false
+	g.pendingChannelActive = false
+	g.pendingChannelResource = focusKindNone
+	clear(g.sysResourceRect)
 }
 
 func (g *Game) closeBuildingTray() {

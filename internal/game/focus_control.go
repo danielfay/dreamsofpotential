@@ -12,7 +12,7 @@ import (
 )
 
 // openFocusControl opens the labor focus control, initialising the draft split
-// from the current LaborFocus (or a 1:rest default if none has been set).
+// from the current LaborFocus (or all wood if none has been set yet).
 func (g *Game) openFocusControl() {
 	total := len(g.world.Workers)
 	if total == 0 {
@@ -27,7 +27,7 @@ func (g *Game) openFocusControl() {
 	if w, ok := g.world.LaborFocus[KindWater]; ok {
 		g.focusDraftWater = w
 	} else {
-		g.focusDraftWater = 1
+		g.focusDraftWater = 0
 	}
 	g.showFocusControl = true
 	g.focusDragging = false

@@ -396,17 +396,18 @@ func activeWorkerCount(w *World) int {
 	return active
 }
 
-// claimableNodeCount returns the number of work targets that can support a
-// worker: harvestable resource nodes plus buildings that act as work sources.
+// claimableNodeCount returns the number of exclusive work claims available on
+// the planet. Each slot supports one owned worker role and contributes to the
+// soft population cap.
 func claimableNodeCount(w *World) int {
 	count := 0
 	for _, n := range w.Nodes {
-		if n.WorkCapacity {
+		if n.ClaimableWorkSlot {
 			count++
 		}
 	}
 	for _, b := range w.Buildings {
-		if b.WorkCapacity {
+		if b.ClaimableWorkSlot {
 			count++
 		}
 	}
@@ -561,6 +562,9 @@ func addFreeWorkerAtTownHall(w *World) bool {
 // and nurtureAttentionActive re-evaluate from field state.
 func revealKindFields(w *World, kind ResourceKind) {
 	reveal := func(p *Planet) {
+		if p.FieldProgress == nil {
+			p.FieldProgress = make(map[ResourceKind]*KindProgress)
+		}
 		for _, f := range p.Fields {
 			if f.Kind == kind && !f.Known {
 				f.Known = true

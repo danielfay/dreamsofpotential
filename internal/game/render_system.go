@@ -128,8 +128,8 @@ func drawSystemPlanet(scene *ebiten.Image, w *World, p SystemPlanet, selected bo
 		} else {
 			vector.FillCircle(scene, cx, cy, r, colSysUnknown, false)
 			vector.FillCircle(scene, cx, cy, r, colSysUnknownRim, false)
-			// Water discovered → blue-leaning shimmer hints at the frontier.
-			if w.Economy.WaterDiscovered {
+			// Latent water requirement → blue-leaning frontier shimmer.
+			if p.AwakenReqWater > 0 {
 				shimmer := float32(0.5 + 0.5*math.Sin(simTime*1.5))
 				shimAlpha := uint8(float32(28) * shimmer * brightness)
 				if shimAlpha > 0 {
@@ -176,6 +176,98 @@ func drawSystemOrbitRing(scene *ebiten.Image, cx, cy, radius, width float32, col
 	drawOp := &vector.DrawPathOptions{}
 	drawOp.ColorScale.ScaleWithColor(col)
 	vector.StrokePath(scene, &path, sop, drawOp)
+}
+
+func (g *Game) drawSystemChannelOverlay(screen *ebiten.Image) {
+	for i, ch := range g.world.System.Channels {
+		state := channelState(g.world, ch, 1.0)
+		if state.fam == nil || state.rate <= 0 {
+			continue
+		}
+		src := g.world.System.Planets[ch.Source]
+		tgt := g.world.System.Planets[ch.Target]
+		sx, sy := g.worldToScreen(src.Pos)
+		tx, ty := g.worldToScreen(tgt.Pos)
+		dx := tx - sx
+		dy := ty - sy
+		dist := float32(math.Hypot(float64(dx), float64(dy)))
+		if dist <= 0.001 {
+			continue
+		}
+		ux := dx / dist
+		uy := dy / dist
+		scale, _, _ := viewGeom(g.screenW, g.screenH)
+		startInset := float32(src.Radius * scale)
+		endInset := float32(tgt.Radius * scale)
+		x0 := sx + ux*startInset
+		y0 := sy + uy*startInset
+		x1 := tx - ux*endInset
+		y1 := ty - uy*endInset
+		lx := (x0 + x1) / 2
+		ly := (y0 + y1) / 2
+		length := float32(math.Hypot(float64(x1-x0), float64(y1-y0)))
+		col := state.fam.PotentialColor
+		width := float32(channelEmptyLineWidth)
+		col.A = channelEmptyLineAlpha
+		if state.stocked {
+			width = float32(channelStockedLineWidth)
+			col.A = channelStockedLineAlpha
+		}
+		if !tgt.Awakened {
+			col = blendColor(col, color.RGBA{R: 255, G: 255, B: 255, A: col.A}, channelDormantBlend)
+		}
+		drawOrientedRect(screen, lx, ly, ux, uy, -uy, ux, length/2, width/2, col)
+
+		if state.valid {
+			dotCount := 1
+			if state.stocked {
+				dotCount = 2
+			}
+			for j := 0; j < dotCount; j++ {
+				t := math.Mod(g.world.SimTime*channelFlowSpeed+float64(i)*0.19+float64(j)*0.47, 1)
+				px := x0 + (x1-x0)*float32(t)
+				py := y0 + (y1-y0)*float32(t)
+				dotCol := brighten(state.fam.PotentialColor, 80)
+				if state.stocked {
+					dotCol.A = channelFlowDotStockedAlpha
+				} else {
+					dotCol.A = channelFlowDotEmptyAlpha
+				}
+				vector.FillCircle(screen, px, py, channelFlowDotRadius, dotCol, false)
+			}
+		}
+	}
+
+	if !g.pendingChannelActive {
+		return
+	}
+	source := g.world.System.Selected
+	if source < 0 || source >= len(g.world.System.Planets) {
+		return
+	}
+	fam := familyForResource(g.pendingChannelResource)
+	if fam == nil {
+		return
+	}
+	pulse := float32(0.5 + 0.5*math.Sin(g.world.SimTime*validTargetPulseHz*math.Pi*2))
+	current := findChannel(g.world, source, fam.Resource)
+	for i, p := range g.world.System.Planets {
+		if !canAssignChannel(g.world, source, fam.Resource, i) {
+			continue
+		}
+		cx, cy := g.worldToScreen(p.Pos)
+		scale, _, _ := viewGeom(g.screenW, g.screenH)
+		radius := float32(p.Radius*scale) + validTargetRingInset + pulse*validTargetRingPulse
+		col := fam.PotentialColor
+		col.A = uint8(float32(validTargetRingAlpha) * (0.6 + 0.4*pulse))
+		width := float32(validTargetRingWidth)
+		if current != nil && current.Target == i {
+			col = colSysSelect
+			col.A = 255
+			width = float32(validTargetRingWidth + 0.75)
+		}
+		drawSystemOrbitRing(screen, cx, cy, radius, width, col)
+	}
 }
 
 // ── Reveal animation ──────────────────────────────────────────────────────────

@@ -92,7 +92,7 @@ type ResourceNode struct {
 	Angle              float64
 	OwnerID            int
 	ReservedByWorkerID int
-	WorkCapacity       bool
+	ClaimableWorkSlot  bool
 	Size               float64
 	Pulse              PulseState
 	Interior           bool
@@ -215,16 +215,16 @@ type System struct {
 // Pos is the rim point at Angle; Kind distinguishes TH, camps, and docks.
 // Extension marks a dock placed over water connected to an existing dock.
 type Building struct {
-	ID            int
-	Kind          BuildingKind
-	Pos           Vec
-	Angle         float64
-	WorkCapacity  bool
-	Level         int
-	Extension     bool
-	DeliveredWood float64
-	DeliveryCount int
-	Pulse         PulseState
+	ID                int
+	Kind              BuildingKind
+	Pos               Vec
+	Angle             float64
+	ClaimableWorkSlot bool
+	Level             int
+	Extension         bool
+	DeliveredWood     float64
+	DeliveryCount     int
+	Pulse             PulseState
 }
 
 // KindProgress holds planet-level EXP accumulation for one resource kind.
@@ -419,6 +419,38 @@ func initTransientWorldState(w *World) {
 	if w.rng == nil {
 		w.rng = rand.New(rand.NewSource(0))
 	}
+	normalizeClaimableWorkSlots(w)
+	for _, ps := range w.PlanetStates {
+		if ps != nil {
+			normalizePlanetStateClaimableWorkSlots(ps)
+		}
+	}
+}
+
+func normalizeClaimableWorkSlots(w *World) {
+	for _, n := range w.Nodes {
+		n.ClaimableWorkSlot = nodeHasClaimableWorkSlot(n)
+	}
+	for _, b := range w.Buildings {
+		b.ClaimableWorkSlot = buildingHasClaimableWorkSlot(b)
+	}
+}
+
+func normalizePlanetStateClaimableWorkSlots(ps *PlanetState) {
+	for _, n := range ps.Nodes {
+		n.ClaimableWorkSlot = nodeHasClaimableWorkSlot(n)
+	}
+	for _, b := range ps.Buildings {
+		b.ClaimableWorkSlot = buildingHasClaimableWorkSlot(b)
+	}
+}
+
+func nodeHasClaimableWorkSlot(n *ResourceNode) bool {
+	return n != nil && !n.Interior
+}
+
+func buildingHasClaimableWorkSlot(b *Building) bool {
+	return b != nil && b.Kind == KindDock
 }
 
 // newNode allocates a ResourceNode with the next available ID at the given rim angle.
@@ -436,7 +468,7 @@ func newNode(w *World, kind ResourceKind, angle float64) *ResourceNode {
 		Pos:                w.Planet.RimPoint(angle),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
-		WorkCapacity:       true,
+		ClaimableWorkSlot:  true,
 		Size:               0.6 + w.rng.Float64()*0.8,
 	}
 }
@@ -457,7 +489,7 @@ func newSparkle(w *World, pos Vec) *ResourceNode {
 		Angle:              w.Planet.AngleOf(pos),
 		OwnerID:            -1,
 		ReservedByWorkerID: -1,
-		WorkCapacity:       true,
+		ClaimableWorkSlot:  false,
 		Size:               sparkleMinSize + w.rng.Float64()*sparkleSizeRange,
 		Interior:           true,
 		ServicingDockID:    -1,
