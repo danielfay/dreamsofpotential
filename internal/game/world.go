@@ -328,6 +328,23 @@ type Channel struct {
 // Load discards saves whose Version field doesn't match.
 const SaveVersion = 22
 
+// Settings holds user-adjustable preferences persisted in the save file.
+type Settings struct {
+	SettingsVersion     int // 0 = pre-migration; 1 = current (0 pct means disabled, not default)
+	PlanetNudgeSpeedPct int // 0-100; 0 = disabled, 50 = default speed
+	SysScrollSpeedPct   int // 0-100; 0 = disabled, 50 = default speed
+}
+
+// migrateSettings applies one-time migrations for saves created before
+// SettingsVersion 1, where 0 meant "not set" rather than "disabled".
+func migrateSettings(w *World) {
+	if w.Settings.SettingsVersion == 0 {
+		w.Settings.PlanetNudgeSpeedPct = 50
+		w.Settings.SysScrollSpeedPct = 50
+		w.Settings.SettingsVersion = 1
+	}
+}
+
 // World holds all game state for a single planet plus the system layer.
 type World struct {
 	Version            int
@@ -345,6 +362,7 @@ type World struct {
 	SavedLaborRatio    map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
 	WorkerRatioSeen    bool                 // true once the labor focus HUD button has been opened
 	System             System               // system-view unlock state; persisted
+	Settings           Settings
 
 	// Multi-planet support: PlanetStates holds parked live state for non-active
 	// planets, index-aligned to System.Planets. The entry for Active is always nil
@@ -811,6 +829,11 @@ func newWorldWithSeed(seed int64) *World {
 			View:     ViewPlanet,
 			Selected: -1,
 			Planets:  planets,
+		},
+		Settings: Settings{
+			SettingsVersion:     1,
+			PlanetNudgeSpeedPct: 50,
+			SysScrollSpeedPct:   50,
 		},
 		rng: rand.New(rand.NewSource(seed)),
 	}

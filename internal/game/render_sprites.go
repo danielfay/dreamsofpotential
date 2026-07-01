@@ -46,7 +46,21 @@ var (
 
 	transferButtonSpriteOnce sync.Once
 	transferButtonSpriteImg  *ebiten.Image
+
+	starfieldSpriteOnce sync.Once
+	starfieldSpriteImg  *ebiten.Image
 )
+
+func starfieldSprite() *ebiten.Image {
+	starfieldSpriteOnce.Do(func() {
+		img, _, err := image.Decode(bytes.NewReader(assets.StarfieldPNG))
+		if err != nil {
+			panic(err)
+		}
+		starfieldSpriteImg = ebiten.NewImageFromImage(img)
+	})
+	return starfieldSpriteImg
+}
 
 func workerSprite() *ebiten.Image {
 	workerSpriteOnce.Do(func() {

@@ -67,6 +67,13 @@ type HUD struct {
 	menuExportBtn *widget.Button
 	menuImportBtn *widget.Button
 	menuResetBtn  *widget.Button
+
+	// settings sub-page (shown when showMenu && showSettings)
+	settingsPanel  *widget.Container
+	speedSlider    *widget.Slider
+	speedLabel     *widget.Text
+	sysSpeedSlider *widget.Slider
+	sysSpeedLabel  *widget.Text
 }
 
 // pointInHUD reports whether native screen coordinates (sx, sy) fall inside any
@@ -86,15 +93,22 @@ func (h *HUD) pointInHUD(sx, sy int, debug bool) bool {
 }
 
 // Refresh updates all HUD labels and visibility states to match the world.
-func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *placementPreview, showMenu bool) {
+func (h *HUD) Refresh(w *World, placing, debug bool, debugSection int, pv *placementPreview, showMenu, showSettings bool) {
 	h.debugSection = debugSection
 	if showMenu {
-		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
+		if showSettings {
+			h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+			h.settingsPanel.GetWidget().SetVisibility(widget.Visibility_Show)
+		} else {
+			h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Show)
+			h.settingsPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+		}
 		h.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 		h.normalTopBar.GetWidget().SetVisibility(widget.Visibility_Hide)
 		return
 	} else {
 		h.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+		h.settingsPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 	}
 
 	if debug {
@@ -331,6 +345,13 @@ func pendingRebalanceText(w *World) string {
 		return "-"
 	}
 	return strings.Join(parts, ",")
+}
+
+func scrollSpeedLabel(pct int) string {
+	if pct <= 0 {
+		return "disabled"
+	}
+	return fmt.Sprintf("%d%%", pct)
 }
 
 // buildHUD constructs the EbitenUI tree and wires up button handlers.
@@ -758,19 +779,130 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 			}),
 		),
 	)
+	menuSettingsBtn := widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("Settings", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			g.showSettings = true
+		}),
+	)
+
 	hud.menuPanel.AddChild(hud.menuSaveBtn)
 	hud.menuPanel.AddChild(hud.menuExportBtn)
 	hud.menuPanel.AddChild(hud.menuImportBtn)
 	hud.menuPanel.AddChild(hud.menuResetBtn)
+	hud.menuPanel.AddChild(menuSettingsBtn)
 	hud.menuPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
 
-	// Root: AnchorLayout holding debug panel, normal-mode top bar, and menu overlay.
+	// --- settings sub-page ---
+	initPct := g.world.Settings.PlanetNudgeSpeedPct
+
+	settingsBackBtn := widget.NewButton(
+		widget.ButtonOpts.Image(menuBtnImg),
+		widget.ButtonOpts.Text("< Back", face, menuTxtCol),
+		widget.ButtonOpts.TextPadding(menuPad),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+		widget.ButtonOpts.ClickedHandler(func(_ *widget.ButtonClickedEventArgs) {
+			g.showSettings = false
+		}),
+	)
+
+	hud.speedLabel = widget.NewText(
+		widget.TextOpts.Text(fmt.Sprintf("Planet scroll speed: %s", scrollSpeedLabel(initPct)), face, color.White),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+	)
+
+	sliderTrack := &widget.SliderTrackImage{
+		Idle:  eimage.NewNineSliceColor(color.NRGBA{R: 35, G: 45, B: 75, A: 220}),
+		Hover: eimage.NewNineSliceColor(color.NRGBA{R: 50, G: 65, B: 100, A: 220}),
+	}
+	sliderHandle := &widget.ButtonImage{
+		Idle:    eimage.NewNineSliceColor(color.NRGBA{R: 80, G: 110, B: 170, A: 240}),
+		Hover:   eimage.NewNineSliceColor(color.NRGBA{R: 100, G: 135, B: 200, A: 240}),
+		Pressed: eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 85, B: 140, A: 240}),
+	}
+	hud.speedSlider = widget.NewSlider(
+		widget.SliderOpts.MinMax(0, 100),
+		widget.SliderOpts.InitialCurrent(initPct),
+		widget.SliderOpts.Images(sliderTrack, sliderHandle),
+		widget.SliderOpts.MinHandleSize(sz(18)),
+		widget.SliderOpts.TrackPadding(&widget.Insets{Top: sz(6), Bottom: sz(6)}),
+		widget.SliderOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+			widget.WidgetOpts.MinSize(sz(160), sz(18)),
+		),
+		widget.SliderOpts.ChangedHandler(func(args *widget.SliderChangedEventArgs) {
+			g.world.Settings.PlanetNudgeSpeedPct = args.Current
+			hud.speedLabel.Label = fmt.Sprintf("Planet scroll speed: %s", scrollSpeedLabel(args.Current))
+			_ = Save(g.world)
+		}),
+	)
+
+	hud.settingsPanel = widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(
+			eimage.NewNineSliceColor(color.NRGBA{R: 15, G: 15, B: 25, A: 220}),
+		),
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(sz(10)),
+			widget.RowLayoutOpts.Padding(&widget.Insets{Top: sz(20), Bottom: sz(20), Left: sz(24), Right: sz(24)}),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
+				HorizontalPosition: widget.AnchorLayoutPositionCenter,
+				VerticalPosition:   widget.AnchorLayoutPositionCenter,
+			}),
+		),
+	)
+	initSysPct := g.world.Settings.SysScrollSpeedPct
+
+	hud.sysSpeedLabel = widget.NewText(
+		widget.TextOpts.Text(fmt.Sprintf("System scroll speed: %s", scrollSpeedLabel(initSysPct)), face, color.White),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
+		),
+	)
+
+	hud.sysSpeedSlider = widget.NewSlider(
+		widget.SliderOpts.MinMax(0, 100),
+		widget.SliderOpts.InitialCurrent(initSysPct),
+		widget.SliderOpts.Images(sliderTrack, sliderHandle),
+		widget.SliderOpts.MinHandleSize(sz(18)),
+		widget.SliderOpts.TrackPadding(&widget.Insets{Top: sz(6), Bottom: sz(6)}),
+		widget.SliderOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+			widget.WidgetOpts.MinSize(sz(160), sz(18)),
+		),
+		widget.SliderOpts.ChangedHandler(func(args *widget.SliderChangedEventArgs) {
+			g.world.Settings.SysScrollSpeedPct = args.Current
+			hud.sysSpeedLabel.Label = fmt.Sprintf("System scroll speed: %s", scrollSpeedLabel(args.Current))
+			_ = Save(g.world)
+		}),
+	)
+
+	hud.settingsPanel.AddChild(settingsBackBtn)
+	hud.settingsPanel.AddChild(hud.speedLabel)
+	hud.settingsPanel.AddChild(hud.speedSlider)
+	hud.settingsPanel.AddChild(hud.sysSpeedLabel)
+	hud.settingsPanel.AddChild(hud.sysSpeedSlider)
+	hud.settingsPanel.GetWidget().SetVisibility(widget.Visibility_Hide)
+
+	// Root: AnchorLayout holding debug panel, normal-mode top bar, and menu overlays.
 	root := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 	root.AddChild(hud.debugPanel)
 	root.AddChild(hud.normalTopBar)
 	root.AddChild(hud.menuPanel)
+	root.AddChild(hud.settingsPanel)
 
 	// Start in normal (minimalist) mode.
 	hud.debugPanel.GetWidget().SetVisibility(widget.Visibility_Hide)

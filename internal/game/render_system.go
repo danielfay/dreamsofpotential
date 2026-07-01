@@ -13,7 +13,6 @@ import (
 // system-view palette
 var (
 	colSysBackground     = color.RGBA{R: 4, G: 4, B: 12, A: 255}
-	colSysStar           = color.RGBA{R: 140, G: 140, B: 160, A: 200}
 	colSysStarting       = color.RGBA{R: 30, G: 105, B: 50, A: 255}   // deep forest green — awakened planet
 	colSysStartRim       = color.RGBA{R: 100, G: 215, B: 115, A: 255} // bright active green rim
 	colSysEchoA          = color.RGBA{R: 40, G: 140, B: 60, A: 255}   // dim green — dormant echo A
@@ -32,29 +31,8 @@ var (
 	colRevealEdge        = color.RGBA{R: 120, G: 240, B: 130, A: 200} // green pulse edge
 )
 
-// starPositions returns deterministic dim star positions for the system background.
-func starPositions() [][2]float32 {
-	stars := make([][2]float32, 40)
-	// Use golden-ratio distribution so stars look natural without random.Seed side-effects.
-	const phi = 2.399
-	for i := range stars {
-		af := math.Mod(float64(i)*phi, math.Pi*2)
-		rf := math.Sqrt(math.Mod(float64(i)*0.617, 1))
-		stars[i][0] = float32(160 + 155*rf*math.Cos(af))
-		stars[i][1] = float32(120 + 115*rf*math.Sin(af))
-	}
-	return stars
-}
-
 // drawSystemView renders the system-layer view onto scene.
 func drawSystemView(scene *ebiten.Image, w *World, debug bool) {
-	scene.Fill(colSysBackground)
-
-	// Sparse star background.
-	for _, s := range starPositions() {
-		vector.FillRect(scene, s[0]-0.5, s[1]-0.5, 1, 1, colSysStar, false)
-	}
-
 	// Faint orbit ellipse for the unknown planet.
 	if len(w.System.Planets) > 3 {
 		unk := w.System.Planets[3]
@@ -346,12 +324,6 @@ func drawRevealPhaseB(scene *ebiten.Image, w *World, phaseElapsed float64) {
 			// Single faint shimmer that fades out quickly.
 			unknownShimmer = clamp32(1-shimmerTime*3, 0, 0.4)
 		}
-	}
-
-	// Draw system view base.
-	scene.Fill(colSysBackground)
-	for _, s := range starPositions() {
-		vector.FillRect(scene, s[0]-0.5, s[1]-0.5, 1, 1, colSysStar, false)
 	}
 
 	// Unknown with shimmer.

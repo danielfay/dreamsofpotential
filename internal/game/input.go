@@ -37,6 +37,7 @@ func (g *Game) handleSystemInput() {
 		switchToPlanet(g.world, idx)
 		enterPlanetView(g.world)
 		clearTransientUI(g)
+		g.resetPlanetCamera()
 		return
 	}
 
@@ -61,6 +62,7 @@ func (g *Game) handleSystemInput() {
 					enterPlanetView(g.world)
 					g.world.System.Selected = i
 					clearTransientUI(g)
+					g.resetPlanetCamera()
 					g.sysDoubleClickPlanet = -1
 					return
 				}
@@ -72,6 +74,7 @@ func (g *Game) handleSystemInput() {
 			g.world.System.Selected = i
 			g.sysDoubleClickPlanet = i
 			g.sysDoubleClickTime = time.Now()
+			g.centerSystemCamOn(p.Pos)
 			return
 		}
 	}
@@ -126,8 +129,9 @@ func (g *Game) resolvePendingSystemChannel(target int) bool {
 	return true
 }
 
-// handlePlanetViewSystemReturn handles wheel-down and the return button
-// in planet view when the system is already unlocked.
+// handlePlanetViewSystemReturn handles the return button in planet view
+// when the system is already unlocked. Scroll-wheel navigation to system view
+// was removed; the HUD button is the sole path.
 func (g *Game) handlePlanetViewSystemReturn() {
 	if !g.world.System.Unlocked {
 		return
@@ -136,12 +140,6 @@ func (g *Game) handlePlanetViewSystemReturn() {
 		parkActive(g.world)
 		enterSystemView(g.world)
 		clearTransientUI(g)
-	}
-	// Mouse wheel down (scroll out → system view).
-	_, wy := ebiten.Wheel()
-	if wy < 0 {
-		returnToSystem()
-		return
 	}
 	// Return button click (sysReturnRect set in drawOverlay previous frame).
 	if g.sysReturnRect.w > 0 && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -162,13 +160,17 @@ func (g *Game) handleGlobalInput() {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
-	// Esc: in debug mode, cancel placement if active; otherwise toggle the settings menu.
+	// Esc: in debug mode, cancel placement if active; when in settings sub-page, go back;
+	// otherwise toggle the menu.
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		if g.debug && g.placing {
 			g.placing = false
 			g.freePlacing = false
+		} else if g.showMenu && g.showSettings {
+			g.showSettings = false
 		} else {
 			g.showMenu = !g.showMenu
+			g.showSettings = false
 		}
 		return
 	}

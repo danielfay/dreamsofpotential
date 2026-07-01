@@ -34,3 +34,6 @@ var SparkleJSON []byte
 
 //go:embed sprites/transfer_button.png
 var TransferButtonPNG []byte
+
+//go:embed sprites/starfield.png
+var StarfieldPNG []byte

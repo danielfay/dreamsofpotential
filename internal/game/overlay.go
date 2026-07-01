@@ -199,8 +199,11 @@ func affordabilityFrac(wood, cost float64) float32 {
 }
 
 func (g *Game) worldToScreen(v Vec) (float32, float32) {
-	scale, offX, offY := viewGeom(g.screenW, g.screenH)
-	return float32(offX + v.X*scale), float32(offY + v.Y*scale)
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	cam := g.activeCamera()
+	totalScale := scale * cam.zoom
+	return float32((v.X-cam.x)*totalScale + float64(g.screenW)/2),
+		float32((v.Y-cam.y)*totalScale + float64(g.screenH)/2)
 }
 
 func drawAttentionRipple(screen *ebiten.Image, cx, cy, baseW, baseH float32, timeLeft, duration float64, baseColor color.RGBA, startScale float32) {
