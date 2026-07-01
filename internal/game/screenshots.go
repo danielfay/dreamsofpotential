@@ -1027,6 +1027,8 @@ func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 		pendingChannelActive:   shot.pendingChannelActive,
 		pendingChannelResource: shot.pendingChannelResource,
 		sysResourceRect:        make(map[ResourceKind]sysRect),
+		planetCam:              viewCamera{x: shot.world.Planet.Center.X, y: shot.world.Planet.Center.Y, zoom: 1.0},
+		sysCam:                 viewCamera{x: float64(virtW) / 2, y: float64(virtH) / 2, zoom: 1.0},
 	}
 	hud, ui, err := buildHUD(game, scale)
 	if err != nil {
@@ -1034,7 +1036,7 @@ func drawHUDScreenshot(screen *ebiten.Image, shot screenshotScenario) error {
 	}
 	game.hud = hud
 	game.ui = ui
-	game.hud.Refresh(game.world, game.placing, game.debug, game.debugSection, game.preview, false)
+	game.hud.Refresh(game.world, game.placing, game.debug, game.debugSection, game.preview, false, false)
 	game.Draw(screen)
 	return nil
 }

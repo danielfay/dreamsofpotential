@@ -168,11 +168,12 @@ func buildAtmosphereGrad(base color.RGBA) colorgrad.Gradient {
 	return g
 }
 
-// drawPlanetAtmosphere draws a wide coloured glow behind the planet when it is
-// complete. Multiple concentric transparent circles accumulate into a soft
-// gradient that fills much of the screen. The glow expands from the rim during
-// an intro animation and then breathes gently in steady state.
-func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
+// DrawPlanetAtmosphereScreen draws the completion glow directly onto the screen
+// image in screen-space pixels so the glow is never clipped by the scene canvas.
+// cx, cy are the planet centre in screen pixels; pixelPerWorld converts one
+// virtual world unit to screen pixels (= viewScale * cam.zoom).
+// Call this BEFORE compositing the scene so the glow appears behind the planet.
+func DrawPlanetAtmosphereScreen(screen *ebiten.Image, w *World, cx, cy, pixelPerWorld float32) {
 	p := w.System.Planets[w.Active]
 
 	var completedAt float64
@@ -189,25 +190,16 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 
 	base, atmosGrad := atmosphereFor(p)
 
-	// Intro progress: 0→1 over atmosphereIntroDur seconds, quadratic ease-out.
 	animAge := w.SimTime - completedAt
 	rawProg := animAge / atmosphereIntroDur
 	if rawProg > 1 {
 		rawProg = 1
 	}
 	progress := ease.OutQuad(float32(rawProg), 0, 1, 1)
-
-	// Gentle breathing in steady state.
 	breath := float32(0.8 + 0.2*math.Sin(w.SimTime*atmosphereBreathFreq))
 
-	// Ten concentric layers drawn outermost-first. FillCircle uses
-	// ColorScaleModePremultipliedAlpha internally, so the RGB components must
-	// be premultiplied by alpha — otherwise even a small alpha renders at full
-	// colour. Premultiplying keeps each layer faint; they accumulate to ~40%
-	// of the base colour at the rim and fade to near-zero at the screen edge.
-	//
-	// Alpha at each ring is sampled from a smooth gradient (inner=opaque →
-	// outer=transparent), giving a cleaner falloff than a hard-coded table.
+	// Radii in screen pixels; offsets are in world units so they scale with zoom.
+	r := float32(w.Planet.Radius) * pixelPerWorld
 	const innerOff, outerOff = float32(3), float32(115)
 	offsets := [10]float32{115, 95, 77, 61, 47, 35, 25, 16, 9, 3}
 	for _, offset := range offsets {
@@ -218,8 +210,7 @@ func drawPlanetAtmosphere(scene *ebiten.Image, w *World, cx, cy, r float32) {
 		if a <= 0 {
 			continue
 		}
-		// Premultiply so FillCircle's premultiplied-alpha path works correctly.
-		vector.FillCircle(scene, cx, cy, r+offset*progress, color.RGBA{
+		vector.FillCircle(screen, cx, cy, r+offset*pixelPerWorld*progress, color.RGBA{
 			R: uint8(float32(base.R) * a / 255),
 			G: uint8(float32(base.G) * a / 255),
 			B: uint8(float32(base.B) * a / 255),
@@ -249,9 +240,6 @@ func DrawWorld(scene *ebiten.Image, w *World, pv *placementPreview, debug bool) 
 
 	cx, cy := float32(w.Planet.Center.X), float32(w.Planet.Center.Y)
 	r := float32(w.Planet.Radius)
-
-	// Completion atmosphere drawn first — planet body covers the interior.
-	drawPlanetAtmosphere(scene, w, cx, cy, r)
 
 	// planet: rim ring then dark body on top
 	const rimWidth = float32(4)

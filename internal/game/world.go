@@ -328,6 +328,13 @@ type Channel struct {
 // Load discards saves whose Version field doesn't match.
 const SaveVersion = 22
 
+// Settings holds user-adjustable preferences persisted in the save file.
+// Zero values map to sensible defaults so old saves load cleanly.
+type Settings struct {
+	PlanetNudgeSpeedPct int // 1-100; 0 = unset → default 50
+	SysScrollSpeedPct   int // 1-100; 0 = unset → default 50
+}
+
 // World holds all game state for a single planet plus the system layer.
 type World struct {
 	Version            int
@@ -345,6 +352,7 @@ type World struct {
 	SavedLaborRatio    map[ResourceKind]int // ratio proportions saved by the player; guides overflow assignment
 	WorkerRatioSeen    bool                 // true once the labor focus HUD button has been opened
 	System             System               // system-view unlock state; persisted
+	Settings           Settings
 
 	// Multi-planet support: PlanetStates holds parked live state for non-active
 	// planets, index-aligned to System.Planets. The entry for Active is always nil

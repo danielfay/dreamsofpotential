@@ -39,12 +39,19 @@ type Game struct {
 	pendingDestructiveFreePlacing bool              // freePlacing state at the time of the first click
 	preview                       *placementPreview // current frame's placement preview; nil when not placing
 	showMenu                      bool              // true when the settings overlay is open
-	debug                         bool              // F3 — verbose debug panel; session-only, not persisted
-	debugSection                  int               // selected debug panel section; session-only
-	pulseTime                     float64           // seconds remaining on the unaffordable-cost flash
-	pulseTarget                   int               // costPulse* bitmask for unaffordable-cost flash targets
-	rejectTime                    float64           // seconds remaining on invalid placement feedback
-	screenW                       int               // current screen dimensions, updated each Draw()
+	showSettings                  bool              // true when the settings sub-page is shown
+	sysDragActive                 bool              // true while left-button drag-to-pan is in progress
+	sysDragLastX                  int               // cursor position at start of last drag frame
+	sysDragLastY                  int
+	planetDragActive              bool
+	planetDragLastX               int
+	planetDragLastY               int
+	debug                         bool    // F3 — verbose debug panel; session-only, not persisted
+	debugSection                  int     // selected debug panel section; session-only
+	pulseTime                     float64 // seconds remaining on the unaffordable-cost flash
+	pulseTarget                   int     // costPulse* bitmask for unaffordable-cost flash targets
+	rejectTime                    float64 // seconds remaining on invalid placement feedback
+	screenW                       int     // current screen dimensions, updated each Draw()
 	screenH                       int
 	hudScale                      int         // integer view scale at last HUD build; triggers rebuild on change
 	hudDigits                     int         // digit count of wood at last HUD build; triggers rebuild on grow
@@ -68,6 +75,10 @@ type Game struct {
 	revealElapsed float64
 
 	starfield starfieldState
+
+	// per-view cameras; zoom=1 at default view, updated each frame
+	planetCam viewCamera
+	sysCam    viewCamera
 
 	// system-view button rects in native screen space (set during drawOverlay; read by handleSystemInput)
 	sysEnterRect    sysRect                  // enter-planet tray button
@@ -126,6 +137,8 @@ func New() (*Game, error) {
 		sysDoubleClickPlanet:         -1,
 		selectedBuildingID:           -1,
 		sysResourceRect:              make(map[ResourceKind]sysRect, len(resourceFamilies)),
+		planetCam:                    viewCamera{x: w.Planet.Center.X, y: w.Planet.Center.Y, zoom: 1.0},
+		sysCam:                       viewCamera{x: float64(virtW) / 2, y: float64(virtH) / 2, zoom: 1.0},
 	}
 	hud, ui, err := buildHUD(g, initialScale)
 	if err != nil {
@@ -220,6 +233,7 @@ func (g *Game) Update() error {
 		g.placing = false
 		g.freePlacing = false
 		g.showMenu = false
+		g.showSettings = false
 		_ = Save(g.world)
 	default:
 	}
@@ -234,7 +248,7 @@ func (g *Game) Update() error {
 	g.handleGlobalInput()
 	if g.showMenu {
 		g.preview = nil
-		g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu)
+		g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu, g.showSettings)
 		g.ui.Update()
 		return nil
 	}
@@ -245,15 +259,17 @@ func (g *Game) Update() error {
 		if g.revealElapsed >= revealDuration {
 			g.revealActive = false
 		}
-		g.hud.Refresh(g.world, false, g.debug, g.debugSection, nil, g.showMenu)
+		g.hud.Refresh(g.world, false, g.debug, g.debugSection, nil, g.showMenu, g.showSettings)
 		return nil
 	}
 
 	g.ui.Update()
 
 	if g.world.System.View == ViewSystem {
+		g.updateSystemCamera()
 		g.handleSystemInput()
 	} else {
+		g.updatePlanetCamera()
 		// Auto-placement: always in placement mode when in planet view.
 		// Debug mode retains manual button control.
 		if !g.debug {
@@ -351,7 +367,7 @@ func (g *Game) Update() error {
 		g.saveTimer = autoSavePeriod
 	}
 	g.preview = g.curPlacementPreview()
-	g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu)
+	g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu, g.showSettings)
 	return nil
 }
 
@@ -371,7 +387,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if hud, ui, err := buildHUD(g, g.hudScale); err == nil {
 			g.hud = hud
 			g.ui = ui
-			g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu)
+			g.hud.Refresh(g.world, g.placing, g.debug, g.debugSection, g.preview, g.showMenu, g.showSettings)
 		}
 	}
 
@@ -404,20 +420,49 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(sfImg, sfOp)
 	}
 
-	drawStarfield(g.scene, &g.starfield, bgCol)
-
 	switch {
 	case g.revealActive:
+		drawStarfield(g.scene, &g.starfield, bgCol)
 		drawReveal(g.scene, g.world, g.revealElapsed)
 	case g.world.System.View == ViewSystem:
+		drawStarfield(g.scene, &g.starfield, bgCol)
 		drawSystemView(g.scene, g.world, g.debug)
 	default:
+		// Planet view: clear scene to transparent so the atmosphere drawn in
+		// screen-space shows through behind the planet. The tiled starfield
+		// already covers the screen background.
+		g.scene.Clear()
 		DrawWorld(g.scene, g.world, g.preview, g.debug)
 	}
 
+	// Determine the active camera. During the reveal animation use a neutral
+	// camera (full-canvas, no offset) so the transition plays at default zoom.
+	var cam viewCamera
+	switch {
+	case g.revealActive:
+		cam = viewCamera{x: float64(virtW) / 2, y: float64(virtH) / 2, zoom: 1.0}
+	case g.world.System.View == ViewSystem:
+		cam = g.sysCam
+	default:
+		cam = g.planetCam
+	}
+
+	// Draw atmosphere in screen-space before compositing the scene so the glow
+	// is never clipped by the scene canvas bounds.
+	if !g.revealActive && g.world.System.View != ViewSystem {
+		totalScale := float32(scale * cam.zoom)
+		screencx := float32((g.world.Planet.Center.X-cam.x)*float64(totalScale)) + float32(g.screenW)/2
+		screenCy := float32((g.world.Planet.Center.Y-cam.y)*float64(totalScale)) + float32(g.screenH)/2
+		DrawPlanetAtmosphereScreen(screen, g.world, screencx, screenCy, totalScale)
+	}
+
+	// Transform: world point (cam.x, cam.y) maps to screen centre.
+	// GeoM chain: translate scene so cam centre is at origin → scale →
+	// translate to screen centre.
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(offX, offY)
+	op.GeoM.Translate(-cam.x, -cam.y)
+	op.GeoM.Scale(scale*cam.zoom, scale*cam.zoom)
+	op.GeoM.Translate(float64(g.screenW)/2, float64(g.screenH)/2)
 	op.Filter = ebiten.FilterNearest
 	screen.DrawImage(g.scene, op)
 
@@ -436,12 +481,14 @@ func (g *Game) intScale() int {
 }
 
 // screenToWorld converts a native screen position to low-res world coordinates,
-// accounting for the current letterbox/pillarbox offset and scale.
+// accounting for the current view scale and active camera.
 func (g *Game) screenToWorld(sx, sy int) Vec {
-	scale, offX, offY := viewGeom(g.screenW, g.screenH)
+	scale, _, _ := viewGeom(g.screenW, g.screenH)
+	cam := g.activeCamera()
+	totalScale := scale * cam.zoom
 	return Vec{
-		X: (float64(sx) - offX) / scale,
-		Y: (float64(sy) - offY) / scale,
+		X: (float64(sx)-float64(g.screenW)/2)/totalScale + cam.x,
+		Y: (float64(sy)-float64(g.screenH)/2)/totalScale + cam.y,
 	}
 }
 
@@ -462,6 +509,7 @@ func clearTransientUI(g *Game) {
 	g.holdDuration = 0
 	g.nurtureToggleActive = false
 	g.showMenu = false
+	g.showSettings = false
 	g.showFocusControl = false
 	g.closeBuildingTray()
 	g.workerRatioAttentionReady = false
