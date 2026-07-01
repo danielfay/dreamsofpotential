@@ -347,6 +347,13 @@ func pendingRebalanceText(w *World) string {
 	return strings.Join(parts, ",")
 }
 
+func scrollSpeedLabel(pct int) string {
+	if pct <= 0 {
+		return "disabled"
+	}
+	return fmt.Sprintf("%d%%", pct)
+}
+
 // buildHUD constructs the EbitenUI tree and wires up button handlers.
 // scale is the integer view scale factor (1 at ≤320×240, 2 at 640×480, etc.);
 // all pixel sizes are multiplied by it so the HUD matches the world scale.
@@ -793,9 +800,6 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 
 	// --- settings sub-page ---
 	initPct := g.world.Settings.PlanetNudgeSpeedPct
-	if initPct <= 0 {
-		initPct = 50
-	}
 
 	settingsBackBtn := widget.NewButton(
 		widget.ButtonOpts.Image(menuBtnImg),
@@ -810,7 +814,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 	)
 
 	hud.speedLabel = widget.NewText(
-		widget.TextOpts.Text(fmt.Sprintf("Planet nudge speed: %d%%", initPct), face, color.White),
+		widget.TextOpts.Text(fmt.Sprintf("Planet scroll speed: %s", scrollSpeedLabel(initPct)), face, color.White),
 		widget.TextOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
@@ -826,7 +830,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		Pressed: eimage.NewNineSliceColor(color.NRGBA{R: 60, G: 85, B: 140, A: 240}),
 	}
 	hud.speedSlider = widget.NewSlider(
-		widget.SliderOpts.MinMax(1, 100),
+		widget.SliderOpts.MinMax(0, 100),
 		widget.SliderOpts.InitialCurrent(initPct),
 		widget.SliderOpts.Images(sliderTrack, sliderHandle),
 		widget.SliderOpts.MinHandleSize(sz(18)),
@@ -837,7 +841,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 		widget.SliderOpts.ChangedHandler(func(args *widget.SliderChangedEventArgs) {
 			g.world.Settings.PlanetNudgeSpeedPct = args.Current
-			hud.speedLabel.Label = fmt.Sprintf("Planet nudge speed: %d%%", args.Current)
+			hud.speedLabel.Label = fmt.Sprintf("Planet scroll speed: %s", scrollSpeedLabel(args.Current))
 			_ = Save(g.world)
 		}),
 	)
@@ -859,19 +863,16 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 	)
 	initSysPct := g.world.Settings.SysScrollSpeedPct
-	if initSysPct <= 0 {
-		initSysPct = 50
-	}
 
 	hud.sysSpeedLabel = widget.NewText(
-		widget.TextOpts.Text(fmt.Sprintf("System scroll speed: %d%%", initSysPct), face, color.White),
+		widget.TextOpts.Text(fmt.Sprintf("System scroll speed: %s", scrollSpeedLabel(initSysPct)), face, color.White),
 		widget.TextOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(menuBtnLayoutData),
 		),
 	)
 
 	hud.sysSpeedSlider = widget.NewSlider(
-		widget.SliderOpts.MinMax(1, 100),
+		widget.SliderOpts.MinMax(0, 100),
 		widget.SliderOpts.InitialCurrent(initSysPct),
 		widget.SliderOpts.Images(sliderTrack, sliderHandle),
 		widget.SliderOpts.MinHandleSize(sz(18)),
@@ -882,7 +883,7 @@ func buildHUD(g *Game, scale int) (*HUD, *ebitenui.UI, error) {
 		),
 		widget.SliderOpts.ChangedHandler(func(args *widget.SliderChangedEventArgs) {
 			g.world.Settings.SysScrollSpeedPct = args.Current
-			hud.sysSpeedLabel.Label = fmt.Sprintf("System scroll speed: %d%%", args.Current)
+			hud.sysSpeedLabel.Label = fmt.Sprintf("System scroll speed: %s", scrollSpeedLabel(args.Current))
 			_ = Save(g.world)
 		}),
 	)

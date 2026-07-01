@@ -30,24 +30,20 @@ type viewCamera struct {
 	zoom float64
 }
 
-// nudgeSpeed returns the effective planet nudge speed based on user settings.
-// At PlanetNudgeSpeedPct=50 (or 0/unset) it equals planetNudgeSpeed.
+// nudgeSpeed returns the effective planet scroll speed; 0 means disabled.
 func (s *Settings) nudgeSpeed() float64 {
-	pct := s.PlanetNudgeSpeedPct
-	if pct <= 0 {
-		pct = 50
+	if s.PlanetNudgeSpeedPct <= 0 {
+		return 0
 	}
-	return planetNudgeSpeed * float64(pct) / 50.0
+	return planetNudgeSpeed * float64(s.PlanetNudgeSpeedPct) / 50.0
 }
 
-// sysSpeed returns the effective system-view edge scroll speed based on user settings.
-// At SysScrollSpeedPct=50 (or 0/unset) it equals sysScrollSpeed.
+// sysSpeed returns the effective system-view edge scroll speed; 0 means disabled.
 func (s *Settings) sysSpeed() float64 {
-	pct := s.SysScrollSpeedPct
-	if pct <= 0 {
-		pct = 50
+	if s.SysScrollSpeedPct <= 0 {
+		return 0
 	}
-	return sysScrollSpeed * float64(pct) / 50.0
+	return sysScrollSpeed * float64(s.SysScrollSpeedPct) / 50.0
 }
 
 func clampF(v, lo, hi float64) float64 {

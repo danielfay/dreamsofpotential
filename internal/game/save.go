@@ -80,6 +80,7 @@ func LoadFrom(path string) (*World, error) {
 		return nil, fmt.Errorf("save version %d, want %d", w.Version, SaveVersion)
 	}
 	initTransientWorldState(&w)
+	migrateSettings(&w)
 	return &w, nil
 }
 

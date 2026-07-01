@@ -329,10 +329,20 @@ type Channel struct {
 const SaveVersion = 22
 
 // Settings holds user-adjustable preferences persisted in the save file.
-// Zero values map to sensible defaults so old saves load cleanly.
 type Settings struct {
-	PlanetNudgeSpeedPct int // 1-100; 0 = unset → default 50
-	SysScrollSpeedPct   int // 1-100; 0 = unset → default 50
+	SettingsVersion     int // 0 = pre-migration; 1 = current (0 pct means disabled, not default)
+	PlanetNudgeSpeedPct int // 0-100; 0 = disabled, 50 = default speed
+	SysScrollSpeedPct   int // 0-100; 0 = disabled, 50 = default speed
+}
+
+// migrateSettings applies one-time migrations for saves created before
+// SettingsVersion 1, where 0 meant "not set" rather than "disabled".
+func migrateSettings(w *World) {
+	if w.Settings.SettingsVersion == 0 {
+		w.Settings.PlanetNudgeSpeedPct = 50
+		w.Settings.SysScrollSpeedPct = 50
+		w.Settings.SettingsVersion = 1
+	}
 }
 
 // World holds all game state for a single planet plus the system layer.
@@ -819,6 +829,11 @@ func newWorldWithSeed(seed int64) *World {
 			View:     ViewPlanet,
 			Selected: -1,
 			Planets:  planets,
+		},
+		Settings: Settings{
+			SettingsVersion:     1,
+			PlanetNudgeSpeedPct: 50,
+			SysScrollSpeedPct:   50,
 		},
 		rng: rand.New(rand.NewSource(seed)),
 	}

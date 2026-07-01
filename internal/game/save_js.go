@@ -40,5 +40,6 @@ func Load() (*World, error) {
 		return nil, os.ErrNotExist
 	}
 	initTransientWorldState(&w)
+	migrateSettings(&w)
 	return &w, nil
 }
